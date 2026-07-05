@@ -1,0 +1,46 @@
+[package]
+name = "minestrator-core"
+description = "Logique métier MineStrator, indépendante de l'UI (réutilisable : desktop, daemon, CLI)"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Réseau : rustls (pas d'OpenSSL système).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+base64 = "0.22"
+
+# Async + console WebSocket (Wings). `process` : agent CLI local (Copilote sans clé API).
+# `io-std` : transport stdio du serveur MCP (`mcp::serve_stdio`).
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util", "io-std", "process"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+
+# Client SFTP natif.
+russh = "0.45"
+russh-sftp = "2.0"
+async-trait = "0.1"
+
+# Stockage local de l'historique de métriques (SQLite embarqué, sans dépendance système).
+rusqlite = { version = "0.32", features = ["bundled"] }
+directories = "5"
+
+# Parsing du rapport de profiler Spark (protobuf `x-spark-sampler`) — structs à la main, sans protoc.
+prost = "0.13"
+
+thiserror = "2"
+tracing = "0.1"
+
+# Trousseau natif de l'OS (fonctionne aussi headless).
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "3", features = ["windows-native"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "3", features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }

@@ -1,0 +1,46 @@
+{
+  "name": "minestrator-terminal",
+  "version": "0.1.0",
+  "description": "Client desktop pour piloter ses serveurs Minecraft via l'API MineStrator",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+    "tauri": "tauri"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@xterm/xterm": "^5.5.0",
+    "@xterm/addon-fit": "^0.10.0",
+    "@codemirror/state": "^6.5.0",
+    "@codemirror/view": "^6.34.0",
+    "@codemirror/commands": "^6.7.0",
+    "@codemirror/language": "^6.10.0",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-yaml": "^6.1.0",
+    "@codemirror/lang-javascript": "^6.2.0",
+    "@codemirror/lang-html": "^6.4.0",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/lang-css": "^6.3.0",
+    "@codemirror/lang-markdown": "^6.3.0",
+    "@codemirror/lang-java": "^6.0.1",
+    "@codemirror/legacy-modes": "^6.4.0",
+    "@codemirror/theme-one-dark": "^6.1.2"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "^3.0.6",
+    "@sveltejs/kit": "^2.9.0",
+    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@tauri-apps/cli": "^2",
+    "svelte": "^5.0.0",
+    "svelte-check": "^4.0.0",
+    "typescript": "~5.6.2",
+    "vite": "^6.0.3"
+  }
+}

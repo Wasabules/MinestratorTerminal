@@ -1,0 +1,31 @@
+[package]
+name = "minestrator-terminal"
+description = "Client desktop pour piloter ses serveurs Minecraft via l'API MineStrator"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+# Le suffixe `_lib` évite un conflit de nom entre la lib et le binaire (souci Windows).
+name = "minestrator_terminal_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-notification = "2"
+
+# Toute la logique métier vit dans le core (réutilisable daemon/CLI).
+minestrator-core = { path = "../crates/minestrator-core" }
+
+# Relais des CoreEvent (broadcast) + boucle stdio du mode `--mcp`.
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "io-std", "io-util"] }
+serde_json = "1"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

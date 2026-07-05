@@ -1,0 +1,28 @@
+# --- Dépendances ---
+node_modules
+
+# --- Build front (SvelteKit / Vite) ---
+/build
+/.svelte-kit
+/package
+dist
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# --- Build Rust / Tauri ---
+/target
+/src-tauri/target
+/src-tauri/gen/schemas
+
+# --- Environnement / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Claude Code (sessions, mémoire, historique local) ---
+.claude
+
+# --- OS / éditeurs / divers ---
+.DS_Store
+Thumbs.db
+*.log

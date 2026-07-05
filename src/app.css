@@ -1,0 +1,337 @@
+/* =========================================================================
+   Minestrator Terminal — tokens & base (voir DESIGN.md)
+   Charte extraite du design system de minestrator.com. Dark-first.
+   ========================================================================= */
+
+:root {
+  /* Marque */
+  --brand-primary: #009b72;
+  --brand-primary-700: #005d44;
+  --brand-accent: #ff715b;
+  --brand-strator: #ffb4a8;
+  --brand-tertiary: #7828c8;
+  --brand-pro: #394666;
+  --brand-gradient: linear-gradient(115deg, #009b72 0%, #ff715b 100%);
+
+  /* États serveur */
+  --state-running: #009b72;
+  --state-pending: #f59e0b;
+  --state-offline: #859398;
+  --state-danger: #ff5f57;
+  --state-hibernate: #7828c8;
+
+  /* Typographie */
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+
+  /* Forme */
+  --radius-sm: 6px;
+  --radius: 10px;
+  --radius-lg: 14px;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 35%, transparent);
+
+  /* Surfaces & texte — thème sombre (défaut) */
+  --bg: #12171a;
+  --surface: #181d22;
+  --elevated: #2c3038;
+  --border: #2b333a;
+  --text: #eef3f5;
+  --text-muted: #a7b6bb;
+  --text-dim: #6f8085;
+}
+
+:root[data-theme="light"] {
+  --bg: #f9fafb;
+  --surface: #ffffff;
+  --elevated: #ffffff;
+  --border: #e5e7eb;
+  --text: #101619;
+  --text-muted: #4b5563;
+  --text-dim: #8a999e;
+  --shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand-primary) 40%, transparent);
+}
+
+a {
+  color: var(--brand-primary);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+/* Scrollbar discrète */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--elevated) transparent;
+}
+
+/* --- Primitifs réutilisables ------------------------------------------- */
+
+.gradient-text {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+.dim {
+  color: var(--text-dim);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font: inherit;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: filter 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+  color: #fff;
+  background: var(--brand-primary);
+}
+.btn:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+.btn--ghost:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  filter: none;
+}
+.btn--block {
+  width: 100%;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.input {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 11px 13px;
+  width: 100%;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: var(--ring);
+}
+
+.alert {
+  border-radius: var(--radius);
+  padding: 10px 13px;
+  font-size: 13.5px;
+  border: 1px solid color-mix(in srgb, var(--state-danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--state-danger) 12%, transparent);
+  color: color-mix(in srgb, var(--state-danger) 65%, var(--text));
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.badge .led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+/* Boot / spinner */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
+  border-top-color: var(--brand-primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
+/* =========================================================================
+   Markdown rendu (classe .md) — utilisé par l'assistant et les diagnostics.
+   Le HTML est produit par src/lib/markdown.ts (sûr : texte échappé, balises
+   whitelistées). Styles globaux pour éviter la duplication par composant.
+   ========================================================================= */
+.md {
+  white-space: normal;
+  word-break: break-word;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 13px 0 6px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.md h1 {
+  font-size: 17px;
+}
+.md h2 {
+  font-size: 15.5px;
+}
+.md h3 {
+  font-size: 14px;
+}
+.md h4 {
+  font-size: 13.5px;
+}
+.md p {
+  margin: 8px 0;
+}
+.md ul,
+.md ol {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.md li {
+  margin: 3px 0;
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  background: color-mix(in srgb, var(--text) 9%, transparent);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+.md pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+.md pre code {
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.md blockquote {
+  margin: 8px 0;
+  padding: 2px 12px;
+  border-left: 3px solid var(--border);
+  color: var(--text-muted);
+}
+.md a {
+  color: var(--brand-primary);
+}
+.md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+/* Tableaux GFM — `display: block` + overflow pour scroller si trop large dans la bulle. */
+.md table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12.5px;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.md th {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font-weight: 600;
+}
+.md tbody tr:nth-child(even) td {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}

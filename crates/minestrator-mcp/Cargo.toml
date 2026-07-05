@@ -1,0 +1,17 @@
+[package]
+name = "minestrator-mcp"
+description = "Serveur MCP (stdio) pour piloter, diagnostiquer et optimiser ses serveurs MineStrator depuis Claude"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "minestrator-mcp"
+path = "src/main.rs"
+
+[dependencies]
+minestrator-core = { path = "../minestrator-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

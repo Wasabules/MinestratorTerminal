@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions appliquées à toutes les fenêtres (principale + onglets détachés)",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "dialog:default",
+    "notification:default",
+    "core:webview:allow-create-webview-window",
+    "core:window:allow-outer-position",
+    "core:window:allow-outer-size",
+    "core:window:allow-scale-factor"
+  ]
+}
