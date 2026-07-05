@@ -1,66 +1,122 @@
 # Minestrator Terminal
 
-Client desktop léger et rapide pour piloter ses serveurs Minecraft via l'[API MineStrator](https://api.minestrator.com/openapi-public-fr.yaml).
-Multi-plateformes (Windows / macOS / Linux), clé API stockée dans le trousseau natif de l'OS.
+Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs Minecraft via l'**API MineStrator** — console temps réel, SFTP natif, gestion des joueurs, marketplace de mods/plugins, sauvegardes, et un **Copilote IA** capable de diagnostiquer et réparer.
 
-- **Stack** : Tauri 2 (Rust) + SvelteKit (Svelte 5) + TypeScript. Tout le réseau (HTTP + WebSocket) vit côté Rust.
-- **Architecture** : voir [`ARCHITECTURE-V1.md`](./ARCHITECTURE-V1.md).
-- **Charte graphique** : voir [`DESIGN.md`](./DESIGN.md).
+![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
+![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-## État actuel — Jalon 1 « Socle » ✅
+> Windows · macOS · Linux — la clé API est stockée dans le **trousseau natif** de l'OS, aucun secret en clair.
 
-- Stockage sécurisé de la clé API (trousseau OS via `keyring`).
-- Écran d'onboarding : saisie + validation de la clé.
-- Appel `GET /user` → affichage du pseudo, du solde de crédits et du nombre de MyBox.
-- Client API Rust générique (auth `Bearer base64`, désenveloppage, erreurs typées).
-- Garde de navigation (onboarding ↔ accueil), thème clair/sombre.
+---
 
-## Prérequis
+## ✨ Fonctionnalités
 
-| Outil | Statut sur cette machine |
+**Pilotage**
+- **Console temps réel** (xterm.js) via WebSocket (protocole Pterodactyl Wings) : logs live, filtres par niveau, envoi de commandes, copie de la sélection.
+- **Alimentation** : démarrer · redémarrer · arrêter · kill.
+- **Joueurs** : kick, ban/unban, op, whitelist — y compris sur des pseudos hors-ligne.
+- **SFTP natif intégré** (russh) : explorateur de fichiers + éditeur de config (CodeMirror, coloration JSON/YAML/Java/…), glisser-déposer pour l'upload.
+
+**Contenu & sauvegardes**
+- **Marketplace** mods & plugins : recherche Modrinth / CurseForge / SpigotMC, choix de version, installation en un clic.
+- **Sauvegardes** : backups quotidiens automatiques (restaurables) + **snapshots** à la demande — le filet avant une intervention risquée.
+
+**Supervision & IA**
+- **Superviseur** en tâche de fond : historique CPU/RAM/disque (SQLite), alertes (crash, seuils, expiration de MyBox) → **notifications natives**.
+- **Copilote IA** :
+  - Diagnostic **automatique** (crash, surcharge prolongée) et **assistant conversationnel**.
+  - **Multi-fournisseur** : Anthropic (Claude) et tout service compatible OpenAI (GPT, Gemini, Mistral, Groq, xAI, DeepSeek, OpenRouter, Ollama / LM Studio locaux…).
+  - **Agents CLI** : Claude Code, OpenCode, Gemini CLI (utilisent l'abonnement déjà configuré sur la machine, sans clé API) — avec détection automatique de leur présence.
+  - Outils de réparation : **docteur démarrage** (crash-loop), **maps corrompues** (fichiers `.mca`), **analyse de performance** (Spark).
+- **Serveur MCP intégré** : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Voir [`MCP.md`](./MCP.md).
+
+**Confort**
+- Multi-onglets (dont fenêtres détachées), **tray** (fermer la fenêtre la masque, le superviseur reste actif), thème clair/sombre, **i18n fr/en**.
+- **Confidentialité** : anonymisation (mots de passe, IPv4, e-mails, secrets) avant tout envoi à une IA.
+
+---
+
+## 📦 Installation
+
+Télécharge le dernier installeur depuis la page **[Releases](../../releases)** :
+
+| OS | Fichier |
 |---|---|
-| Node.js ≥ 18 + npm | ✅ installé |
-| WebView2 (Windows) | ✅ présent |
-| **Rust** (via [rustup](https://rustup.rs)) | ⛔ **à installer** |
-| **Build Tools MSVC** (C++) | à vérifier (requis par Tauri sous Windows) |
+| Windows | `.msi` ou `.exe` (NSIS) |
+| macOS | `.dmg` (universel Intel + Apple Silicon) |
+| Linux | `.AppImage`, `.deb` ou `.rpm` |
 
-> Le **frontend** se build déjà sans Rust (`npm run build`). Pour lancer l'application desktop
-> complète, installe Rust + les Build Tools C++ de Visual Studio, puis `npm run tauri dev`.
+> Les binaires ne sont pas encore signés : Windows SmartScreen / macOS Gatekeeper peuvent afficher un avertissement au premier lancement.
 
-## Commandes
+Au premier démarrage, saisis ta **clé API MineStrator** — elle est validée puis stockée dans le trousseau de l'OS.
 
+---
+
+## 🏗️ Architecture
+
+Monorepo **Cargo workspace** qui **sépare strictement la logique métier de l'UI** : le cœur est portable vers un futur daemon Linux ou une CLI/TUI.
+
+```
+crates/
+  minestrator-core/   Logique métier UI-agnostique : client API, WebSocket, SFTP,
+                      superviseur, Copilote (LLM + agents CLI), serveur MCP.
+  minestrator-mcp/    Serveur MCP autonome (headless), bâti sur le core.
+src-tauri/            App desktop Tauri : commandes IPC, tray, pont d'events, notifications.
+src/                  Frontend SvelteKit / Svelte 5 (runes) + TypeScript.
+docs/                 Documentation additionnelle.
+```
+
+- **Stack** : Tauri 2 · Rust · SvelteKit · Svelte 5 · TypeScript.
+- **Tout le réseau** (HTTP, WebSocket, SFTP) vit **côté Rust** ; le front ne parle qu'à une couche IPC typée (`src/lib/ipc.ts`).
+
+---
+
+## 🚀 Développement
+
+### Prérequis
+- [Rust](https://rustup.rs) (stable) + les [prérequis Tauri](https://v2.tauri.app/start/prerequisites/) de ta plateforme (Windows : MSVC Build Tools + WebView2 ; Linux : `webkit2gtk`, `librsvg`, etc.).
+- [Node.js](https://nodejs.org) 20+ et npm.
+
+### Lancer en développement
 ```bash
-npm install            # dépendances frontend
-npm run check          # typecheck (svelte-check)
-npm run build          # build du frontend seul (sortie: build/)
-npm run tauri dev      # lance l'app desktop (nécessite Rust)
-npm run tauri build    # build de l'app packagée (nécessite Rust)
+npm install          # dépendances frontend
+npm run tauri dev    # app desktop en dev (hot-reload du front)
 ```
 
-## Structure
-
-```
-src/                       # frontend SvelteKit
-  app.css                  # tokens de design (charte)
-  lib/
-    ipc.ts                 # couche IPC typée (seul point d'appel de invoke)
-    types.ts               # miroirs TS des modèles Rust
-    theme.ts               # thème clair/sombre
-    stores/auth.svelte.ts  # état d'auth (rune $state)
-  routes/
-    +layout.svelte         # garde d'auth + shell
-    +page.svelte           # accueil (profil)
-    onboarding/+page.svelte # saisie de la clé
-
-src-tauri/src/             # cœur Rust
-  api/mod.rs               # client HTTP typé
-  secrets.rs               # trousseau OS
-  commands.rs              # commandes IPC
-  models.rs                # structs (dé)sérialisées
-  error.rs                 # AppError (sérialisable vers le front)
-  config.rs                # constantes
+### Autres commandes
+```bash
+npm run check                             # typecheck (svelte-check)
+npm run build                             # build du frontend seul → build/
+npm run tauri build                       # app packagée (installeurs)
+cargo test -p minestrator-core            # tests du cœur métier
+cargo build -p minestrator-mcp --release  # binaire serveur MCP autonome
 ```
 
-## Prochaines étapes (voir ARCHITECTURE-V1.md)
+### Publier une release
+Les installeurs (Windows/macOS/Linux) sont produits par GitHub Actions au **push d'un tag** :
+```bash
+git tag v0.1.0 && git push origin v0.1.0
+```
+Le workflow [`release.yml`](./.github/workflows/release.yml) build les trois OS et publie une release avec les binaires en pièces jointes.
 
-2. Liste des serveurs · 3. Dashboard + power actions · 4. WebSocket console (protocole Wings déjà validé) · 5. Console live · 6. Polish.
+---
+
+## 📚 Documentation
+
+| Doc | Contenu |
+|---|---|
+| [`ARCHITECTURE-V1.md`](./ARCHITECTURE-V1.md) | Architecture, choix techniques, faits API validés |
+| [`DESIGN.md`](./DESIGN.md) | Charte graphique / design system |
+| [`COPILOT.md`](./COPILOT.md) | Fonctionnement du Copilote IA |
+| [`MCP.md`](./MCP.md) | Serveur MCP : catalogue d'outils, sécurité, connexion |
+| [`docs/AUTO-UPDATE.md`](./docs/AUTO-UPDATE.md) | Mise à jour automatique (préparée, non activée) |
+| [`ROADMAP.md`](./ROADMAP.md) | Suite prévue |
+
+---
+
+## 📄 Licence
+
+[MIT](./LICENSE) © Geoffrey Lecoq
