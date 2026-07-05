@@ -5,6 +5,7 @@
   import { toggleTheme } from '$lib/theme';
   import type {
     Autonomy,
+    CliStatus,
     CopilotConfig,
     LlmProvider,
     McpConfig,
@@ -94,6 +95,20 @@
     { value: 'gemini', label: 'Gemini CLI', command: 'gemini', modelPlaceholder: 'gemini-2.5-flash' },
   ];
   const currentCliAgent = $derived(CLI_AGENTS.find((a) => a.value === copilot?.cli_agent) ?? CLI_AGENTS[0]);
+  // Détection des agents CLI installés (claude / opencode / gemini) → message si absent.
+  let cliStatuses = $state<CliStatus[]>([]);
+  let cliChecking = $state(false);
+  const cliStatus = $derived(cliStatuses.find((s) => s.agent === copilot?.cli_agent));
+  async function refreshClis() {
+    cliChecking = true;
+    try {
+      cliStatuses = await api.detectClis();
+    } catch {
+      /* détection indisponible */
+    } finally {
+      cliChecking = false;
+    }
+  }
   const EFFORTS: { value: 'low' | 'medium' | 'high'; label: string }[] = [
     { value: 'low', label: 'effortLow' },
     { value: 'medium', label: 'effortMedium' },
@@ -128,6 +143,7 @@
     } catch {
       /* défauts */
     }
+    void refreshClis();
   });
   onDestroy(() => {
     clearTimeout(savedTimer);
@@ -519,6 +535,27 @@
           {:else}
             <p class="cmd dim">{t('settings.cliAgentClaude')}</p>
           {/if}
+
+          <div class="cli-detect">
+            {#if cliChecking && cliStatuses.length === 0}
+              <span class="dim">{t('settings.cliChecking')}</span>
+            {:else if cliStatus?.available}
+              <span class="ok"
+                >✓ {t('settings.cliDetected')}{cliStatus.version ? ` · ${cliStatus.version}` : ''}</span
+              >
+            {:else}
+              <span class="warn">⚠ {t('settings.cliMissing', { cmd: currentCliAgent.command })}</span>
+            {/if}
+            <button
+              class="recheck"
+              onclick={refreshClis}
+              disabled={cliChecking}
+              title={t('common.refresh')}
+              aria-label={t('common.refresh')}
+            >
+              <Icon name="refresh-cw" size={12} />
+            </button>
+          </div>
 
           <h2>{t('settings.copilotCliCommand')}</h2>
           <input
@@ -1046,6 +1083,38 @@
   .cmd {
     font-size: 12.5px;
     margin: 10px 0 0;
+  }
+  .cli-detect {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 12.5px;
+  }
+  .cli-detect .ok {
+    color: var(--state-running);
+  }
+  .cli-detect .warn {
+    color: var(--state-danger);
+  }
+  .cli-detect .recheck {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 5px;
+  }
+  .cli-detect .recheck:hover:not(:disabled) {
+    color: var(--text);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
+  .cli-detect .recheck:disabled {
+    opacity: 0.5;
+    cursor: default;
   }
   .cmd code {
     font-family: var(--font-mono);

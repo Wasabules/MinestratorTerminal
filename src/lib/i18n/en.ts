@@ -316,6 +316,9 @@ export const en: Dict = {
       'OpenCode — supported. Needs `opencode` installed + `opencode auth login` (subscription) or an API key. Model as `provider/model`.',
     cliAgentGemini:
       'Gemini CLI — experimental. Needs `gemini` installed + `GEMINI_API_KEY` in your environment. No native streaming or effort.',
+    cliChecking: 'Checking CLIs…',
+    cliDetected: 'CLI detected',
+    cliMissing: '“{cmd}” not found — install it, or switch to API mode.',
     cliModelDefault: 'Default (agent)',
     cliModelHint:
       'Model passed to the CLI agent (`--model`). “Default” lets the agent choose (your Claude Code config).',

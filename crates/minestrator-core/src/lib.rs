@@ -31,7 +31,7 @@ mod supervisor;
 mod util;
 mod world;
 
-pub use cli_agent::CliAgent;
+pub use cli_agent::{detect_clis, CliAgent, CliStatus};
 pub use copilot::{Autonomy, ChatReply, CopilotConfig, Effort};
 pub use error::{Error, Result};
 pub use events::{

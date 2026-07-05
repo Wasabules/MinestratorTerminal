@@ -120,6 +120,14 @@ export interface CopilotConfig {
   cli_agent: 'claude_code' | 'open_code' | 'gemini';
 }
 
+/** Disponibilité d'un agent CLI local (Réglages → Copilote). */
+export interface CliStatus {
+  agent: 'claude_code' | 'open_code' | 'gemini';
+  command: string;
+  available: boolean;
+  version: string | null;
+}
+
 export interface PrivacyConfig {
   /** Anonymise les données sensibles envoyées aux agents IA (défaut activé). */
   redact_ai: boolean;

@@ -42,7 +42,39 @@ impl CliAgent {
             CliAgent::Gemini => "gemini",
         }
     }
+}
 
+/// Statut de disponibilité d'un agent CLI (exposé à l'UI Réglages → Copilote).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CliStatus {
+    pub agent: CliAgent,
+    /// Binaire sondé (commande par défaut de l'agent).
+    pub command: String,
+    /// Présent et répondant à `--version` ?
+    pub available: bool,
+    /// Version brute rapportée (1re ligne de sortie), si disponible.
+    pub version: Option<String>,
+}
+
+/// Détecte les trois agents CLI (Claude Code / OpenCode / Gemini) en parallèle, via leur binaire
+/// par défaut. L'UI affiche un message minimaliste pour ceux qui sont absents.
+pub async fn detect_clis() -> Vec<CliStatus> {
+    async fn one(agent: CliAgent) -> CliStatus {
+        let command = agent.default_command();
+        let version = crate::cli::probe(command, 6).await;
+        CliStatus {
+            agent,
+            command: command.to_string(),
+            available: version.is_some(),
+            version,
+        }
+    }
+    let (claude, opencode, gemini) = tokio::join!(
+        one(CliAgent::ClaudeCode),
+        one(CliAgent::OpenCode),
+        one(CliAgent::Gemini),
+    );
+    vec![claude, opencode, gemini]
 }
 
 /// Contexte de préparation d'un lancement.

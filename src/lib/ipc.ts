@@ -9,6 +9,7 @@ import type {
   AppError,
   Backup,
   ChatReply,
+  CliStatus,
   CopilotConfig,
   InstalledItem,
   LiveLight,
@@ -65,6 +66,9 @@ export const api = {
   setPrivacyConfig: (config: PrivacyConfig) => invoke<void>('set_privacy_config', { config }),
   /** Chemin de l'exécutable (pour composer la config Claude). */
   appExePath: () => invoke<string>('app_exe_path'),
+
+  /** Détecte les agents CLI installés (claude / opencode / gemini) + leur version. */
+  detectClis: () => invoke<CliStatus[]>('detect_clis'),
 
   // --- Copilote (agent LLM multi-fournisseur) ---
   getCopilotConfig: () => invoke<CopilotConfig>('get_copilot_config'),

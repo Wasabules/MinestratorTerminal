@@ -8,6 +8,7 @@
     "opener:default",
     "dialog:default",
     "notification:default",
+    "updater:default",
     "core:webview:allow-create-webview-window",
     "core:window:allow-outer-position",
     "core:window:allow-outer-size",

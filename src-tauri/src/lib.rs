@@ -29,6 +29,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(core)
         .setup(move |app| {
+            // Auto-update : plugin PRÉPARÉ (desktop). Inerte tant qu'aucun `check()` n'est appelé et
+            // que `plugins.updater` (endpoints + pubkey) n'est pas renseigné — voir docs/AUTO-UPDATE.md.
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             let handle = app.handle().clone();
 
             // Pont : CoreEvent (broadcast) → events Tauri + notifications.
@@ -86,6 +92,7 @@ pub fn run() {
             commands::get_privacy_config,
             commands::set_privacy_config,
             commands::app_exe_path,
+            commands::detect_clis,
             commands::console_logs,
             commands::power_action,
             commands::send_command,

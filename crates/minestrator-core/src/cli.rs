@@ -174,6 +174,33 @@ pub async fn run_streaming<F: FnMut(&str)>(
     Ok(cap(acc))
 }
 
+/// Sonde la présence d'un binaire CLI : lance `<command> --version` (timeout court) et renvoie sa
+/// version (1re ligne de sortie) s'il répond ; `None` s'il est absent du PATH ou ne répond pas.
+/// Sert à la détection des agents (Claude Code / OpenCode / Gemini) dans les Réglages.
+pub async fn probe(command: &str, timeout_s: u64) -> Option<String> {
+    let command = command.trim();
+    if command.is_empty() {
+        return None;
+    }
+    let mut cmd = build_command(command, &["--version".to_string()], None, &[]);
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = cmd.spawn().ok()?;
+    let out_task = tokio::spawn(read_all(child.stdout.take()));
+    let err_task = tokio::spawn(read_all(child.stderr.take()));
+    let ok = match tokio::time::timeout(Duration::from_secs(timeout_s), child.wait()).await {
+        Ok(Ok(status)) => status.success(),
+        _ => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            false
+        }
+    };
+    let out = out_task.await.unwrap_or_default();
+    let err = err_task.await.unwrap_or_default();
+    // `--version` s'écrit selon les CLI sur stdout OU stderr ; on prend la 1re ligne non vide.
+    ok.then(|| first_line(&out).or_else(|| first_line(&err))).flatten()
+}
+
 /// Sur Windows, une commande « nue » (sans séparateur de chemin, ex. `claude`) est lancée via
 /// `cmd /c` pour résoudre les shims `.cmd`/`.bat` (installation npm) et le PATH.
 pub(crate) fn build_command(

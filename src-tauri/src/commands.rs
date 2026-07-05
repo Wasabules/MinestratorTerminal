@@ -2,7 +2,7 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    Backup, ChatReply, CopilotConfig, Core, Error, InstalledItem, LiveLight, MarketPage,
+    Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, InstalledItem, LiveLight, MarketPage,
     MarketVersion, McpConfig, MetricSample, PrivacyConfig, ServerDetails, ServersOverview,
     SftpEntry, Snapshot, SupervisorConfig, UserProfile,
 };
@@ -102,6 +102,12 @@ pub fn app_exe_path() -> String {
     std::env::current_exe()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// Détecte les agents CLI installés (Claude Code / OpenCode / Gemini) pour l'UI Copilote.
+#[tauri::command]
+pub async fn detect_clis() -> Vec<CliStatus> {
+    minestrator_core::detect_clis().await
 }
 
 #[tauri::command]

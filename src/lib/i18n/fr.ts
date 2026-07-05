@@ -314,6 +314,9 @@ export const fr = {
       'OpenCode — supporté. Nécessite `opencode` installé + `opencode auth login` (abonnement) ou une clé API. Modèle au format `fournisseur/modèle`.',
     cliAgentGemini:
       'Gemini CLI — expérimental. Nécessite `gemini` installé + `GEMINI_API_KEY` dans ton environnement. Pas de streaming ni d’effort natif.',
+    cliChecking: 'Vérification des CLI…',
+    cliDetected: 'CLI détecté',
+    cliMissing: '« {cmd} » introuvable — installe-le, ou passe en mode API.',
     cliModelDefault: 'Défaut (agent)',
     cliModelHint:
       'Modèle passé à l’agent CLI (`--model`). « Défaut » laisse l’agent choisir (ta config Claude Code).',
