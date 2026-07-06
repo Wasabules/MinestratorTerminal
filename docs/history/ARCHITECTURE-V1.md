@@ -1,5 +1,11 @@
 # Minestrator Terminal — Architecture V1
 
+> ⚠️ **Spec fondatrice (V1, 2026-07-04) — périmètre et structure de code dépassés depuis la v0.2.1.**
+> Les **faits API / WebSocket** (§1, §6) restent exacts et servent toujours de socle ; en revanche
+> l'arbre des modules, la liste des commandes/events et les dépendances ont beaucoup évolué (workspace
+> 3 crates, SFTP/NBT, Copilote IA, MCP…). Pour l'architecture **actuelle**, voir
+> [`ARCHITECTURE.md`](../../ARCHITECTURE.md). Conservée pour référence historique.
+
 > Client desktop léger pour piloter ses serveurs Minecraft via l'API MineStrator.
 > Stack : **Tauri 2 (Rust)** + **SvelteKit** + **xterm.js**.
 > Objectif V1 : *moniteur + console temps réel* — voir l'état d'un serveur, lire la console live, envoyer des commandes et des power actions.

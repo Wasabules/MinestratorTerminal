@@ -144,19 +144,24 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 - **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé.
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
   (`power_action`, `send_command`, `player_action`, `write_file`, `create_dir`, `delete_path`,
-  `rename_path`, `set_startup_params`, `install_mod`, `create_snapshot`) sont refusés ; les outils de
+  `rename_path`, `set_startup_params`, `install_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
   lecture/diagnostic restent disponibles. Idéal pour donner un accès *observation* sans risque.
 
 **Garde-fous by design :**
 
 - **Default-deny** : tout outil qui n'est **pas** dans `READ_TOOLS` est traité comme modifiant. Un
   nouvel outil est donc gaté par défaut (impossible de l'exposer en écriture par oubli).
-- **Liste blanche d'env** (`MCP_ALLOWED_TOOLS`) : le lanceur peut restreindre le sous-ensemble
+- **Liste blanche d'env** (`MINESTRATOR_MCP_ALLOWED_TOOLS`) : le lanceur peut restreindre le sous-ensemble
   d'outils exposés (utilisée quand le Copilote lance un agent CLI en mode lecture).
 - **Actions destructives volontairement absentes** du catalogue : `restore_snapshot`,
-  `delete_snapshot`, `restore_backup` ne sont **pas** des outils MCP → un agent ne peut jamais les
-  déclencher. Elles n'existent que dans l'app, derrière un « Appliquer » (intention explicite de
-  l'utilisateur). Seul `create_snapshot` (additif) est exposé.
+  `delete_snapshot`, `restore_backup`, `repair_region` ne sont **pas** des outils MCP → un agent ne
+  peut jamais les déclencher. Elles n'existent que dans l'app, derrière un « Appliquer » (intention
+  explicite de l'utilisateur). Seul `create_snapshot` (additif) est exposé.
+
+> **Portée de ce document** : il décrit le serveur MCP **local** exposé aux clients externes (Claude
+> Desktop, Claude Code…). L'usage inverse — le Copilote interne comme *client* du **MCP officiel
+> MineStrator** (délégation de la gestion, ne gardant en local que `LOCAL_KEEP_TOOLS`) — est décrit
+> dans [`COPILOT.md`](./COPILOT.md).
 
 ## 7. Se connecter (depuis n'importe quel client MCP)
 
