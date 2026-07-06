@@ -2,8 +2,10 @@
   import { onMount, onDestroy } from 'svelte';
   import { Terminal } from '@xterm/xterm';
   import { FitAddon } from '@xterm/addon-fit';
+  import { WebLinksAddon } from '@xterm/addon-web-links';
   import '@xterm/xterm/css/xterm.css';
   import type { UnlistenFn } from '@tauri-apps/api/event';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { api, humanizeError } from '$lib/ipc';
   import { consoleEvents } from '$lib/events';
   import { openCopilotMenu } from '$lib/copilot/menu.svelte';
@@ -31,6 +33,37 @@
   let command = $state('');
   const history: string[] = [];
   let histIndex = 0;
+
+  // --- Auto-complétion du 1er mot (nom de commande) : catalogue MC + historique. ---
+  const MC_COMMANDS: string[] = [
+    'advancement', 'attribute', 'ban', 'ban-ip', 'banlist', 'bossbar', 'clear', 'clone', 'data',
+    'datapack', 'debug', 'defaultgamemode', 'deop', 'difficulty', 'effect', 'enchant', 'execute',
+    'experience', 'fill', 'forceload', 'function', 'gamemode', 'gamerule', 'give', 'help', 'item',
+    'jfr', 'kick', 'kill', 'list', 'locate', 'loot', 'me', 'msg', 'op', 'pardon', 'pardon-ip',
+    'particle', 'perf', 'place', 'playsound', 'publish', 'recipe', 'reload', 'save-all', 'save-off',
+    'save-on', 'say', 'schedule', 'scoreboard', 'seed', 'setblock', 'setidletimeout', 'setworldspawn',
+    'spawnpoint', 'spectate', 'spreadplayers', 'stop', 'stopsound', 'summon', 'tag', 'team',
+    'teleport', 'tell', 'tellraw', 'time', 'title', 'tp', 'trigger', 'weather', 'whitelist',
+    'worldborder', 'xp',
+    'plugins', 'pl', 'version', 'ver', 'tps', 'mspt', 'spark', 'timings', 'restart',
+  ];
+  let sugIndex = $state(-1);
+  let sugDismissed = $state(false);
+  const suggestions = $derived.by(() => {
+    if (!command || command.includes(' ')) return []; // 1er mot uniquement
+    const lc = command.toLowerCase();
+    const hist = history.map((h) => h.split(' ')[0]);
+    return [...new Set([...MC_COMMANDS, ...hist])]
+      .filter((x) => x.toLowerCase().startsWith(lc) && x.toLowerCase() !== lc)
+      .slice(0, 8);
+  });
+  const showSug = $derived(suggestions.length > 0 && !sugDismissed);
+  function applySuggestion(i: number) {
+    const s = suggestions[i];
+    if (s == null) return;
+    command = `${s} `; // complète + espace pour enchaîner les arguments
+    sugIndex = -1;
+  }
 
   type Level = 'error' | 'warn' | 'info';
   let filter = $state<Record<Level, boolean>>({ error: true, warn: true, info: true });
@@ -107,6 +140,8 @@
     });
     fit = new FitAddon();
     term.loadAddon(fit);
+    // Liens cliquables : ouverture dans le navigateur via le plugin opener (le webview est sous CSP).
+    term.loadAddon(new WebLinksAddon((_event, uri) => void openUrl(uri)));
     term.open(container);
     // La console est un canvas xterm → le Ctrl+C natif ne copie pas la sélection. On la copie
     // explicitement (Ctrl+C / Ctrl+Shift+C, ou Cmd+C sur macOS). Détaché avec le terminal (dispose).
@@ -222,6 +257,36 @@
   }
 
   function onKey(event: KeyboardEvent) {
+    // Dropdown de complétion ouvert : les flèches/Tab/Entrée le pilotent.
+    if (showSug) {
+      if (event.key === 'ArrowDown') {
+        sugIndex = (sugIndex + 1) % suggestions.length;
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'ArrowUp') {
+        sugIndex = (sugIndex <= 0 ? suggestions.length : sugIndex) - 1;
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'Tab') {
+        applySuggestion(sugIndex < 0 ? 0 : sugIndex);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'Enter' && sugIndex >= 0) {
+        applySuggestion(sugIndex);
+        event.preventDefault();
+        return;
+      }
+      if (event.key === 'Escape') {
+        sugDismissed = true;
+        sugIndex = -1;
+        event.preventDefault();
+        return;
+      }
+    }
+    // Sinon : navigation dans l'historique des commandes.
     if (event.key === 'ArrowUp' && histIndex > 0) {
       histIndex -= 1;
       command = history[histIndex] ?? '';
@@ -257,11 +322,25 @@
   </div>
 
   <form class="cmdbar" onsubmit={submit}>
+    {#if showSug}
+      <div class="suggest" role="listbox">
+        {#each suggestions as s, i (s)}
+          <button
+            type="button"
+            class="sug"
+            class:on={i === sugIndex}
+            onmousedown={(e) => e.preventDefault()}
+            onclick={() => applySuggestion(i)}
+          >{s}</button>
+        {/each}
+      </div>
+    {/if}
     <span class="prompt">›</span>
     <input
       class="cmd"
       bind:value={command}
       onkeydown={onKey}
+      oninput={() => { sugDismissed = false; sugIndex = -1; }}
       placeholder={t('console.placeholder')}
       spellcheck="false"
       autocomplete="off"
@@ -414,6 +493,40 @@
     padding: 8px 12px;
     border-top: 1px solid #1c2429;
     flex: none;
+    position: relative;
+  }
+  .suggest {
+    position: absolute;
+    left: 30px;
+    bottom: calc(100% + 6px);
+    display: flex;
+    flex-direction: column;
+    min-width: 190px;
+    max-height: 240px;
+    overflow-y: auto;
+    background: #141b1e;
+    border: 1px solid #2a343a;
+    border-radius: 9px;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+    padding: 4px;
+    z-index: 6;
+  }
+  .sug {
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: #d6e2e6;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  .sug:hover,
+  .sug.on {
+    background: #1e262a;
+    color: #fff;
   }
   .prompt {
     font-family: var(--font-mono);
