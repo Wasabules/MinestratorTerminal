@@ -76,6 +76,11 @@ fn allowed_tool_names(cfg: &CopilotConfig, autonomous: bool) -> Vec<String> {
     if autonomous {
         v.extend(WRITE_TOOLS.iter().map(|s| s.to_string()));
     }
+    // Quand le MCP officiel prend la gestion, NOTRE serveur est recentré sur SFTP + exclusifs
+    // (`LOCAL_KEEP_TOOLS`) — le reste est délégué à l'officiel, pas de doublon pour l'agent.
+    if cfg.use_official_mcp {
+        v.retain(|n| crate::mcp::LOCAL_KEEP_TOOLS.contains(&n.as_str()));
+    }
     v.retain(|n| !tool_disabled(n, &cfg.disabled_tools));
     v
 }
@@ -216,6 +221,11 @@ pub struct CopilotConfig {
     /// Agent CLI utilisé quand `provider = LocalCli` (Claude Code / OpenCode / Gemini).
     #[serde(default)]
     pub cli_agent: crate::cli_agent::CliAgent,
+    /// Utiliser le **MCP officiel** MineStrator (gestion serveur) en plus de notre MCP local (SFTP +
+    /// outils exclusifs). Défaut activé : l'officiel, maintenu par l'hébergeur, est plus fiable pour
+    /// la gestion. Désactivé ⇒ le Copilote n'utilise que notre catalogue local complet.
+    #[serde(default = "default_true")]
+    pub use_official_mcp: bool,
 }
 
 fn default_true() -> bool {
@@ -245,6 +255,7 @@ impl Default for CopilotConfig {
             disabled_tools: Vec::new(),
             effort: Effort::Medium,
             cli_agent: crate::cli_agent::CliAgent::default(),
+            use_official_mcp: true,
         }
     }
 }
@@ -569,6 +580,7 @@ async fn run_cli_agentic(
             effort: cfg.effort.claude_level(),
             resume: None,
             streaming: false,
+            official_mcp: cfg.use_official_mcp.then_some(true), // diagnostic = lecture seule
         },
     )?;
     let prompt = cli_agentic_prompt(inc);
@@ -755,7 +767,14 @@ async fn diagnose_http(
     let console_tail = core.redact_ai(&console_tail);
 
     let client = LlmClient::new(cfg.provider, &cfg.base_url, &key, &cfg.model);
-    let tools = agent_tools(&cfg.disabled_tools);
+    // Diagnostic = LECTURE SEULE → MCP officiel en `readonly` (aucun outil modifiant n'existe). Pas
+    // de cache (one-shot) ; repli sur le catalogue local complet si l'officiel est indisponible.
+    let api_token = crate::secrets::read_key().ok().flatten();
+    let official = match (cfg.use_official_mcp, api_token.as_deref()) {
+        (true, Some(tok)) => crate::official_mcp::list_tools(tok, true).await.unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let (tools, official_names) = merge_tools(agent_tools(&cfg.disabled_tools), official);
     let system = with_effort(SYSTEM_PROMPT, cfg.effort);
     let mut transcript = vec![Msg::User(user_prompt(inc, &console_tail))];
 
@@ -775,6 +794,24 @@ async fn diagnose_http(
                 results.push(ToolResult {
                     id: call.id.clone(),
                     content: "Diagnostic enregistré.".into(),
+                });
+            } else if official_names.contains(&call.name) {
+                core.emit(CoreEvent::CopilotProgress(CopilotProgress {
+                    id: id.to_string(),
+                    phase: friendly_tool(&call.name, Some(&call.input)),
+                }));
+                let out = match api_token.as_deref() {
+                    Some(tok) => {
+                        crate::official_mcp::call_tool(tok, true, &call.name, call.input.clone())
+                            .await
+                            .map(|o| core.redact_ai(&o))
+                            .unwrap_or_else(|e| format!("Erreur outil : {e}"))
+                    }
+                    None => "Clé API MineStrator indisponible.".to_string(),
+                };
+                results.push(ToolResult {
+                    id: call.id.clone(),
+                    content: truncate(&out, TOOL_OUTPUT_CAP),
                 });
             } else if READ_TOOLS.contains(&call.name.as_str()) {
                 core.emit(CoreEvent::CopilotProgress(CopilotProgress {
@@ -841,6 +878,47 @@ fn agent_tools(disabled: &[String]) -> Vec<ToolSpec> {
     let mut tools = tool_specs(|n| !tool_disabled(n, disabled) && READ_TOOLS.contains(&n));
     tools.push(report_tool());
     tools
+}
+
+// --- MCP officiel (voie API HTTP) -----------------------------------------
+
+/// Catalogue d'outils du MCP officiel, avec CACHE de session par variante `readonly` (évite un
+/// `tools/list` réseau à chaque message). Vide si l'officiel est désactivé/injoignable → repli sur
+/// le catalogue local complet. Récupère la clé API au trousseau.
+async fn official_tools_cached(
+    readonly: bool,
+    cache: &mut Option<(bool, Vec<ToolSpec>)>,
+) -> Vec<ToolSpec> {
+    if let Some((ro, tools)) = cache.as_ref() {
+        if *ro == readonly {
+            return tools.clone();
+        }
+    }
+    let tools = match crate::secrets::read_key() {
+        Ok(Some(token)) => crate::official_mcp::list_tools(&token, readonly).await.unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    *cache = Some((readonly, tools.clone()));
+    tools
+}
+
+/// Fusionne les outils officiels (gestion) et le catalogue local. Quand l'officiel fournit des
+/// outils, le local est RECENTRÉ sur le SFTP + les exclusifs (`LOCAL_KEEP_TOOLS`) + `report_diagnosis`
+/// → aucun doublon. Renvoie le catalogue fusionné + l'ensemble des noms officiels (pour le routing).
+fn merge_tools(
+    mut local: Vec<ToolSpec>,
+    official: Vec<ToolSpec>,
+) -> (Vec<ToolSpec>, std::collections::HashSet<String>) {
+    use std::collections::HashSet;
+    if official.is_empty() {
+        return (local, HashSet::new());
+    }
+    local.retain(|t| {
+        crate::mcp::LOCAL_KEEP_TOOLS.contains(&t.name.as_str()) || t.name == "report_diagnosis"
+    });
+    let names: HashSet<String> = official.iter().map(|t| t.name.clone()).collect();
+    local.extend(official);
+    (local, names)
 }
 
 fn report_tool() -> ToolSpec {
@@ -1179,6 +1257,10 @@ pub struct ChatSession {
     no_persistent: bool,
     /// Échecs consécutifs de la voie persistante (2 → on bascule définitivement en one-shot).
     persistent_fails: u8,
+    /// Cache du catalogue d'outils du MCP officiel (voie API HTTP) — évite un `tools/list` réseau à
+    /// chaque message. Le `bool` mémorise le `readonly` avec lequel il a été récupéré (re-fetch si
+    /// l'autonomie change). `Some(_, [])` = officiel désactivé/injoignable → catalogue local complet.
+    official_tools: Option<(bool, Vec<ToolSpec>)>,
 }
 
 impl ChatSession {
@@ -1190,6 +1272,7 @@ impl ChatSession {
             persistent_autonomous: false,
             no_persistent: false,
             persistent_fails: 0,
+            official_tools: None,
         }
     }
 }
@@ -1228,7 +1311,16 @@ async fn chat_http(
 ) -> Result<ChatReply, String> {
     let key = resolve_key(cfg)?;
     let client = LlmClient::new(cfg.provider, &cfg.base_url, &key, &cfg.model);
-    let tools = chat_tools(autonomous, &cfg.disabled_tools);
+    // MCP officiel (gestion) : chat non-autonome ⇒ readonly (aucun outil modifiant n'existe pour la
+    // connexion). Catalogue mis en cache sur la session ; repli sur le local complet s'il est vide.
+    let readonly = !autonomous;
+    let official = if cfg.use_official_mcp {
+        official_tools_cached(readonly, &mut session.official_tools).await
+    } else {
+        Vec::new()
+    };
+    let (tools, official_names) = merge_tools(chat_tools(autonomous, &cfg.disabled_tools), official);
+    let api_token = crate::secrets::read_key().ok().flatten(); // pour exécuter les outils officiels
     let system = with_effort(&chat_system(autonomous), cfg.effort);
 
     let prompt = if session.transcript.is_empty() {
@@ -1264,7 +1356,18 @@ async fn chat_http(
                 id: id.to_string(),
                 phase: friendly_tool(&call.name, Some(&call.input)),
             }));
-            let content = if READ_TOOLS.contains(&call.name.as_str()) {
+            let content = if official_names.contains(&call.name) {
+                // Outil de gestion délégué au MCP officiel (résultat redacté avant de repartir au LLM).
+                match api_token.as_deref() {
+                    Some(tok) => {
+                        crate::official_mcp::call_tool(tok, readonly, &call.name, call.input.clone())
+                            .await
+                            .map(|out| core.redact_ai(&out))
+                            .unwrap_or_else(|e| format!("Erreur outil : {e}"))
+                    }
+                    None => "Clé API MineStrator indisponible pour le MCP officiel.".to_string(),
+                }
+            } else if READ_TOOLS.contains(&call.name.as_str()) {
                 mcp::dispatch(core, &call.name, call.input.clone())
                     .await
                     .unwrap_or_else(|e| format!("Erreur outil : {e}"))
@@ -1353,6 +1456,7 @@ async fn ensure_persistent_spawn(
             effort: cfg.effort.claude_level(),
             resume: restore,
             streaming: true,
+            official_mcp: cfg.use_official_mcp.then_some(!autonomous),
         },
     )?;
     let mut args = plan.args;
@@ -1463,6 +1567,7 @@ async fn chat_cli_oneshot(
             effort: cfg.effort.claude_level(),
             resume: session.cli_session.as_deref(),
             streaming: true,
+            official_mcp: cfg.use_official_mcp.then_some(!autonomous),
         },
     )?;
 

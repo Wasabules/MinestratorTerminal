@@ -7,6 +7,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { t } from './i18n';
 import type {
   AppError,
+  ArchiveEntry,
   Backup,
   ChatReply,
   CliStatus,
@@ -188,10 +189,23 @@ export const api = {
     invoke<void>('sftp_delete', { serverId, path, isDir }),
   sftpRename: (serverId: number, from: string, to: string) =>
     invoke<void>('sftp_rename', { serverId, from, to }),
-  sftpUpload: (serverId: number, localPath: string, remoteDir: string) =>
-    invoke<string>('sftp_upload', { serverId, localPath, remoteDir }),
-  sftpDownload: (serverId: number, remotePath: string, localPath: string) =>
-    invoke<void>('sftp_download', { serverId, remotePath, localPath }),
+  // Transferts (suivis via l'event sftp://progress, corrélés par transferId) — la commande rend la
+  // main aussitôt ; ne pas attendre la fin sur la promesse.
+  sftpUpload: (serverId: number, localPath: string, remoteDir: string, transferId: string) =>
+    invoke<void>('sftp_upload', { serverId, localPath, remoteDir, transferId }),
+  sftpDownload: (serverId: number, remotePath: string, localPath: string, transferId: string) =>
+    invoke<void>('sftp_download', { serverId, remotePath, localPath, transferId }),
+  sftpDownloadZip: (serverId: number, paths: string[], localZip: string, transferId: string) =>
+    invoke<void>('sftp_download_zip', { serverId, paths, localZip, transferId }),
+  // Archives (lecture seule) : .zip / .tar / .tar.gz / .gz
+  sftpArchiveList: (serverId: number, path: string) =>
+    invoke<ArchiveEntry[]>('sftp_archive_list', { serverId, path }),
+  sftpArchiveReadText: (serverId: number, path: string, entry: string) =>
+    invoke<string>('sftp_archive_read_text', { serverId, path, entry }),
+  sftpGzText: (serverId: number, path: string) =>
+    invoke<string>('sftp_gz_text', { serverId, path }),
+  sftpExtractEntry: (serverId: number, path: string, entry: string, localPath: string) =>
+    invoke<void>('sftp_extract_entry', { serverId, path, entry, localPath }),
   sftpDisconnect: (serverId: number) => invoke<void>('sftp_disconnect', { serverId }),
 
   /** Efface la clé enregistrée. */

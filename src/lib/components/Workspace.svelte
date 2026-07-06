@@ -3,9 +3,10 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { tabs } from '$lib/tabs/tabs.svelte';
   import { t } from '$lib/i18n';
-  import { alertEvents, copilotEvents } from '$lib/events';
+  import { alertEvents, copilotEvents, sftpEvents } from '$lib/events';
   import { addAlert } from '$lib/alerts/alerts.svelte';
   import { addDiagnosis, startRun, progressRun } from '$lib/copilot/diagnoses.svelte';
+  import { applyProgress } from '$lib/transfers/transfers.svelte';
   import TabBar from './TabBar.svelte';
   import UserMenu from './UserMenu.svelte';
   import AlertCenter from './AlertCenter.svelte';
@@ -23,6 +24,7 @@
     unlisteners.push(await copilotEvents.diagnosis(addDiagnosis));
     unlisteners.push(await copilotEvents.started(startRun));
     unlisteners.push(await copilotEvents.progress(progressRun));
+    unlisteners.push(await sftpEvents.progress(applyProgress));
     if (destroyed) unlisteners.forEach((u) => u()); // démonté pendant l'enregistrement
   });
   onDestroy(() => {

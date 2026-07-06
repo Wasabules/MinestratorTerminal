@@ -57,7 +57,7 @@ pub(crate) async fn repair_region(
 async fn download(core: &Core, id: i64, path: &str) -> Result<Vec<u8>, String> {
     let (_, name) = split_path(path)?;
     let tmp = temp_path(&name)?;
-    core.sftp_download(id, path, &tmp.to_string_lossy())
+    core.sftp_download_file(id, path, &tmp.to_string_lossy())
         .await
         .map_err(|e| e.to_string())?;
     let bytes = std::fs::read(&tmp).map_err(|e| format!("lecture locale : {e}"));
@@ -70,7 +70,7 @@ async fn upload(core: &Core, id: i64, path: &str, bytes: &[u8]) -> Result<(), St
     let tmp = temp_path(&name)?; // le nom local DOIT être celui de la région (l'upload le conserve)
     std::fs::write(&tmp, bytes).map_err(|e| format!("écriture locale : {e}"))?;
     let res = core
-        .sftp_upload(id, &tmp.to_string_lossy(), &dir)
+        .sftp_upload_file(id, &tmp.to_string_lossy(), &dir)
         .await
         .map(|_| ())
         .map_err(|e| e.to_string());

@@ -28,6 +28,7 @@
     content,
     onClose,
     onSaved,
+    readonly = false,
   }: {
     serverId: number;
     path: string;
@@ -35,6 +36,8 @@
     content: string;
     onClose: () => void;
     onSaved?: () => void;
+    /** Affichage LECTURE SEULE (contenu d'archive) : édition et sauvegarde désactivées. */
+    readonly?: boolean;
   } = $props();
 
   let host: HTMLDivElement;
@@ -112,6 +115,7 @@
         ]),
         lang.ext,
         oneDark,
+        ...(readonly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
         wrapComp.of([]),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) dirty = true;
@@ -212,24 +216,32 @@
   <div class="bar">
     <div class="left">
       <span class="fname">{name}</span>
-      {#if dirty}<span class="dirtydot" title={t('sftp.unsaved')}></span>{/if}
+      {#if readonly}
+        <span class="lang ro">{t('sftp.readonly')}</span>
+      {:else if dirty}
+        <span class="dirtydot" title={t('sftp.unsaved')}></span>
+      {/if}
       <span class="lang">{lang.label}</span>
     </div>
 
     <div class="tools">
-      {#if lang.isJson}
-        <button class="tool" onclick={format}>{t('sftp.format')}</button>
-        <button class="tool" onclick={minify}>{t('sftp.minify')}</button>
-        <span class="vsep"></span>
+      {#if !readonly}
+        {#if lang.isJson}
+          <button class="tool" onclick={format}>{t('sftp.format')}</button>
+          <button class="tool" onclick={minify}>{t('sftp.minify')}</button>
+          <span class="vsep"></span>
+        {/if}
+        <button class="tool" onclick={compact}>{t('sftp.compact')}</button>
       {/if}
-      <button class="tool" onclick={compact}>{t('sftp.compact')}</button>
       <button class="tool" class:on={wrap} onclick={toggleWrap}>{t('sftp.wrap')}</button>
     </div>
 
     <div class="grow"></div>
 
     {#if message}<span class="msg" class:err={msgKind === 'err'}>{message}</span>{/if}
-    <button class="save" onclick={save} disabled={saving || !dirty}>{saving ? '…' : t('sftp.save')}</button>
+    {#if !readonly}
+      <button class="save" onclick={save} disabled={saving || !dirty}>{saving ? '…' : t('sftp.save')}</button>
+    {/if}
     <button class="close" onclick={onClose} title={t('common.close')}><Icon name="x" size={16} /></button>
   </div>
 
@@ -286,6 +298,10 @@
     border-radius: 6px;
     padding: 3px 9px;
     flex: none;
+  }
+  .lang.ro {
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--text) 10%, transparent);
   }
   .tools {
     display: flex;

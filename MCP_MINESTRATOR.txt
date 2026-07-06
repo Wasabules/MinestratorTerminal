@@ -1,0 +1,306 @@
+# Connecter votre IA à MineStrator (serveur MCP)
+
+---
+
+## 1. C'est quoi ?
+
+MineStrator expose un **serveur MCP** (Model Context Protocol) : le standard ouvert qui permet
+aux assistants IA (Claude Code, Cursor, et tout client compatible MCP) de **gérer vos serveurs
+de jeu à votre place**, avec votre autorisation.
+
+Concrètement, une fois connectée, votre IA peut :
+
+- **Diagnostiquer** : état temps réel, logs console, événements (crashs, OOM, disque plein),
+  historique de consommation CPU/RAM — « pourquoi mon serveur lag depuis hier ? »
+- **Gérer les fichiers** : lire/éditer les configs (`server.properties`, YAML de plugins…),
+  chercher, déplacer, archiver (.zip), extraire.
+- **Agir** : démarrer/arrêter/redémarrer, commandes console, modération de joueurs
+  (kick/ban/whitelist/op).
+- **Installer du contenu** : versions Minecraft (Vanilla/Paper/Forge/NeoForge/Fabric…),
+  plugins, mods, modpacks, mondes, datapacks — avec sélection de versions **compatibles**
+  (catalogues Spigot, Modrinth, CurseForge), mods Hytale, mods Steam Workshop.
+- **Sauvegarder / restaurer** : snapshots à la demande, smartbackups quotidiens, suivi des jobs.
+- **Administrer la MyBox** : créer/supprimer/redimensionner des serveurs, activer/désactiver,
+  adresses en `.minesr.com` / `.mine.fun`, ports supplémentaires, tâches planifiées (cron),
+  bases de données (MyBox classiques).
+
+60 outils, 9 familles. L'IA reçoit pour chaque outil un mode d'emploi précis (quand l'utiliser,
+quoi vérifier avant, ce qui est destructif) — en français.
+
+**URL du serveur** : `https://mcp.sttr.io/minestrator`
+
+---
+
+## 2. Prérequis : votre clé API
+
+1. Panel MineStrator → **Compte → Clés API** → créer une clé.
+2. La clé affichée par le panel est **directement au bon format** : copiez-la telle quelle
+   dans l'en-tête `Authorization: Bearer` — **aucun encodage à faire**.
+
+⚠️ Ne transformez pas la clé (pas de ré-encodage base64 ou autre) : elle est déjà prête à
+l'emploi — une clé ré-encodée est refusée (« clé invalide »).
+
+⚠️ **Cette clé donne accès à votre compte** (mêmes droits que vous sur vos serveurs, ou que les
+permissions du sous-compte qui l'a créée). Traitez-la comme un mot de passe. Elle est révocable
+à tout moment depuis le panel.
+
+---
+
+## 3. Connexion par client
+
+> Conseil transverse : collez la **valeur littérale** de la clé, telle qu'affichée par le
+> panel, dans les commandes/configs. Toute interpolation shell du type `$(...)` à l'intérieur
+> d'une commande d'ajout peut produire silencieusement un en-tête vide → erreur « clé invalide »
+> incompréhensible (dans ce cas : supprimer le serveur MCP et le ré-ajouter proprement).
+
+### Claude Code (CLI)
+
+```bash
+claude mcp add --transport http minestrator https://mcp.sttr.io/minestrator \
+  --header "Authorization: Bearer VOTRE_CLE_API"
+```
+
+Puis dans une session : `/mcp` pour vérifier la connexion. Les outils apparaissent sous
+`mcp__minestrator__*`.
+
+### Cursor
+
+Fichier `~/.cursor/mcp.json` (global) ou `.cursor/mcp.json` (projet) :
+
+```json
+{
+  "mcpServers": {
+    "minestrator": {
+      "url": "https://mcp.sttr.io/minestrator",
+      "headers": { "Authorization": "Bearer VOTRE_CLE_API" }
+    }
+  }
+}
+```
+
+### Autres clients MCP (transport HTTP « streamable »)
+
+Tout client supportant le transport **Streamable HTTP** avec en-têtes personnalisés fonctionne :
+URL `https://mcp.sttr.io/minestrator` + en-tête `Authorization: Bearer <clé API>`.
+Pour les clients limités à stdio, le pont `mcp-remote` fonctionne (usage avancé, non supporté
+officiellement) :
+
+```json
+{
+  "mcpServers": {
+    "minestrator": {
+      "command": "npx",
+      "args": ["mcp-remote", "https://mcp.sttr.io/minestrator",
+               "--header", "Authorization: Bearer VOTRE_CLE_API"]
+    }
+  }
+}
+```
+
+### Connecteurs claude.ai (web) / intégrations OAuth
+
+Pas encore disponibles — les connecteurs web exigent OAuth 2.1, prévu dans une prochaine
+itération. En attendant : Claude Code, Cursor, ou tout client acceptant un en-tête personnalisé.
+
+---
+
+## 4. Limiter ce que l'IA peut faire (toolsets & mode lecture seule)
+
+### Mode lecture seule
+
+Pour donner à une IA un accès **observation uniquement** (diagnostic, monitoring, lecture de
+fichiers et de logs — aucune modification possible), ajoutez `?readonly=1` à l'URL :
+
+```
+https://mcp.sttr.io/minestrator?readonly=1
+```
+
+Seuls les 24 outils de lecture sont alors exposés. Les outils modifiants (power, écriture de
+fichiers, installations, suppressions…) ne sont pas simplement masqués : ils n'existent pas
+pour cette connexion, même appelés directement. Cumulable avec `?toolsets=`
+(ex. `?toolsets=core,files&readonly=1`).
+
+### Toolsets
+
+Par défaut, les 60 outils sont exposés. Pour restreindre par domaine, ajoutez `?toolsets=` à l'URL :
+
+```
+https://mcp.sttr.io/minestrator?toolsets=core,files
+```
+
+| Toolset | Contenu |
+|---|---|
+| `core` | compte, liste des serveurs, diagnostic, monitoring, maintenances infra |
+| `files` | fichiers (lecture/écriture/recherche/archives/déplacements) |
+| `actions` | power, commandes console, modération joueurs |
+| `content` | versions, plugins, mods, modpacks, mondes, datapacks (recherche + install) |
+| `backups` | snapshots, smartbackups, jobs de sauvegarde/restauration |
+| `mybox` | fiche MyBox, création/suppression/resize/enable de serveurs |
+| `schedules` | tâches planifiées (cron) |
+| `databases` | bases de données MySQL/MariaDB (MyBox classiques) |
+| `config` | adresse du serveur, démarrage (jar/params), Java/Docker, ports |
+
+Exemple lecture seule stricte : `?readonly=1`. Exemple sans actions destructives de
+box : tout sauf `mybox`. Un toolset ou une valeur `readonly` inconnus → erreur 400 explicite.
+
+---
+
+## 5. Catalogue des 60 outils
+
+`✎` = outil **modifiant** (absent du catalogue en mode lecture seule `?readonly=1`).
+Les 24 outils sans `✎` sont en lecture pure.
+
+### `core` — compte, monitoring, diagnostic (10)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `get_account` | | Infos du compte (pseudo, e-mail, langue, crédits, MyBox actives). Premier appel pour valider la clé. |
+| `list_servers` | | Toutes vos MyBox et serveurs (IDs, jeux, états, ressources) — le point d'entrée. |
+| `get_server` | | Fiche complète d'un serveur : configuration, ressources, adresse, version, ports. |
+| `get_server_live` | | État temps réel (en ligne/démarrage/éteint), CPU, RAM, disque, joueurs connectés. |
+| `diagnose_server` | | Diagnostic agrégé en un appel : fiche + état live + événements récents + disque. |
+| `get_console_logs` | | Les 100 dernières lignes de la console. |
+| `get_server_activity` | | Journal d'activité : actions utilisateur + événements système (crash, OOM, disque plein). |
+| `get_server_stats_history` | | Historique de consommation CPU/RAM sur une période. |
+| `get_disk_usage` | | Espace disque utilisé/disponible et plus gros dossiers. |
+| `list_tasks` | | Maintenances d'infrastructure en cours ou annoncées concernant vos serveurs. |
+
+### `files` — fichiers (8)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `list_files` | | Contenu d'un répertoire. |
+| `read_file` | | Lit un fichier texte (configs, logs…). |
+| `search_files` | | Recherche de fichiers par nom sur tout le serveur. |
+| `write_file` | ✎ | Crée ou remplace un fichier texte (workflow : lire d'abord, écrire ensuite). |
+| `delete_files` | ✎ | Supprime fichiers/dossiers (confirmation demandée). |
+| `move_files` | ✎ | Déplace ou renomme des fichiers/dossiers. |
+| `compress_files` | ✎ | Archive des fichiers en `.zip`. |
+| `extract_archive` | ✎ | Extrait une archive (zip, tar.gz) présente sur le serveur. |
+
+### `actions` — power, console, modération (3)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `power_action` | ✎ | start / stop / restart / kill. |
+| `send_console_command` | ✎ | Commande console brute (avec vérification que le serveur est en ligne). |
+| `manage_player` | ✎ | Modération : kick, ban, unban, op, whitelist. |
+
+### `content` — versions, plugins, mods, mondes (12)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `search_game_content` | | Recherche dans les catalogues : versions Minecraft, plugins (Spigot/Modrinth), mods (Modrinth/CurseForge), modpacks, mods Hytale, mondes, datapacks. |
+| `get_content_files` | | Versions/fichiers installables d'un contenu — pour choisir une version **compatible** avant d'installer. |
+| `install_plugin` | ✎ | Installe un plugin (Spigot ou Modrinth). |
+| `install_mod` | ✎ | Installe un mod (Modrinth, CurseForge, ou CurseForge Hytale). |
+| `install_modpack` | ✎ | Installe un modpack CurseForge complet. |
+| `install_world` | ✎ | Installe un monde/map CurseForge. |
+| `install_datapack` | ✎ | Installe un datapack dans le monde actif. |
+| `list_datapacks` | | Datapacks installés dans le monde actif. |
+| `change_version` | ✎ | Change la version Minecraft (Vanilla/Spigot/Paper + Forge/NeoForge/Fabric). |
+| `manage_worlds` | ✎ | Liste les mondes et définit le monde actif. |
+| `manage_hytale_mods` | ✎ | Mods d'un serveur Hytale : lister, activer/désactiver, supprimer. |
+| `manage_steamworkshop_mods` | ✎ | Mods Steam Workshop des jeux Steam compatibles (lecture + mise à jour des variables). |
+
+### `backups` — sauvegardes (7)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `list_smartbackups` | | Sauvegardes automatiques quotidiennes (+ lien de téléchargement). |
+| `list_snapshots` | | Snapshots créés à la demande. |
+| `create_snapshot` | ✎ | Crée un snapshot — le réflexe AVANT toute opération risquée. |
+| `restore_smartbackup` | ✎ | Restaure une sauvegarde automatique (confirmation demandée). |
+| `restore_snapshot` | ✎ | Restaure un snapshot (confirmation demandée). |
+| `delete_snapshot` | ✎ | Supprime un snapshot (libérer le quota). |
+| `get_backup_job_status` | | Suivi d'un job de sauvegarde/restauration. |
+
+### `mybox` — gestion de la box et des serveurs (6)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `get_mybox` | | Ressources totales/allouées/libres, serveurs hébergés, accès des bases de données. |
+| `get_server_catalog` | | Jeux installables et localisations disponibles (référentiel de création). |
+| `create_server_on_mybox` | ✎ | Crée un serveur de jeu sur la MyBox. |
+| `update_server_resources` | ✎ | Redimensionne CPU/RAM d'un serveur. |
+| `enable_disable_server` | ✎ | Active/désactive un serveur (libère ses ressources sans rien supprimer). |
+| `delete_server_from_mybox` | ✎ | Supprime un serveur — en 2 étapes, avec snapshot de sécurité préalable. |
+
+### `schedules` — tâches planifiées (4)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `list_schedules` | | Plannings d'un serveur (et détail de leurs tâches). |
+| `create_schedule` | ✎ | Crée un planning cron + ses tâches (commandes, actions power, délais). |
+| `edit_schedule` | ✎ | Modifie horaire, nom, état ou tâches d'un planning. |
+| `delete_schedule` | ✎ | Supprime un planning. |
+
+### `databases` — bases de données (4)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `create_database` | ✎ | Crée une base MySQL/MariaDB sur la MyBox. |
+| `list_db_backups` | | Sauvegardes automatiques d'une base (+ lien de téléchargement d'un dump). |
+| `restore_db_backup` | ✎ | Restaure une base à une date (confirmation demandée). |
+| `manage_database` | ✎ | Régénère le mot de passe ou change la description d'une base. |
+
+### `config` — adresse, démarrage, Java, ports (6)
+
+| Outil | | Ce qu'il fait |
+|---|---|---|
+| `set_server_address` | ✎ | Adresse en lettres : `<nom>.minesr.com` ou `<nom>.mine.fun`. |
+| `get_startup_config` | | Commande de démarrage actuelle, fichier exécuté, exécutables disponibles. |
+| `set_startup_config` | ✎ | Modifie la commande de démarrage et/ou le fichier exécuté. |
+| `manage_java` | ✎ | Environnement Java d'un serveur Minecraft : lecture + changement de version Java, image Docker, réserve mémoire. |
+| `manage_ports` | ✎ | Ports supplémentaires : ajout (auto ou choisi), suppression, port principal. |
+| `rename_resource` | ✎ | Renomme un serveur ou une MyBox (nom d'affichage). |
+
+---
+
+## 6. Sécurité — ce qu'il faut savoir
+
+- **Vos permissions s'appliquent toujours** : le serveur MCP transmet votre clé à l'API
+  MineStrator telle quelle — un sous-compte n'a que ses permissions, le rate-limiting et la
+  journalisation d'activité (avec votre IP réelle) restent actifs. Le serveur MCP ne stocke
+  rien : aucune session, aucune clé conservée.
+- **Garde-fous intégrés** : les opérations destructives (suppression de serveur, restauration,
+  reset de mot de passe DB…) demandent à l'IA de reformuler la conséquence et d'obtenir votre
+  confirmation explicite ; la suppression d'un serveur impose un snapshot de sécurité préalable
+  (2 étapes) ; les refus volontaires sont explicites (« ⛔ Refus : … »).
+- **Anti-injection** : tout contenu provenant du jeu (console, fichiers, noms saisis par des
+  joueurs) est balisé « données non fiables » — l'IA a pour consigne de ne jamais l'interpréter
+  comme des instructions.
+- **À savoir** : l'IA peut lire vos **accès complets de bases de données et SFTP** (c'est voulu
+  — nécessaire pour configurer un plugin, par exemple). Si vous ne le souhaitez pas, excluez
+  les toolsets `databases`/`core` ou utilisez une clé d'un sous-compte restreint.
+- En cas de doute, **révoquez la clé** depuis le panel : effet immédiat (≤ 60 s).
+
+---
+
+## 7. Exemples de prompts
+
+- « Diagnostique mon serveur Motus — il lag depuis hier soir. »
+- « Installe EssentialsX sur mon serveur Paper, version compatible. »
+- « Passe mon serveur en 1.21.4 Fabric et installe Fabric API — fais un snapshot avant. »
+- « Crée un redémarrage quotidien à 4 h avec un préavis d'une minute aux joueurs. »
+- « Pourquoi mon serveur ne démarre plus ? Regarde la console et corrige. »
+- « Crée une base MariaDB pour CoreProtect et configure le plugin avec. »
+- « Ban le joueur X et ajoute Y à la whitelist. »
+
+---
+
+## 8. FAQ / dépannage
+
+| Symptôme | Cause probable | Solution |
+|---|---|---|
+| « Clé API invalide ou révoquée » | Clé tronquée/modifiée à la copie, ré-encodée à tort, ou en-tête vide (interpolation shell) | Recopier la clé exactement telle qu'affichée sur le panel, supprimer puis ré-ajouter le serveur MCP |
+| 401 dès la connexion | En-tête `Authorization` absent | Vérifier la config du client (headers) |
+| « Limite de requêtes atteinte » | Rate-limit API (fenêtre 60 s, par endpoint) | L'IA doit attendre ~60 s ; éviter les boucles de polling |
+| Un nouvel outil n'apparaît pas | Catalogue chargé à la connexion | Reconnecter le serveur MCP (`/mcp` dans Claude Code) ou redémarrer la session |
+| « Votre offre n'inclut pas de base de données » | Offres Pro : pas de DB incluse (choix produit) | Les bases de données sont disponibles sur les MyBox classiques |
+| L'IA refuse d'écrire un `.jar` | Édition réservée aux fichiers texte | Installer les binaires via les outils d'installation (mods/plugins) ou par SFTP |
+
+Le service est **inclus** dans votre offre MineStrator — les limites usuelles de l'API
+s'appliquent.
+
+---

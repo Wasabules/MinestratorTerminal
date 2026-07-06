@@ -105,6 +105,9 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "read_console",
     "list_files",
     "read_file",
+    "read_gz",
+    "list_archive",
+    "read_archive_entry",
     "read_startup",
     "list_installed_mods",
     "list_installed_plugins",
@@ -140,6 +143,25 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
 pub(crate) fn is_write_tool(name: &str) -> bool {
     !READ_TOOLS.contains(&name)
 }
+
+/// Sous-ensemble que NOTRE MCP conserve quand le **MCP officiel** prend en charge la gestion : le
+/// SFTP fin + nos outils EXCLUSIFS (absents de l'officiel). Tout le reste (serveurs, power, console,
+/// joueurs, market, backups, démarrage) est alors délégué à l'officiel → pas de doublon pour l'IA.
+pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
+    "list_files",
+    "read_file",
+    "read_gz",
+    "list_archive",
+    "read_archive_entry",
+    "write_file",
+    "create_dir",
+    "delete_path",
+    "rename_path",
+    "inspect_region",
+    "diagnose_startup",
+    "analyze_performance",
+    "parse_spark_report",
+];
 
 // --- tools/call -----------------------------------------------------------
 
@@ -322,6 +344,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "list_backups" | "list_snapshots" => 30,
         // Inspection d'une région .mca : télécharge le fichier → on évite de le re-télécharger.
         "inspect_region" => 30,
+        // Archives / gz : téléchargent + décompressent → on évite de re-télécharger dans la foulée.
+        "list_archive" | "read_archive_entry" | "read_gz" => 30,
         // Config / fichiers / arborescence : purgés après toute écriture, donc sûrs à cacher un instant.
         "list_files" | "read_file" | "read_startup" => 15,
         "list_servers" => 10,
@@ -398,6 +422,26 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             // Anonymisation en sortie : un fichier de config peut contenir des secrets (rcon.password,
             // tokens DB/Discord…) — ils ne doivent pas partir en clair vers le LLM.
             Ok(core.redact_ai(&core.sftp_read_text(id, &path).await.map_err(es)?))
+        }
+
+        "read_gz" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = req_str(&args, "path")?;
+            // Log/texte gzippé (ex. rotation `latest.log.gz`) → décompressé + anonymisé.
+            Ok(core.redact_ai(&core.sftp_gz_text(id, &path).await.map_err(es)?))
+        }
+
+        "list_archive" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = req_str(&args, "path")?;
+            json_pretty(&core.sftp_archive_list(id, &path).await.map_err(es)?)
+        }
+
+        "read_archive_entry" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = req_str(&args, "path")?;
+            let entry = req_str(&args, "entry")?;
+            Ok(core.redact_ai(&core.sftp_archive_read_text(id, &path, &entry).await.map_err(es)?))
         }
 
         "write_file" => {
@@ -603,6 +647,9 @@ fn build_tool_list() -> Value {
         tool("player_action", "Modération Minecraft. `action` ∈ kick|ban|unban|op_add|op_remove|whitelist_add|whitelist_remove.", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("kick|ban|unban|op_add|op_remove|whitelist_add|whitelist_remove")), ("player", prop_str("Pseudo exact"))], &["server_id", "action", "player"])),
         tool("list_files", "Liste un répertoire via SFTP (racine = `/`).", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant"))], &["server_id", "path"])),
         tool("read_file", "Lit un fichier texte via SFTP (refuse binaires / > 2 Mo).", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant"))], &["server_id", "path"])),
+        tool("read_gz", "Lit un fichier texte GZIPPÉ via SFTP en le décompressant (ex. log tourné `latest.log.gz`, `crash-report.gz`) — indispensable pour diagnostiquer sur des logs archivés. Complète read_file, qui refuse les binaires.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du .gz"))], &["server_id", "path"])),
+        tool("list_archive", "Liste les entrées d'une archive distante (`.zip` / `.tar` / `.tar.gz`) SANS l'extraire — pour repérer un fichier à inspecter dans un backup, un modpack, etc.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant de l'archive"))], &["server_id", "path"])),
+        tool("read_archive_entry", "Lit le contenu TEXTE d'UNE entrée d'archive (`.zip`/`.tar`/`.tar.gz`) sans l'extraire sur disque. `entry` = nom exact renvoyé par list_archive.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive")), ("entry", prop_str("Nom de l'entrée dans l'archive"))], &["server_id", "path", "entry"])),
         tool("write_file", "Écrit/écrase un fichier de config via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant")), ("content", prop_str("Nouveau contenu"))], &["server_id", "path", "content"])),
         tool("create_dir", "Crée un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin du nouveau dossier"))], &["server_id", "path"])),
         tool("delete_path", "Supprime un fichier ou un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin à supprimer")), ("is_dir", prop_bool("true si c'est un dossier"))], &["server_id", "path"])),

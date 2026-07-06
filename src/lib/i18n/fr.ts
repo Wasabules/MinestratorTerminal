@@ -264,6 +264,9 @@ export const fr = {
     copilotProviderAnthropic: 'Anthropic (Claude)',
     copilotProviderOpenai: 'OpenAI-compatible (GPT, Gemini, Mistral, local…)',
     copilotProviderCli: 'CLI locale (Claude Code…)',
+    useOfficialMcp: 'MCP officiel MineStrator',
+    useOfficialMcpDesc:
+      'Déléguer la gestion (power, console, joueurs, contenu, backups, MyBox, config…) au serveur MCP officiel de l’hébergeur, plus fiable. Le SFTP et les diagnostics avancés (Spark, régions, docteur) restent gérés localement. Désactivé : le Copilote n’utilise que notre catalogue local.',
     copilotCliDesc:
       'Utilise un agent en ligne de commande déjà installé et connecté sur cette machine (ex. Claude Code avec ton abonnement) — aucune clé API. Prérequis : l’outil doit être installé et authentifié (ex. « claude login »).',
     copilotCliCommand: 'Commande',
@@ -359,6 +362,14 @@ export const fr = {
   sftp: {
     upload: 'Téléverser',
     download: 'Télécharger',
+    select: 'Sélectionner',
+    selectedCount: '{n} sélectionné(s)',
+    downloadZip: 'Télécharger en .zip',
+    clearSel: 'Désélectionner',
+    readonly: 'Lecture seule',
+    transfers: 'Transferts',
+    clearDone: 'Effacer terminés',
+    noTransfers: 'Aucun transfert',
     newFolder: 'Nouveau dossier',
     newFile: 'Nouveau fichier',
     rename: 'Renommer',

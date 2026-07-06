@@ -128,6 +128,23 @@ pub struct Diagnosis {
     pub ts: i64,
 }
 
+/// Progression d'un transfert SFTP (upload / download / zip), pour le gestionnaire de transferts.
+/// `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets.
+#[derive(Debug, Clone, Serialize)]
+pub struct SftpProgress {
+    pub id: String,
+    /// Nom lisible (fichier, ou nom du .zip pour un téléchargement groupé).
+    pub name: String,
+    /// `up` (téléversement) | `down` (téléchargement).
+    pub direction: String,
+    pub done: u64,
+    pub total: u64,
+    /// `active` | `done` | `error`.
+    pub status: String,
+    /// Message si `status = error`.
+    pub error: Option<String>,
+}
+
 /// Événement métier. Les frontends font le mapping vers leur canal de sortie.
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
@@ -141,4 +158,5 @@ pub enum CoreEvent {
     CopilotProgress(CopilotProgress),
     ChatDelta(ChatDelta),
     Diagnosis(Diagnosis),
+    SftpProgress(SftpProgress),
 }

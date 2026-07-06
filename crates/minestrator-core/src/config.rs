@@ -2,6 +2,11 @@
 
 pub const API_BASE_URL: &str = "https://mine.sttr.io";
 
+/// Serveur MCP OFFICIEL de MineStrator (transport Streamable HTTP, auth `Bearer <clé API>`). Le
+/// Copilote lui délègue la GESTION (60 outils) et garde notre MCP local pour le SFTP + les outils
+/// exclusifs (`inspect_region`, Spark, docteur démarrage).
+pub const OFFICIAL_MCP_URL: &str = "https://mcp.sttr.io/minestrator";
+
 /// Origin exigé par le daemon Wings sur le handshake WebSocket (sinon 403).
 pub const WS_ORIGIN: &str = "https://minestrator.com";
 

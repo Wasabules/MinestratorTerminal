@@ -7,6 +7,7 @@
 //! Le token API est géré en interne (trousseau OS) ; les appelants n'ont jamais à le manipuler.
 
 mod api;
+mod archive;
 mod cache;
 mod cli;
 mod cli_agent;
@@ -21,6 +22,7 @@ mod llm;
 mod mca;
 pub mod mcp;
 mod models;
+mod official_mcp;
 mod perf;
 mod persist;
 mod redact;
@@ -31,12 +33,13 @@ mod supervisor;
 mod util;
 mod world;
 
+pub use archive::ArchiveEntry;
 pub use cli_agent::{detect_clis, CliAgent, CliStatus};
 pub use copilot::{Autonomy, ChatReply, CopilotConfig, Effort};
 pub use error::{Error, Result};
 pub use events::{
     Alert, ChatDelta, ConsoleConnection, ConsoleOutput, ConsoleStats, ConsoleStatus,
-    CopilotProgress, CopilotStarted, CoreEvent, Diagnosis, ProposedAction,
+    CopilotProgress, CopilotStarted, CoreEvent, Diagnosis, ProposedAction, SftpProgress,
 };
 pub use llm::Provider;
 pub use mcp::McpConfig;
@@ -651,19 +654,235 @@ impl Core {
         self.drop_on_err(id, sftp::rename(&conn, from, to).await)
     }
 
-    pub async fn sftp_upload(&self, id: i64, local: &str, remote_dir: &str) -> Result<String> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::upload(&conn, local, remote_dir).await)
+    // --- Transferts (upload / download / zip) : suivis via `CoreEvent::SftpProgress` --------------
+
+    /// Téléverse un fichier local (transfert suivi). `tid` = id de transfert fourni par le front pour
+    /// corréler les events de progression. À lancer en tâche de fond (fire-and-forget).
+    pub async fn run_sftp_upload(&self, id: i64, local: &str, remote_dir: &str, tid: &str) {
+        let name = base_name(local);
+        let tx = self.events.clone();
+        let (tid_s, name_s) = (tid.to_string(), name.clone());
+        let mut last = 0u64;
+        let mut on = move |done: u64, total: u64| {
+            if done == total || done - last >= PROGRESS_STEP {
+                last = done;
+                let _ = tx.send(CoreEvent::SftpProgress(SftpProgress {
+                    id: tid_s.clone(),
+                    name: name_s.clone(),
+                    direction: "up".into(),
+                    done,
+                    total,
+                    status: "active".into(),
+                    error: None,
+                }));
+            }
+        };
+        let res = async {
+            let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+            let r = sftp::upload(&conn, local, remote_dir, &mut on).await;
+            self.drop_on_err(id, r)
+        }
+        .await;
+        self.emit_transfer_end(tid, &name, "up", res.err());
     }
 
-    pub async fn sftp_download(&self, id: i64, remote: &str, local: &str) -> Result<()> {
+    /// Télécharge un fichier distant vers `local` (transfert suivi).
+    pub async fn run_sftp_download(&self, id: i64, remote: &str, local: &str, tid: &str) {
+        let name = base_name(remote);
+        let tx = self.events.clone();
+        let (tid_s, name_s) = (tid.to_string(), name.clone());
+        let mut last = 0u64;
+        let mut on = move |done: u64, total: u64| {
+            if done == total || done - last >= PROGRESS_STEP {
+                last = done;
+                let _ = tx.send(CoreEvent::SftpProgress(SftpProgress {
+                    id: tid_s.clone(),
+                    name: name_s.clone(),
+                    direction: "down".into(),
+                    done,
+                    total,
+                    status: "active".into(),
+                    error: None,
+                }));
+            }
+        };
+        let res = async {
+            let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+            let r = sftp::download(&conn, remote, local, &mut on).await;
+            self.drop_on_err(id, r)
+        }
+        .await;
+        self.emit_transfer_end(tid, &name, "down", res.err());
+    }
+
+    /// Télécharge une sélection (fichiers et/ou dossiers, frères sous un même parent) en UN `.zip`
+    /// local, construit côté client (SFTP récursif). Transfert suivi (progression par octets).
+    pub async fn run_sftp_download_zip(&self, id: i64, paths: Vec<String>, local_zip: &str, tid: &str) {
+        let name = base_name(local_zip);
+        let _ = self.events.send(CoreEvent::SftpProgress(SftpProgress {
+            id: tid.to_string(),
+            name: name.clone(),
+            direction: "down".into(),
+            done: 0,
+            total: 0,
+            status: "active".into(),
+            error: None,
+        }));
+        let res = self.build_zip(id, &paths, local_zip, tid, &name).await;
+        self.emit_transfer_end(tid, &name, "down", res.err());
+    }
+
+    async fn build_zip(
+        &self,
+        id: i64,
+        paths: &[String],
+        local_zip: &str,
+        tid: &str,
+        name: &str,
+    ) -> Result<()> {
+        use std::io::Write;
         let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::download(&conn, remote, local).await)
+        let parent = paths.first().map(|p| parent_dir(p)).unwrap_or_else(|| "/".to_string());
+        // Collecte des fichiers : (chemin distant complet, nom dans le zip, taille).
+        let mut items: Vec<(String, String, u64)> = Vec::new();
+        for p in paths {
+            let (is_dir, size) = self.drop_on_err(id, sftp::stat(&conn, p).await)?;
+            if is_dir {
+                for (full, sz) in self.drop_on_err(id, sftp::walk(&conn, p).await)? {
+                    let rel = rel_to(&full, &parent);
+                    items.push((full, rel, sz));
+                }
+            } else {
+                items.push((p.clone(), base_name(p), size));
+            }
+        }
+        let total: u64 = items.iter().map(|(_, _, s)| s).sum();
+        let file = std::fs::File::create(local_zip)
+            .map_err(|e| Error::Unexpected(format!("création du zip: {e}")))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        let tx = self.events.clone();
+        let mut done = 0u64;
+        for (full, rel, size) in items {
+            zip.start_file(&rel, opts).map_err(|e| Error::Unexpected(format!("zip: {e}")))?;
+            let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, &full, u64::MAX).await)?;
+            zip.write_all(&bytes).map_err(|e| Error::Unexpected(format!("zip: {e}")))?;
+            done += size;
+            let _ = tx.send(CoreEvent::SftpProgress(SftpProgress {
+                id: tid.to_string(),
+                name: name.to_string(),
+                direction: "down".into(),
+                done,
+                total,
+                status: "active".into(),
+                error: None,
+            }));
+        }
+        zip.finish().map_err(|e| Error::Unexpected(format!("zip: {e}")))?;
+        Ok(())
+    }
+
+    fn emit_transfer_end(&self, tid: &str, name: &str, dir: &str, err: Option<Error>) {
+        let (status, error) = match err {
+            Some(e) => ("error", Some(e.to_string())),
+            None => ("done", None),
+        };
+        let _ = self.events.send(CoreEvent::SftpProgress(SftpProgress {
+            id: tid.to_string(),
+            name: name.to_string(),
+            direction: dir.to_string(),
+            done: 0,
+            total: 0,
+            status: status.to_string(),
+            error,
+        }));
+    }
+
+    // --- Archives (lecture seule) : .zip / .tar / .tar.gz / .gz -----------------------------------
+
+    /// Liste les entrées d'une archive distante (.zip/.tar/.tar.gz) sans l'extraire sur disque.
+    pub async fn sftp_archive_list(&self, id: i64, path: &str) -> Result<Vec<archive::ArchiveEntry>> {
+        let kind = archive::kind_from_name(path)
+            .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        archive::list(&bytes, kind).map_err(Error::Unexpected)
+    }
+
+    /// Contenu TEXTE d'une entrée d'archive (pour l'affichage lecture seule).
+    pub async fn sftp_archive_read_text(&self, id: i64, path: &str, entry: &str) -> Result<String> {
+        let kind = archive::kind_from_name(path)
+            .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let raw = archive::extract(&bytes, kind, entry).map_err(Error::Unexpected)?;
+        String::from_utf8(raw)
+            .map_err(|_| Error::Unexpected("Entrée binaire (non affichable).".into()))
+    }
+
+    /// Contenu TEXTE d'un `.gz` seul (ex. `latest.log.gz`), décompressé.
+    pub async fn sftp_gz_text(&self, id: i64, path: &str) -> Result<String> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let raw = archive::gunzip(&bytes).map_err(Error::Unexpected)?;
+        String::from_utf8(raw)
+            .map_err(|_| Error::Unexpected("Contenu binaire (non affichable).".into()))
+    }
+
+    /// Extrait UNE entrée d'archive vers un fichier local (téléchargement d'une entrée).
+    pub async fn sftp_extract_entry(&self, id: i64, path: &str, entry: &str, local: &str) -> Result<()> {
+        let kind = archive::kind_from_name(path)
+            .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let raw = archive::extract(&bytes, kind, entry).map_err(Error::Unexpected)?;
+        tokio::fs::write(local, raw)
+            .await
+            .map_err(|e| Error::Unexpected(format!("écriture locale: {e}")))
+    }
+
+    /// Transfert simple AWAITÉ (sans progression) — usage INTERNE (world.rs : réparation `.mca`).
+    pub(crate) async fn sftp_download_file(&self, id: i64, remote: &str, local: &str) -> Result<()> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let mut noop = |_: u64, _: u64| {};
+        self.drop_on_err(id, sftp::download(&conn, remote, local, &mut noop).await)
+    }
+
+    pub(crate) async fn sftp_upload_file(&self, id: i64, local: &str, remote_dir: &str) -> Result<String> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let mut noop = |_: u64, _: u64| {};
+        self.drop_on_err(id, sftp::upload(&conn, local, remote_dir, &mut noop).await)
     }
 
     pub fn sftp_disconnect(&self, id: i64) {
         self.sftp.drop_session(id);
     }
+}
+
+/// Plafond de lecture d'une archive en mémoire pour l'ouverture virtuelle (64 Mio).
+const ARCHIVE_CAP: u64 = 64 * 1024 * 1024;
+/// Pas minimal (octets) entre deux events de progression d'un transfert (anti-spam du broadcast).
+const PROGRESS_STEP: u64 = 512 * 1024;
+
+/// Dernier segment d'un chemin distant (nom de fichier/dossier).
+fn base_name(p: &str) -> String {
+    p.trim_end_matches('/').rsplit('/').next().unwrap_or(p).to_string()
+}
+
+/// Dossier parent d'un chemin distant (`/` à la racine).
+fn parent_dir(p: &str) -> String {
+    let t = p.trim_end_matches('/');
+    match t.rfind('/') {
+        None | Some(0) => "/".to_string(),
+        Some(i) => t[..i].to_string(),
+    }
+}
+
+/// Chemin `full` rendu relatif à `parent` (nom d'entrée dans le zip).
+fn rel_to(full: &str, parent: &str) -> String {
+    let parent = parent.trim_end_matches('/');
+    full.strip_prefix(parent).unwrap_or(full).trim_start_matches('/').to_string()
 }
 
 impl Default for Core {

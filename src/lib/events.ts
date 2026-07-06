@@ -11,6 +11,7 @@ import type {
   CopilotProgress,
   CopilotStarted,
   Diagnosis,
+  SftpProgress,
 } from './types';
 
 export const alertEvents = {
@@ -39,4 +40,10 @@ export const consoleEvents = {
     listen<ConsoleStatus>('console://status', (e) => cb(e.payload)),
   connection: (cb: (p: ConsoleConnection) => void): Promise<UnlistenFn> =>
     listen<ConsoleConnection>('console://connection', (e) => cb(e.payload)),
+};
+
+export const sftpEvents = {
+  /** Progression des transferts SFTP (upload/download/zip). */
+  progress: (cb: (p: SftpProgress) => void): Promise<UnlistenFn> =>
+    listen<SftpProgress>('sftp://progress', (e) => cb(e.payload)),
 };

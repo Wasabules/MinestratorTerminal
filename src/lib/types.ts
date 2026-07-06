@@ -118,6 +118,8 @@ export interface CopilotConfig {
   effort: 'low' | 'medium' | 'high';
   /** Agent CLI (quand provider = local_cli). */
   cli_agent: 'claude_code' | 'open_code' | 'gemini';
+  /** Utiliser le MCP officiel MineStrator (gestion) en plus de notre MCP local (SFTP + exclusifs). */
+  use_official_mcp: boolean;
 }
 
 /** Disponibilité d'un agent CLI local (Réglages → Copilote). */
@@ -227,6 +229,24 @@ export interface SftpEntry {
   is_dir: boolean;
   size: number;
   modified: number | null;
+}
+
+/** Une entrée à l'intérieur d'une archive (.zip/.tar/.tar.gz), ouverture en lecture seule. */
+export interface ArchiveEntry {
+  name: string;
+  size: number;
+  is_dir: boolean;
+}
+
+/** Progression d'un transfert SFTP (event `sftp://progress`), pour le gestionnaire de transferts. */
+export interface SftpProgress {
+  id: string;
+  name: string;
+  direction: 'up' | 'down';
+  done: number;
+  total: number;
+  status: 'active' | 'done' | 'error';
+  error: string | null;
 }
 
 // --- Marketplace (mods & plugins) ---

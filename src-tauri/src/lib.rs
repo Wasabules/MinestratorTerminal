@@ -107,6 +107,11 @@ pub fn run() {
             commands::sftp_rename,
             commands::sftp_upload,
             commands::sftp_download,
+            commands::sftp_download_zip,
+            commands::sftp_archive_list,
+            commands::sftp_archive_read_text,
+            commands::sftp_gz_text,
+            commands::sftp_extract_entry,
             commands::sftp_disconnect,
             commands::get_copilot_config,
             commands::set_copilot_config,
@@ -154,6 +159,9 @@ fn forward(handle: &tauri::AppHandle, ev: CoreEvent) {
         }
         // Interne (déclencheur Copilote) : non relayé au webview.
         CoreEvent::ConsoleLog(_) => {}
+        CoreEvent::SftpProgress(p) => {
+            let _ = handle.emit("sftp://progress", p);
+        }
         CoreEvent::Alert(a) => {
             let title = if a.severity == "critical" {
                 format!("⚠ {}", a.server_name)

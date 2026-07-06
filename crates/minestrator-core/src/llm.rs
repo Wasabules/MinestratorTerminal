@@ -60,6 +60,7 @@ impl Provider {
 // --- Format normalisé ------------------------------------------------------
 
 /// Spécification d'un outil exposé au modèle (JSON Schema d'entrée).
+#[derive(Clone)]
 pub struct ToolSpec {
     pub name: String,
     pub description: String,

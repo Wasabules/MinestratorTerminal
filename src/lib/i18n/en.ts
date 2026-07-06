@@ -266,6 +266,9 @@ export const en: Dict = {
     copilotProviderAnthropic: 'Anthropic (Claude)',
     copilotProviderOpenai: 'OpenAI-compatible (GPT, Gemini, Mistral, local…)',
     copilotProviderCli: 'Local CLI (Claude Code…)',
+    useOfficialMcp: 'Official MineStrator MCP',
+    useOfficialMcpDesc:
+      'Delegate management (power, console, players, content, backups, MyBox, config…) to the host’s official MCP server — more reliable. SFTP and advanced diagnostics (Spark, regions, startup doctor) stay handled locally. Off: the Copilot only uses our local catalog.',
     copilotCliDesc:
       'Uses a command-line agent already installed and signed in on this machine (e.g. Claude Code with your subscription) — no API key. Prerequisite: the tool must be installed and authenticated (e.g. “claude login”).',
     copilotCliCommand: 'Command',
@@ -361,6 +364,14 @@ export const en: Dict = {
   sftp: {
     upload: 'Upload',
     download: 'Download',
+    select: 'Select',
+    selectedCount: '{n} selected',
+    downloadZip: 'Download as .zip',
+    clearSel: 'Clear',
+    readonly: 'Read-only',
+    transfers: 'Transfers',
+    clearDone: 'Clear finished',
+    noTransfers: 'No transfers',
     newFolder: 'New folder',
     newFile: 'New file',
     rename: 'Rename',

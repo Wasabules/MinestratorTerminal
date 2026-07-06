@@ -517,6 +517,14 @@
           </button>
         </div>
 
+        <label class="toggle-row" style="margin-top:12px">
+          <div class="tl">
+            <div class="tl-title">{t('settings.useOfficialMcp')}</div>
+            <div class="tl-desc dim">{t('settings.useOfficialMcpDesc')}</div>
+          </div>
+          <input type="checkbox" bind:checked={copilot.use_official_mcp} onchange={saveCopilot} />
+        </label>
+
         {#if copilot.provider === 'local_cli'}
           <p class="desc dim" style="margin-top:12px">{t('settings.copilotCliDesc')}</p>
 

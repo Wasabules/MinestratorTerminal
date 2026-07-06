@@ -35,6 +35,12 @@ prost = "0.13"
 thiserror = "2"
 tracing = "0.1"
 
+# Archives SFTP : ouverture .zip/.tar/.tar.gz/.gz + zip de téléchargement. Deflate PUR RUST
+# (zlib-rs / zopfli), sans dépendance système.
+flate2 = "1.1.9"
+tar = "0.4.46"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
 # Trousseau natif de l'OS (fonctionne aussi headless).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

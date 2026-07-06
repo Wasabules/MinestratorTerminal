@@ -43,13 +43,13 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (27)
+## 5. Capacités — catalogue d'outils (30)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **17 outils de lecture**
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **20 outils de lecture**
 > + **10 modifiants**.
 
 #### Découverte & état
@@ -75,6 +75,9 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 |---|---|---|---|
 | `list_files` | | `server_id`, `path` | Contenu d'un répertoire (nom, chemin, dossier/fichier, taille). |
 | `read_file` | | `server_id`, `path` | Contenu d'un fichier texte (refuse binaires / > 2 Mo). |
+| `read_gz` | | `server_id`, `path` | Contenu d'un fichier texte **gzippé**, décompressé (ex. log tourné `latest.log.gz`) — pour diagnostiquer sur des logs archivés. |
+| `list_archive` | | `server_id`, `path` | Entrées d'une archive `.zip`/`.tar`/`.tar.gz` **sans l'extraire** (repérer un fichier dans un backup/modpack). |
+| `read_archive_entry` | | `server_id`, `path`, `entry` | Contenu **texte** d'une entrée d'archive, sans extraction disque. |
 | `write_file` | ✎ | `server_id`, `path`, `content` | Écrit/écrase un fichier de config. |
 | `create_dir` | ✎ | `server_id`, `path` | Crée un dossier. |
 | `delete_path` | ✎ | `server_id`, `path`, `is_dir?` | Supprime un fichier ou un dossier. |
@@ -123,6 +126,8 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 - **Modération** : `player_action`
 - **Fichiers / config** : `list_files`, `read_file`, `write_file`, `create_dir`, `delete_path`,
   `rename_path` (lister, lire, écrire, créer un dossier, supprimer, renommer/déplacer)
+- **Logs & archives** : `read_gz` (logs gzippés tournés), `list_archive` + `read_archive_entry`
+  (fouiller un `.zip`/`.tar.gz` sans extraire) — utile pour diagnostiquer sur des logs/backups archivés
 - **Démarrage / JVM** : `read_startup`, `set_startup_params` (mémoire, GC, Aikar…)
 - **Mods & plugins** : `market_search`, `list_mod_versions`, `install_mod`, `list_installed_mods`,
   `list_installed_plugins` (chercher → choisir une version → installer ; inventaire)

@@ -2,9 +2,9 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, InstalledItem, LiveLight, MarketPage,
-    MarketVersion, McpConfig, MetricSample, PrivacyConfig, ServerDetails, ServersOverview,
-    SftpEntry, Snapshot, SupervisorConfig, UserProfile,
+    ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, InstalledItem,
+    LiveLight, MarketPage, MarketVersion, McpConfig, MetricSample, PrivacyConfig, ServerDetails,
+    ServersOverview, SftpEntry, Snapshot, SupervisorConfig, UserProfile,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -207,24 +207,88 @@ pub async fn sftp_rename(
     core.sftp_rename(server_id, &from, &to).await
 }
 
+// Les transferts sont lancés en TÂCHE DE FOND : la commande rend la main aussitôt et la
+// progression/complétion arrive via l'event `sftp://progress` (corrélé par `transfer_id`).
 #[tauri::command]
-pub async fn sftp_upload(
+pub fn sftp_upload(
     core: State<'_, Arc<Core>>,
     server_id: i64,
     local_path: String,
     remote_dir: String,
-) -> Result<String, Error> {
-    core.sftp_upload(server_id, &local_path, &remote_dir).await
+    transfer_id: String,
+) {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        core.run_sftp_upload(server_id, &local_path, &remote_dir, &transfer_id).await;
+    });
 }
 
 #[tauri::command]
-pub async fn sftp_download(
+pub fn sftp_download(
     core: State<'_, Arc<Core>>,
     server_id: i64,
     remote_path: String,
     local_path: String,
+    transfer_id: String,
+) {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        core.run_sftp_download(server_id, &remote_path, &local_path, &transfer_id).await;
+    });
+}
+
+/// Télécharge une sélection (fichiers/dossiers) en UN `.zip` local, en tâche de fond.
+#[tauri::command]
+pub fn sftp_download_zip(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    paths: Vec<String>,
+    local_zip: String,
+    transfer_id: String,
+) {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        core.run_sftp_download_zip(server_id, paths, &local_zip, &transfer_id).await;
+    });
+}
+
+#[tauri::command]
+pub async fn sftp_archive_list(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<Vec<ArchiveEntry>, Error> {
+    core.sftp_archive_list(server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_archive_read_text(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    entry: String,
+) -> Result<String, Error> {
+    core.sftp_archive_read_text(server_id, &path, &entry).await
+}
+
+#[tauri::command]
+pub async fn sftp_gz_text(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_gz_text(server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_extract_entry(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    entry: String,
+    local_path: String,
 ) -> Result<(), Error> {
-    core.sftp_download(server_id, &remote_path, &local_path).await
+    core.sftp_extract_entry(server_id, &path, &entry, &local_path).await
 }
 
 #[tauri::command]
