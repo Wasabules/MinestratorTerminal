@@ -77,64 +77,120 @@
       else if (di !== null) tabs.moveTo(d.id, di);
     }
   }
+
+  // Regroupe les onglets ADJACENTS du même serveur (visuel seul ; l'ordre à plat est conservé, donc
+  // drag/fermeture/détachement inchangés). Chaque entrée garde son index à plat (pour `drop-before`).
+  type Entry = { tab: Tab; index: number };
+  type Unit =
+    | { type: 'solo'; entry: Entry }
+    | { type: 'group'; serverId: number; serverName: string; entries: { tab: ServerTab; index: number }[] };
+  const units = $derived.by(() => {
+    const out: Unit[] = [];
+    tabs.tabs.forEach((tab, index) => {
+      const last = out[out.length - 1];
+      if (tab.kind === 'server') {
+        if (last?.type === 'group' && last.serverId === tab.serverId) {
+          last.entries.push({ tab, index });
+          return;
+        }
+        if (last?.type === 'solo' && last.entry.tab.kind === 'server' && last.entry.tab.serverId === tab.serverId) {
+          out[out.length - 1] = {
+            type: 'group',
+            serverId: tab.serverId,
+            serverName: tab.serverName,
+            entries: [{ tab: last.entry.tab, index: last.entry.index }, { tab, index }],
+          };
+          return;
+        }
+      }
+      out.push({ type: 'solo', entry: { tab, index } });
+    });
+    return out;
+  });
 </script>
 
-<div class="tabbar" role="tablist" bind:this={bar}>
-  {#each tabs.tabs as tab, i (tab.id)}
-    <div
-      class="tab"
-      class:active={tab.id === tabs.activeId}
-      class:drop-before={drag?.moved && dropIndex === i}
-      class:dragging={drag?.moved && drag?.id === tab.id}
+{#snippet tabEl(tab: Tab, index: number, grouped: boolean)}
+  <div
+    class="tab"
+    class:active={tab.id === tabs.activeId}
+    class:drop-before={drag?.moved && dropIndex === index}
+    class:dragging={drag?.moved && drag?.id === tab.id}
+    class:grouped
+  >
+    {#if !grouped && tab.kind === 'server' && serverColor(tab.serverId)}
+      <span class="cstripe" style="background: {serverColor(tab.serverId)}"></span>
+    {/if}
+    <button
+      class="tab-main"
+      role="tab"
+      aria-selected={tab.id === tabs.activeId}
+      onpointerdown={(e) => onPointerDown(e, tab)}
+      onpointermove={onPointerMove}
+      onpointerup={(e) => void onPointerUp(e, tab)}
+      oncontextmenu={(e) => {
+        if (tab.kind === 'server') openMenu(e, tab);
+      }}
+      title={tab.kind === 'server'
+        ? `${tab.serverName} · ${t(`view.${tab.view}`)}`
+        : tab.kind === 'settings'
+          ? t('settings.title')
+          : tab.kind === 'copilot'
+            ? t('copilot.title')
+            : t('common.home')}
     >
-      {#if tab.kind === 'server' && serverColor(tab.serverId)}
-        <span class="cstripe" style="background: {serverColor(tab.serverId)}"></span>
-      {/if}
-      <button
-        class="tab-main"
-        role="tab"
-        aria-selected={tab.id === tabs.activeId}
-        onpointerdown={(e) => onPointerDown(e, tab)}
-        onpointermove={onPointerMove}
-        onpointerup={(e) => void onPointerUp(e, tab)}
-        oncontextmenu={(e) => {
-          if (tab.kind === 'server') openMenu(e, tab);
-        }}
-        title={tab.kind === 'server'
-          ? `${tab.serverName} · ${t(`view.${tab.view}`)}`
-          : tab.kind === 'settings'
-            ? t('settings.title')
-            : tab.kind === 'copilot'
-              ? t('copilot.title')
-              : t('common.home')}
-      >
-        {#if tab.kind === 'home'}
-          <span class="glyph"><Icon name="home" size={15} /></span>
-          <span class="name">{t('common.home')}</span>
-        {:else if tab.kind === 'settings'}
-          <span class="glyph"><Icon name="settings" size={15} /></span>
-          <span class="name">{t('settings.title')}</span>
-        {:else if tab.kind === 'copilot'}
-          <span class="glyph"><Icon name="activity" size={15} /></span>
-          <span class="name">{t('copilot.title')}</span>
+      {#if tab.kind === 'home'}
+        <span class="glyph"><Icon name="home" size={15} /></span>
+        <span class="name">{t('common.home')}</span>
+      {:else if tab.kind === 'settings'}
+        <span class="glyph"><Icon name="settings" size={15} /></span>
+        <span class="name">{t('settings.title')}</span>
+      {:else if tab.kind === 'copilot'}
+        <span class="glyph"><Icon name="activity" size={15} /></span>
+        <span class="name">{t('copilot.title')}</span>
+      {:else}
+        {@const rt = serverRuntime(tab.serverId)}
+        <span class="glyph">
+          <Icon name={viewMeta(tab.view).icon} size={15} />
+          <span
+            class="sbadge"
+            style="--sc: {rt ? runtimeMeta(rt).color : 'var(--text-dim)'}"
+            title={t(`status.${rt ? runtimeMeta(rt).key : 'offline'}`)}
+          ></span>
+        </span>
+        {#if grouped}
+          <span class="name">{t(`view.${tab.view}`)}</span>
         {:else}
-          {@const rt = serverRuntime(tab.serverId)}
-          <span class="glyph">
-            <Icon name={viewMeta(tab.view).icon} size={15} />
-            <span
-              class="sbadge"
-              style="--sc: {rt ? runtimeMeta(rt).color : 'var(--text-dim)'}"
-              title={t(`status.${rt ? runtimeMeta(rt).key : 'offline'}`)}
-            ></span>
-          </span>
           <span class="name">{tab.serverName}</span>
           <span class="view">{t(`view.${tab.view}`)}</span>
         {/if}
-      </button>
-      {#if tab.kind !== 'home'}
-        <button class="tab-close" title={t('tab.close')} onclick={() => tabs.close(tab.id)}>×</button>
       {/if}
-    </div>
+    </button>
+    {#if tab.kind !== 'home'}
+      <button class="tab-close" title={t('tab.close')} onclick={() => tabs.close(tab.id)}>×</button>
+    {/if}
+  </div>
+{/snippet}
+
+<div class="tabbar" role="tablist" bind:this={bar}>
+  {#each units as unit (unit.type === 'group' ? `g${unit.entries[0].tab.id}` : unit.entry.tab.id)}
+    {#if unit.type === 'group'}
+      {@const gcolor = serverColor(unit.serverId)}
+      <div class="tgroup" class:colored={!!gcolor}>
+        {#if gcolor}<span class="cstripe gstripe" style="background: {gcolor}"></span>{/if}
+        <button
+          class="tchip"
+          style={gcolor ? `background: color-mix(in srgb, ${gcolor} 22%, var(--surface))` : ''}
+          title={unit.serverName}
+          onclick={() => tabs.activate(unit.entries[0].tab.id)}
+          oncontextmenu={(e) => openMenu(e, unit.entries[0].tab)}
+        >{unit.serverName}</button>
+        {#each unit.entries as e (e.tab.id)}
+          {@render tabEl(e.tab, e.index, true)}
+        {/each}
+      </div>
+    {:else}
+      {@render tabEl(unit.entry.tab, unit.entry.index, false)}
+    {/if}
   {/each}
   {#if drag?.moved && dropIndex === tabs.tabs.length}
     <span class="drop-end"></span>
@@ -253,6 +309,49 @@
     border-radius: var(--radius) var(--radius) 0 0;
     pointer-events: none;
     z-index: 1;
+  }
+
+  /* --- Groupe d'onglets d'un même serveur (adjacents) --- */
+  .tgroup {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+    flex: 0 0 auto;
+  }
+  .tchip {
+    display: flex;
+    align-items: center;
+    max-width: 150px;
+    background: var(--elevated);
+    border: none;
+    border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+    border-radius: var(--radius) 0 0 0;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex: none;
+  }
+  .tchip:hover {
+    color: var(--text);
+  }
+  .gstripe {
+    z-index: 2; /* au-dessus du chip + des onglets du groupe */
+  }
+  /* Onglets DANS un groupe : collés, arrondi seulement au dernier, séparateur fin entre eux. */
+  .tgroup .tab {
+    border-radius: 0;
+  }
+  .tgroup .tab:last-child {
+    border-radius: 0 var(--radius) 0 0;
+  }
+  .tgroup .tab + .tab {
+    border-left: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   }
   .glyph {
     display: inline-flex;
