@@ -47,21 +47,40 @@
     'worldborder', 'xp',
     'plugins', 'pl', 'version', 'ver', 'tps', 'mspt', 'spark', 'timings', 'restart',
   ];
+  // Commandes dont le 1er argument est un joueur → complétion par les joueurs connectés.
+  const PLAYER_CMDS = new Set([
+    'op', 'deop', 'kick', 'ban', 'ban-ip', 'pardon', 'pardon-ip', 'tp', 'teleport',
+    'tell', 'msg', 'w', 'kill', 'spectate', 'give',
+  ]);
+  let onlinePlayers = $state<string[]>([]); // alimenté par l'API (refreshPlayers)
   let sugIndex = $state(-1);
   let sugDismissed = $state(false);
   const suggestions = $derived.by(() => {
-    if (!command || command.includes(' ')) return []; // 1er mot uniquement
-    const lc = command.toLowerCase();
-    const hist = history.map((h) => h.split(' ')[0]);
-    return [...new Set([...MC_COMMANDS, ...hist])]
-      .filter((x) => x.toLowerCase().startsWith(lc) && x.toLowerCase() !== lc)
-      .slice(0, 8);
+    const parts = command.split(' ');
+    const frag = (parts[parts.length - 1] ?? '').toLowerCase();
+    if (parts.length === 1) {
+      // 1er mot : nom de commande (catalogue MC + historique)
+      if (!frag) return [];
+      const hist = history.map((h) => h.split(' ')[0]);
+      return [...new Set([...MC_COMMANDS, ...hist])]
+        .filter((x) => x.toLowerCase().startsWith(frag) && x.toLowerCase() !== frag)
+        .slice(0, 8);
+    }
+    // 1er argument d'une commande « joueur » : joueurs connectés (frag vide = tous)
+    if (parts.length === 2 && PLAYER_CMDS.has(parts[0].toLowerCase())) {
+      return onlinePlayers
+        .filter((p) => p.toLowerCase().startsWith(frag) && p.toLowerCase() !== frag)
+        .slice(0, 8);
+    }
+    return [];
   });
   const showSug = $derived(suggestions.length > 0 && !sugDismissed);
   function applySuggestion(i: number) {
     const s = suggestions[i];
     if (s == null) return;
-    command = `${s} `; // complète + espace pour enchaîner les arguments
+    const parts = command.split(' ');
+    parts[parts.length - 1] = s; // remplace le mot en cours (commande OU joueur)
+    command = `${parts.join(' ')} `;
     sugIndex = -1;
   }
 
@@ -100,6 +119,26 @@
     if (buffer.length > MAX_BUFFER) buffer.shift();
     if (passes(line)) term?.writeln(line);
   }
+
+  // Joueurs connectés via l'API (server_details.players.list) — fiable, contrairement à un parse
+  // console. Rafraîchi à la demande (throttle 8 s) quand on saisit l'argument d'une commande « joueur ».
+  let lastPlayerFetch = 0;
+  async function refreshPlayers() {
+    lastPlayerFetch = Date.now();
+    try {
+      const live = await api.liveLight(serverId);
+      onlinePlayers = live.players?.list ?? [];
+    } catch {
+      /* indisponible (serveur hors-ligne, etc.) */
+    }
+  }
+  function maybeRefreshPlayers() {
+    const parts = command.split(' ');
+    if (parts.length >= 2 && PLAYER_CMDS.has(parts[0].toLowerCase()) && Date.now() - lastPlayerFetch > 8000) {
+      void refreshPlayers();
+    }
+  }
+
   function rerender() {
     if (!term) return;
     term.clear();
@@ -113,6 +152,7 @@
   let destroyed = false;
   onMount(() => {
     init();
+    void refreshPlayers();
   });
   onDestroy(() => {
     destroyed = true;
@@ -340,7 +380,7 @@
       class="cmd"
       bind:value={command}
       onkeydown={onKey}
-      oninput={() => { sugDismissed = false; sugIndex = -1; }}
+      oninput={() => { sugDismissed = false; sugIndex = -1; maybeRefreshPlayers(); }}
       placeholder={t('console.placeholder')}
       spellcheck="false"
       autocomplete="off"
