@@ -87,6 +87,9 @@
       class:drop-before={drag?.moved && dropIndex === i}
       class:dragging={drag?.moved && drag?.id === tab.id}
     >
+      {#if tab.kind === 'server' && serverColor(tab.serverId)}
+        <span class="cstripe" style="background: {serverColor(tab.serverId)}"></span>
+      {/if}
       <button
         class="tab-main"
         role="tab"
@@ -115,9 +118,6 @@
           <span class="glyph"><Icon name="activity" size={15} /></span>
           <span class="name">{t('copilot.title')}</span>
         {:else}
-          {#if serverColor(tab.serverId)}
-            <span class="cdot" style="background: {serverColor(tab.serverId)}"></span>
-          {/if}
           {@const rt = serverRuntime(tab.serverId)}
           <span class="glyph">
             <Icon name={viewMeta(tab.view).icon} size={15} />
@@ -244,11 +244,15 @@
   .tab.active .tab-main {
     color: var(--text);
   }
-  .cdot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex: none;
+  .cstripe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    pointer-events: none;
+    z-index: 1;
   }
   .glyph {
     display: inline-flex;
