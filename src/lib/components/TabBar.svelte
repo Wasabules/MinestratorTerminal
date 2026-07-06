@@ -176,7 +176,7 @@
     {#if unit.type === 'group'}
       {@const gcolor = serverColor(unit.serverId)}
       <div class="tgroup" class:colored={!!gcolor}>
-        {#if gcolor}<span class="cstripe gstripe" style="background: {gcolor}"></span>{/if}
+        <span class="cstripe gstripe" style="background: {gcolor || 'color-mix(in srgb, var(--text) 28%, transparent)'}"></span>
         <button
           class="tchip"
           style={gcolor ? `background: color-mix(in srgb, ${gcolor} 22%, var(--surface))` : ''}
@@ -315,6 +315,7 @@
   .tgroup {
     display: flex;
     align-items: stretch;
+    gap: 2px; /* onglets distincts (même écart que la barre) — la « liaison » = le trait du dessus */
     position: relative;
     flex: 0 0 auto;
   }
@@ -324,8 +325,7 @@
     max-width: 150px;
     background: var(--elevated);
     border: none;
-    border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-    border-radius: var(--radius) 0 0 0;
+    border-radius: var(--radius) var(--radius) 0 0;
     cursor: pointer;
     font: inherit;
     font-size: 12.5px;
@@ -340,18 +340,9 @@
   .tchip:hover {
     color: var(--text);
   }
+  /* Trait continu au-dessus du groupe (par-dessus onglets ET espaces) = la « liaison » du groupe. */
   .gstripe {
-    z-index: 2; /* au-dessus du chip + des onglets du groupe */
-  }
-  /* Onglets DANS un groupe : collés, arrondi seulement au dernier, séparateur fin entre eux. */
-  .tgroup .tab {
-    border-radius: 0;
-  }
-  .tgroup .tab:last-child {
-    border-radius: 0 var(--radius) 0 0;
-  }
-  .tgroup .tab + .tab {
-    border-left: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+    z-index: 2;
   }
   .glyph {
     display: inline-flex;
