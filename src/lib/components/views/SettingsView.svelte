@@ -1,8 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
+  import { getVersion } from '@tauri-apps/api/app';
+  import type { Update } from '@tauri-apps/plugin-updater';
   import { api, humanizeError } from '$lib/ipc';
   import { t, getLocale, setLocale, LOCALES } from '$lib/i18n';
   import { toggleTheme } from '$lib/theme';
+  import {
+    checkForUpdate,
+    applyUpdate,
+    isAutoUpdateEnabled,
+    setAutoUpdateEnabled,
+  } from '$lib/updater';
   import type {
     Autonomy,
     CliStatus,
@@ -22,6 +30,15 @@
   let servers = $state<ServerListItem[]>([]);
   let mcp = $state<McpConfig | null>(null);
   let privacy = $state<PrivacyConfig | null>(null);
+
+  // --- Mises à jour ---
+  let appVersion = $state('');
+  let autoUpdate = $state(true);
+  let updChecking = $state(false);
+  let updInstalling = $state(false);
+  let updMsg = $state('');
+  let updOk = $state(false);
+  let pendingUpdate = $state<Update | null>(null);
 
   // Catalogue d'outils IA (miroir de READ_TOOLS/WRITE_TOOLS) pour la case « permissions ».
   // Le libellé vient de l'i18n (clé `settings.tool_<name>`) ; ici on ne garde que name + write.
@@ -143,6 +160,12 @@
     } catch {
       /* défauts */
     }
+    autoUpdate = isAutoUpdateEnabled();
+    try {
+      appVersion = await getVersion();
+    } catch {
+      /* version indisponible */
+    }
     void refreshClis();
   });
   onDestroy(() => {
@@ -162,6 +185,42 @@
     errorMsg = humanizeError(e);
     clearTimeout(errorTimer);
     errorTimer = setTimeout(() => (errorMsg = null), 4000);
+  }
+
+  // --- Mises à jour ---
+  function toggleAutoUpdate() {
+    setAutoUpdateEnabled(autoUpdate);
+  }
+  async function checkUpdates() {
+    updChecking = true;
+    updMsg = '';
+    pendingUpdate = null;
+    try {
+      const u = await checkForUpdate();
+      if (u) {
+        pendingUpdate = u;
+        updOk = false;
+        updMsg = t('update.available', { v: u.version });
+      } else {
+        updOk = true;
+        updMsg = t('settings.upToDate');
+      }
+    } catch {
+      updOk = false;
+      updMsg = t('settings.checkError');
+    } finally {
+      updChecking = false;
+    }
+  }
+  async function installUpdate() {
+    if (!pendingUpdate) return;
+    updInstalling = true;
+    try {
+      await applyUpdate(pendingUpdate); // télécharge + installe + relance (ne revient pas si succès)
+    } catch (e) {
+      updInstalling = false;
+      flashError(e);
+    }
   }
 
   async function save() {
@@ -397,6 +456,33 @@
       <div class="row">
         <span class="label">{t('common.theme')}</span>
         <button class="btn btn--ghost" onclick={() => toggleTheme()}>{t('common.theme')}</button>
+      </div>
+
+      <h2>{t('settings.updates')}</h2>
+      <div class="row">
+        <span class="label">{t('settings.installedVersion')}</span>
+        <span class="ver">{appVersion || '…'}</span>
+      </div>
+      <label class="toggle-row">
+        <div class="tl">
+          <div class="tl-title">{t('settings.autoUpdate')}</div>
+          <div class="tl-desc dim">{t('settings.autoUpdateDesc')}</div>
+        </div>
+        <input type="checkbox" bind:checked={autoUpdate} onchange={toggleAutoUpdate} />
+      </label>
+      <div class="row">
+        <span class="label">{t('settings.checkUpdates')}</span>
+        <div class="upd-actions">
+          {#if updMsg}<span class="upd-msg" class:ok={updOk}>{updMsg}</span>{/if}
+          {#if pendingUpdate}
+            <button class="btn" onclick={installUpdate} disabled={updInstalling}>
+              {updInstalling ? t('update.installing') : t('update.install')}
+            </button>
+          {/if}
+          <button class="btn btn--ghost" onclick={checkUpdates} disabled={updChecking}>
+            {updChecking ? t('settings.checking') : t('settings.checkNow')}
+          </button>
+        </div>
       </div>
     {:else if section === 'supervisor' && config}
       <h1>{t('settings.supervisor')}</h1>
@@ -901,6 +987,25 @@
   .label {
     font-size: 14px;
     font-weight: 500;
+  }
+  .ver {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .upd-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .upd-msg {
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .upd-msg.ok {
+    color: var(--state-running);
   }
   .langs {
     display: flex;

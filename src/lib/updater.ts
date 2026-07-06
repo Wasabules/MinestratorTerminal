@@ -8,6 +8,26 @@
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 
+const AUTO_KEY = 'mnstr-autoupdate';
+
+/** La vérification automatique au démarrage est-elle activée ? (activée par défaut). */
+export function isAutoUpdateEnabled(): boolean {
+  try {
+    return localStorage.getItem(AUTO_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/** Active/désactive la vérification AUTOMATIQUE au démarrage (la vérif manuelle reste possible). */
+export function setAutoUpdateEnabled(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_KEY, on ? '1' : '0');
+  } catch {
+    /* localStorage indisponible */
+  }
+}
+
 /**
  * Vérifie la disponibilité d'une mise à jour, SANS l'installer. Renvoie l'`Update` si disponible,
  * `null` si à jour, hors-ligne, ou si l'updater n'est pas joignable (échec silencieux : ne dérange

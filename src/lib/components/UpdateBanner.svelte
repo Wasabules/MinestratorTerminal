@@ -4,7 +4,7 @@
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Update } from '@tauri-apps/plugin-updater';
-  import { checkForUpdate, applyUpdate } from '$lib/updater';
+  import { checkForUpdate, applyUpdate, isAutoUpdateEnabled } from '$lib/updater';
   import { t } from '$lib/i18n';
 
   let update = $state<Update | null>(null);
@@ -14,6 +14,7 @@
 
   onMount(async () => {
     if (getCurrentWindow().label !== 'main') return; // une seule fenêtre vérifie
+    if (!isAutoUpdateEnabled()) return; // désactivé dans les Réglages (la vérif manuelle reste possible)
     const u = await checkForUpdate();
     if (u) update = u;
   });
