@@ -3,12 +3,15 @@
   import { serverColor, setServerColor, SERVER_COLORS } from '$lib/servers/colors.svelte';
   import { serverRuntime } from '$lib/servers/runtime.svelte';
   import { runtimeMeta } from '$lib/status';
+  import { isCompactTabs } from '$lib/tabs/mode.svelte';
   import { detachTab, isPointerOutsideWindow } from '$lib/windows';
   import { t } from '$lib/i18n';
   import Icon from './Icon.svelte';
 
   type Menu = { x: number; y: number; tab: ServerTab };
   let menu = $state<Menu | null>(null);
+  // Mode compact : onglets réduits aux icônes de vue (le nom du serveur reste via chip / onglet solo).
+  const compact = $derived(isCompactTabs());
 
   function openMenu(event: MouseEvent, tab: ServerTab) {
     event.preventDefault();
@@ -140,13 +143,13 @@
     >
       {#if tab.kind === 'home'}
         <span class="glyph"><Icon name="home" size={15} /></span>
-        <span class="name">{t('common.home')}</span>
+        {#if !compact}<span class="name">{t('common.home')}</span>{/if}
       {:else if tab.kind === 'settings'}
         <span class="glyph"><Icon name="settings" size={15} /></span>
-        <span class="name">{t('settings.title')}</span>
+        {#if !compact}<span class="name">{t('settings.title')}</span>{/if}
       {:else if tab.kind === 'copilot'}
         <span class="glyph"><Icon name="activity" size={15} /></span>
-        <span class="name">{t('copilot.title')}</span>
+        {#if !compact}<span class="name">{t('copilot.title')}</span>{/if}
       {:else}
         {@const rt = serverRuntime(tab.serverId)}
         <span class="glyph">
@@ -158,10 +161,10 @@
           ></span>
         </span>
         {#if grouped}
-          <span class="name">{t(`view.${tab.view}`)}</span>
+          {#if !compact}<span class="name">{t(`view.${tab.view}`)}</span>{/if}
         {:else}
           <span class="name">{tab.serverName}</span>
-          <span class="view">{t(`view.${tab.view}`)}</span>
+          {#if !compact}<span class="view">{t(`view.${tab.view}`)}</span>{/if}
         {/if}
       {/if}
     </button>

@@ -216,6 +216,8 @@ export const en: Dict = {
   settings: {
     title: 'Settings',
     general: 'General',
+    compactTabs: 'Compact tabs',
+    compactTabsDesc: 'Show only view icons (the server name stays visible).',
     updates: 'Updates',
     installedVersion: 'Installed version',
     autoUpdate: 'Automatic updates',

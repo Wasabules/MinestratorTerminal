@@ -11,6 +11,7 @@
     isAutoUpdateEnabled,
     setAutoUpdateEnabled,
   } from '$lib/updater';
+  import { isCompactTabs, setCompactTabs } from '$lib/tabs/mode.svelte';
   import type {
     Autonomy,
     CliStatus,
@@ -30,6 +31,9 @@
   let servers = $state<ServerListItem[]>([]);
   let mcp = $state<McpConfig | null>(null);
   let privacy = $state<PrivacyConfig | null>(null);
+
+  // --- Affichage ---
+  let compactTabs = $state(false);
 
   // --- Mises à jour ---
   let appVersion = $state('');
@@ -160,6 +164,7 @@
     } catch {
       /* défauts */
     }
+    compactTabs = isCompactTabs();
     autoUpdate = isAutoUpdateEnabled();
     try {
       appVersion = await getVersion();
@@ -457,6 +462,13 @@
         <span class="label">{t('common.theme')}</span>
         <button class="btn btn--ghost" onclick={() => toggleTheme()}>{t('common.theme')}</button>
       </div>
+      <label class="toggle-row">
+        <div class="tl">
+          <div class="tl-title">{t('settings.compactTabs')}</div>
+          <div class="tl-desc dim">{t('settings.compactTabsDesc')}</div>
+        </div>
+        <input type="checkbox" bind:checked={compactTabs} onchange={() => setCompactTabs(compactTabs)} />
+      </label>
 
       <h2>{t('settings.updates')}</h2>
       <div class="row">

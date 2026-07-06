@@ -9,6 +9,7 @@
   import { initLocale, t } from '$lib/i18n';
   import { initColors } from '$lib/servers/colors.svelte';
   import { initSftpView } from '$lib/sftp/columns.svelte';
+  import { initTabMode } from '$lib/tabs/mode.svelte';
   import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
   let { children } = $props();
@@ -21,6 +22,7 @@
     initLocale();
     initColors();
     initSftpView();
+    initTabMode();
     try {
       if (!(await api.hasStoredKey())) {
         setAuth({ status: 'signed_out' });

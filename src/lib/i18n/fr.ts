@@ -214,6 +214,8 @@ export const fr = {
   settings: {
     title: 'Réglages',
     general: 'Général',
+    compactTabs: 'Onglets compacts',
+    compactTabsDesc: 'Afficher uniquement les icônes des vues (le nom du serveur reste visible).',
     updates: 'Mises à jour',
     installedVersion: 'Version installée',
     autoUpdate: 'Mises à jour automatiques',
