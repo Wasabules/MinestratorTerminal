@@ -24,6 +24,7 @@ pub mod mcp;
 mod models;
 mod nbt;
 mod official_mcp;
+mod paste;
 mod perf;
 mod persist;
 mod redact;
@@ -966,6 +967,17 @@ impl Core {
 
     pub fn sftp_disconnect(&self, id: i64) {
         self.sftp.drop_session(id);
+    }
+
+    /// Publie un texte (log console, fichier) vers un service de paste public (mclo.gs, instance
+    /// MineStrator, pastes.dev) et renvoie l'URL. Le contenu est **toujours anonymisé** (secrets/IP/
+    /// e-mails) et débarrassé des couleurs ANSI avant l'envoi — publication publique = confidentialité
+    /// obligatoire, indépendamment du réglage de redaction IA.
+    pub async fn paste_upload(&self, service: &str, content: &str) -> Result<String> {
+        let svc = paste::PasteService::from_id(service)
+            .ok_or_else(|| Error::Unexpected("service de paste inconnu".into()))?;
+        let clean = crate::redact::redact(&paste::strip_ansi(content));
+        paste::upload(svc, &clean).await
     }
 }
 

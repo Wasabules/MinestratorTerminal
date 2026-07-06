@@ -4,9 +4,10 @@
   import { FitAddon } from '@xterm/addon-fit';
   import '@xterm/xterm/css/xterm.css';
   import type { UnlistenFn } from '@tauri-apps/api/event';
-  import { api } from '$lib/ipc';
+  import { api, humanizeError } from '$lib/ipc';
   import { consoleEvents } from '$lib/events';
   import { openCopilotMenu } from '$lib/copilot/menu.svelte';
+  import { PASTE_SERVICES, pasteExport } from '$lib/paste';
   import { redactLine } from '$lib/redact';
   import { t } from '$lib/i18n';
   import { isRunning } from '$lib/status';
@@ -36,6 +37,10 @@
   const buffer: string[] = [];
   const MAX_BUFFER = 5000;
   let redactConsole = false; // anonymisation d'affichage (réglage confidentialité)
+  // Menu contextuel console (analyse sélection + export du log) et toast de retour d'export.
+  let cmenu = $state<{ x: number; y: number; selection: string } | null>(null);
+  let toast = $state('');
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
   const running = $derived(isRunning(runState));
   const phaseColor = $derived(
@@ -78,6 +83,7 @@
   });
   onDestroy(() => {
     destroyed = true;
+    clearTimeout(toastTimer);
     unlisteners.forEach((u) => u());
     resizeObs?.disconnect();
     api.consoleDisconnect(connId).catch(() => {});
@@ -179,16 +185,30 @@
   }
 
   function onContextMenu(e: MouseEvent) {
-    const sel = term?.getSelection() ?? '';
-    if (sel.trim().length === 0) return; // pas de sélection → menu natif
     e.preventDefault();
-    openCopilotMenu({
-      x: e.clientX,
-      y: e.clientY,
-      text: sel,
-      serverId,
-      serverName: tab.serverName,
-    });
+    cmenu = { x: e.clientX, y: e.clientY, selection: term?.getSelection() ?? '' };
+  }
+  function analyzeSel(m: { x: number; y: number; selection: string }) {
+    const sel = m.selection;
+    cmenu = null;
+    if (sel.trim()) openCopilotMenu({ x: m.x, y: m.y, text: sel, serverId, serverName: tab.serverName });
+  }
+  function showToast(msg: string, ms: number) {
+    toast = msg;
+    clearTimeout(toastTimer);
+    if (ms > 0) toastTimer = setTimeout(() => (toast = ''), ms);
+  }
+  async function exportLog(service: string) {
+    cmenu = null;
+    const content = buffer.join('\n');
+    if (!content.trim()) return;
+    showToast(t('console.exporting'), 0);
+    try {
+      await pasteExport(service, content);
+      showToast(t('console.exported'), 4000);
+    } catch (e) {
+      showToast(humanizeError(e), 5000);
+    }
   }
 
   function submit(event: Event) {
@@ -249,6 +269,22 @@
     <button class="send" type="submit" disabled={command.trim().length === 0}>{t('console.send')}</button>
   </form>
 </div>
+
+{#if cmenu}
+  {@const m = cmenu}
+  <button class="cbackdrop" onclick={() => (cmenu = null)} aria-label={t('common.close')}></button>
+  <div class="cmenu" style="left: {m.x}px; top: {m.y}px" role="menu">
+    {#if m.selection.trim()}
+      <button class="cmi" onclick={() => analyzeSel(m)}>{t('console.analyzeSel')}</button>
+      <div class="cmsep"></div>
+    {/if}
+    <div class="cmlbl">{t('console.exportLog')}</div>
+    {#each PASTE_SERVICES as s (s.id)}
+      <button class="cmi" onclick={() => exportLog(s.id)}>{s.label}</button>
+    {/each}
+  </div>
+{/if}
+{#if toast}<div class="ctoast">{toast}</div>{/if}
 
 <style>
   .console {
@@ -412,5 +448,72 @@
   .send:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* Menu contextuel console (analyse + export) + toast de retour */
+  .cbackdrop {
+    position: fixed;
+    inset: 0;
+    background: none;
+    border: none;
+    z-index: 40;
+    cursor: default;
+  }
+  .cmenu {
+    position: fixed;
+    z-index: 41;
+    min-width: 190px;
+    background: #141b1e;
+    border: 1px solid #2a343a;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+  }
+  .cmi {
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    color: #d6e2e6;
+    padding: 8px 11px;
+    border-radius: 7px;
+  }
+  .cmi:hover {
+    background: #1e262a;
+  }
+  .cmsep {
+    height: 1px;
+    background: #2a343a;
+    margin: 5px 4px;
+  }
+  .cmlbl {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #6f8085;
+    padding: 6px 11px 3px;
+    font-family: var(--font-mono);
+  }
+  .ctoast {
+    position: fixed;
+    left: 50%;
+    bottom: 72px;
+    transform: translateX(-50%);
+    background: #141b1e;
+    border: 1px solid #2a343a;
+    color: #d6e2e6;
+    font-size: 12.5px;
+    padding: 9px 16px;
+    border-radius: 999px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    z-index: 45;
+    max-width: 80vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>

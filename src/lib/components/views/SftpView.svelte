@@ -810,7 +810,7 @@
                   {#if cell.chunk}
                     {@const ch = cell.chunk}
                     <button
-                      class="cell"
+                      class="mapcell"
                       class:corrupt={ch.corrupt}
                       class:present={!ch.corrupt}
                       style="--i: {cell.intensity}"
@@ -819,7 +819,7 @@
                       onclick={() => openChunk(rg, ch)}
                     ></button>
                   {:else}
-                    <span class="cell empty"></span>
+                    <span class="mapcell empty"></span>
                   {/if}
                 {/each}
               </div>
@@ -1706,25 +1706,25 @@
     width: min(560px, 100%);
     aspect-ratio: 1;
   }
-  .cell {
+  .mapcell {
     aspect-ratio: 1;
     border: none;
     border-radius: 2px;
     padding: 0;
   }
-  .cell.empty {
+  .mapcell.empty {
     background: color-mix(in srgb, var(--text) 6%, transparent);
   }
-  .cell.present {
+  .mapcell.present {
     cursor: pointer;
     background: color-mix(in srgb, var(--brand-primary) calc(var(--i) * 55% + 30%), transparent);
   }
-  .cell.corrupt {
+  .mapcell.corrupt {
     cursor: pointer;
     background: var(--state-danger);
   }
-  .cell.present:hover,
-  .cell.corrupt:hover {
+  .mapcell.present:hover,
+  .mapcell.corrupt:hover {
     outline: 2px solid var(--text);
     outline-offset: -1px;
   }

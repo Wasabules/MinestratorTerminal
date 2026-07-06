@@ -223,6 +223,9 @@ export const api = {
   sftpExtractEntry: (serverId: number, path: string, entry: string, localPath: string) =>
     invoke<void>('sftp_extract_entry', { serverId, path, entry, localPath }),
   sftpDisconnect: (serverId: number) => invoke<void>('sftp_disconnect', { serverId }),
+  /** Exporte un texte vers un service de paste public ; renvoie l'URL. */
+  pasteUpload: (service: string, content: string) =>
+    invoke<string>('paste_upload', { service, content }),
 
   /** Efface la clé enregistrée. */
   logout: () => invoke<void>('logout'),

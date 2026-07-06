@@ -354,6 +354,16 @@ pub async fn sftp_region_chunk_snbt(
     core.sftp_region_chunk_snbt(server_id, &path, x, z).await
 }
 
+/// Exporte un texte (log console, fichier) vers un service de paste public (contenu anonymisé).
+#[tauri::command]
+pub async fn paste_upload(
+    core: State<'_, Arc<Core>>,
+    service: String,
+    content: String,
+) -> Result<String, Error> {
+    core.paste_upload(&service, &content).await
+}
+
 #[tauri::command]
 pub async fn sftp_extract_entry(
     core: State<'_, Arc<Core>>,

@@ -19,6 +19,7 @@
   import { toml } from '@codemirror/legacy-modes/mode/toml';
   import { api, humanizeError } from '$lib/ipc';
   import { openCopilotMenu } from '$lib/copilot/menu.svelte';
+  import { PASTE_SERVICES, pasteExport } from '$lib/paste';
   import { t } from '$lib/i18n';
   import Icon from '../Icon.svelte';
 
@@ -46,6 +47,7 @@
   let dirty = $state(false);
   let saving = $state(false);
   let wrap = $state(false);
+  let expOpen = $state(false);
   let message = $state<string | null>(null);
   let msgKind = $state<'ok' | 'err'>('ok');
   let msgTimer: ReturnType<typeof setTimeout> | undefined;
@@ -201,6 +203,17 @@
     view?.dispatch({ effects: wrapComp.reconfigure(wrap ? EditorView.lineWrapping : []) });
   }
 
+  async function doExport(service: string) {
+    expOpen = false;
+    if (!view) return;
+    try {
+      await pasteExport(service, view.state.doc.toString());
+      flash(t('sftp.exported'));
+    } catch (e) {
+      flash(humanizeError(e), 'err');
+    }
+  }
+
   function onContextMenu(e: MouseEvent) {
     if (!view) return;
     const { from, to } = view.state.selection.main;
@@ -238,6 +251,17 @@
         <button class="tool" onclick={compact}>{t('sftp.compact')}</button>
       {/if}
       <button class="tool" class:on={wrap} onclick={toggleWrap}>{t('sftp.wrap')}</button>
+      <span class="exp">
+        <button class="tool" class:on={expOpen} onclick={() => (expOpen = !expOpen)}>{t('sftp.export')} ▾</button>
+        {#if expOpen}
+          <button class="expback" onclick={() => (expOpen = false)} aria-label={t('common.close')}></button>
+          <div class="expmenu">
+            {#each PASTE_SERVICES as s (s.id)}
+              <button class="expitem" onclick={() => doExport(s.id)}>{s.label}</button>
+            {/each}
+          </div>
+        {/if}
+      </span>
     </div>
 
     <div class="grow"></div>
@@ -339,6 +363,46 @@
     color: #fff;
     background: #009b72;
     border-color: #009b72;
+  }
+  .exp {
+    position: relative;
+    display: inline-flex;
+  }
+  .expback {
+    position: fixed;
+    inset: 0;
+    background: none;
+    border: none;
+    z-index: 5;
+    cursor: default;
+  }
+  .expmenu {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    z-index: 6;
+    min-width: 140px;
+    background: #141b1e;
+    border: 1px solid #2a343a;
+    border-radius: 9px;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+  }
+  .expitem {
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12.5px;
+    color: #d6e2e6;
+    padding: 7px 10px;
+    border-radius: 6px;
+  }
+  .expitem:hover {
+    background: #1e262a;
   }
   .grow {
     flex: 1;
