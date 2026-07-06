@@ -238,6 +238,25 @@ export interface ArchiveEntry {
   is_dir: boolean;
 }
 
+/**
+ * Nœud d'un arbre NBT typé (inspecteur `.dat`/chunk, lecture seule). `tag` conserve le type NBT
+ * exact : `Byte|Short|Int|Long|Float|Double|String|ByteArray|IntArray|LongArray|List|Compound`.
+ */
+export interface NbtNode {
+  name?: string;
+  tag: string;
+  value?: string;
+  len?: number;
+  children?: NbtNode[];
+}
+
+/** Chunk généré d'une région `.mca` (coordonnées de chunk globales + taille compressée). */
+export interface RegionChunk {
+  x: number;
+  z: number;
+  size: number;
+}
+
 /** Progression d'un transfert SFTP (event `sftp://progress`), pour le gestionnaire de transferts. */
 export interface SftpProgress {
   id: string;

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { tabs, viewMeta, type ServerTab, type Tab } from '$lib/tabs/tabs.svelte';
   import { serverColor, setServerColor, SERVER_COLORS } from '$lib/servers/colors.svelte';
+  import { serverRuntime } from '$lib/servers/runtime.svelte';
+  import { runtimeMeta } from '$lib/status';
   import { detachTab, isPointerOutsideWindow } from '$lib/windows';
   import { t } from '$lib/i18n';
   import Icon from './Icon.svelte';
@@ -116,7 +118,15 @@
           {#if serverColor(tab.serverId)}
             <span class="cdot" style="background: {serverColor(tab.serverId)}"></span>
           {/if}
-          <span class="glyph"><Icon name={viewMeta(tab.view).icon} size={15} /></span>
+          {@const rt = serverRuntime(tab.serverId)}
+          <span class="glyph">
+            <Icon name={viewMeta(tab.view).icon} size={15} />
+            <span
+              class="sbadge"
+              style="--sc: {rt ? runtimeMeta(rt).color : 'var(--text-dim)'}"
+              title={t(`status.${rt ? runtimeMeta(rt).key : 'offline'}`)}
+            ></span>
+          </span>
           <span class="name">{tab.serverName}</span>
           <span class="view">{t(`view.${tab.view}`)}</span>
         {/if}
@@ -245,6 +255,21 @@
     align-items: center;
     opacity: 0.85;
     flex: none;
+    position: relative;
+  }
+  /* Pastille d'état d'exécution (badge sur l'icône de vue) — anneau assorti au fond de l'onglet. */
+  .sbadge {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--sc);
+    box-shadow: 0 0 0 1.5px var(--bg);
+  }
+  .tab.active .sbadge {
+    box-shadow: 0 0 0 1.5px var(--surface);
   }
   .name {
     font-weight: 600;

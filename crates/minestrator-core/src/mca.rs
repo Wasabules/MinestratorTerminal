@@ -107,6 +107,84 @@ pub(crate) fn clear_corrupt(bytes: &mut [u8], report: &RegionReport) -> usize {
     n
 }
 
+/// Emplacement d'un chunk généré (coordonnées LOCALES 0..31 dans la région).
+pub(crate) struct ChunkLoc {
+    pub local_x: usize,
+    pub local_z: usize,
+    /// Taille des données compressées du chunk (octets).
+    pub len: usize,
+}
+
+/// Liste les chunks générés (entrée de localisation valide + longueur déclarée cohérente).
+pub(crate) fn chunks(bytes: &[u8]) -> Vec<ChunkLoc> {
+    let mut out = Vec::new();
+    if bytes.len() < HEADER || !bytes.len().is_multiple_of(SECTOR) {
+        return out;
+    }
+    let sectors = bytes.len() / SECTOR;
+    for i in 0..1024 {
+        let e = i * 4;
+        let offset = u32::from_be_bytes([0, bytes[e], bytes[e + 1], bytes[e + 2]]) as usize;
+        let count = bytes[e + 3] as usize;
+        if offset < 2 || count == 0 || offset + count > sectors {
+            continue;
+        }
+        let s = offset * SECTOR;
+        let declared =
+            u32::from_be_bytes([bytes[s], bytes[s + 1], bytes[s + 2], bytes[s + 3]]) as usize;
+        if declared == 0 || declared > count * SECTOR {
+            continue;
+        }
+        out.push(ChunkLoc { local_x: i % 32, local_z: i / 32, len: declared.saturating_sub(1) });
+    }
+    out
+}
+
+/// Extrait et décompresse le NBT d'un chunk (coordonnées LOCALES 0..31). Renvoie les octets NBT
+/// bruts (à parser via [`crate::nbt`]). Compression Anvil : 1 = gzip, 2 = zlib, 3 = brut.
+pub(crate) fn chunk_nbt(bytes: &[u8], local_x: usize, local_z: usize) -> Result<Vec<u8>, String> {
+    if local_x >= 32 || local_z >= 32 {
+        return Err("coordonnées de chunk hors région".into());
+    }
+    if bytes.len() < HEADER || !bytes.len().is_multiple_of(SECTOR) {
+        return Err("en-tête de région invalide".into());
+    }
+    let sectors = bytes.len() / SECTOR;
+    let i = local_z * 32 + local_x;
+    let e = i * 4;
+    let offset = u32::from_be_bytes([0, bytes[e], bytes[e + 1], bytes[e + 2]]) as usize;
+    let count = bytes[e + 3] as usize;
+    if offset < 2 || count == 0 || offset + count > sectors {
+        return Err("chunk non généré (aucune donnée à cet emplacement)".into());
+    }
+    let s = offset * SECTOR;
+    // En tête de chunk : longueur (4 o, inclut l'octet de compression) puis type de compression.
+    let declared = u32::from_be_bytes([bytes[s], bytes[s + 1], bytes[s + 2], bytes[s + 3]]) as usize;
+    if declared < 1 || s + 4 + declared > bytes.len() {
+        return Err("longueur de chunk invalide".into());
+    }
+    let comp = bytes[s + 4];
+    let payload = &bytes[s + 5..s + 4 + declared]; // (declared - 1) octets compressés
+    decompress_chunk(comp, payload)
+}
+
+fn decompress_chunk(comp: u8, data: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    match comp {
+        1 => flate2::read::GzDecoder::new(data)
+            .read_to_end(&mut out)
+            .map(|_| out)
+            .map_err(|e| format!("gunzip chunk : {e}")),
+        2 => flate2::read::ZlibDecoder::new(data)
+            .read_to_end(&mut out)
+            .map(|_| out)
+            .map_err(|e| format!("inflate chunk : {e}")),
+        3 => Ok(data.to_vec()),
+        other => Err(format!("compression de chunk non supportée ({other})")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,9 +228,9 @@ mod tests {
 
     #[test]
     fn truncated_file_is_global_corrupt() {
-        let r = validate(&vec![0u8; 100]);
+        let r = validate(&[0u8; 100]);
         assert!(r.corrupt.iter().any(|c| c.index == usize::MAX));
-        assert_eq!(clear_corrupt(&mut vec![0u8; 100], &r), 0);
+        assert_eq!(clear_corrupt(&mut [0u8; 100], &r), 0);
     }
 
     #[test]
@@ -163,5 +241,32 @@ mod tests {
         let n = clear_corrupt(&mut buf, &r);
         assert_eq!(n, 1);
         assert!(buf[5 * 4..5 * 4 + 4].iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn lists_and_extracts_a_zlib_chunk() {
+        use std::io::Write;
+        // NBT racine (compound) minimal, compressé zlib, posé au secteur 2 pour le chunk (0,0).
+        let nbt = fastnbt::to_bytes(&std::collections::HashMap::from([("xPos".to_string(), 5i32)]))
+            .unwrap();
+        let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        enc.write_all(&nbt).unwrap();
+        let comp = enc.finish().unwrap();
+
+        let mut buf = vec![0u8; SECTOR * 3];
+        set_entry(&mut buf, 0, 2, 1);
+        let s = 2 * SECTOR;
+        let m = (comp.len() + 1) as u32; // + octet de compression
+        buf[s..s + 4].copy_from_slice(&m.to_be_bytes());
+        buf[s + 4] = 2; // zlib
+        buf[s + 5..s + 5 + comp.len()].copy_from_slice(&comp);
+
+        let list = chunks(&buf);
+        assert_eq!(list.len(), 1);
+        assert_eq!((list[0].local_x, list[0].local_z), (0, 0));
+
+        let out = chunk_nbt(&buf, 0, 0).unwrap();
+        assert_eq!(out, nbt); // round-trip : mêmes octets NBT décompressés
+        assert!(chunk_nbt(&buf, 1, 0).is_err()); // chunk non généré
     }
 }

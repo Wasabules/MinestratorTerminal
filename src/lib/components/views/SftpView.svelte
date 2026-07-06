@@ -16,7 +16,7 @@
     activeCount,
     clearFinished,
   } from '$lib/transfers/transfers.svelte';
-  import type { ArchiveEntry, SftpEntry } from '$lib/types';
+  import type { ArchiveEntry, NbtNode, RegionChunk, SftpEntry } from '$lib/types';
   import {
     isColVisible,
     toggleCol,
@@ -29,6 +29,7 @@
     type SftpSortKey,
   } from '$lib/sftp/columns.svelte';
   import FileEditor from './FileEditor.svelte';
+  import NbtTree from '../NbtTree.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
@@ -44,10 +45,18 @@
   let editorSaved = false;
   let prompt = $state<{ kind: 'mkdir' | 'newfile' | 'rename'; value: string; target?: SftpEntry } | null>(null);
   let confirmDel = $state<SftpEntry | null>(null);
+  let confirmDelSel = $state(false);
   let uploadConfirm = $state<{ paths: string[]; conflicts: string[]; remember: boolean } | null>(null);
-  // Sélection multiple, navigateur d'archive (lecture seule), popover des transferts.
+  // Sélection multiple, navigateur d'archive (lecture seule), aperçu image, popover des transferts.
   let selected = $state<Set<string>>(new Set());
   let archive = $state<{ path: string; name: string; entries: ArchiveEntry[] } | null>(null);
+  let image = $state<{ name: string; uri: string } | null>(null);
+  // Inspecteur NBT (arbre typé), pour un .dat ou un chunk de région.
+  let nbt = $state<{ title: string; root: NbtNode } | null>(null);
+  // Navigateur de chunks d'une région .mca (`chunks === null` = chargement).
+  let region = $state<{ name: string; path: string; chunks: RegionChunk[] | null } | null>(null);
+  // Rapport d'inspection de corruption (`text === null` = chargement).
+  let report = $state<{ name: string; text: string | null } | null>(null);
   let xfersOpen = $state(false);
 
   let dropUnlisten: UnlistenFn | undefined;
@@ -137,11 +146,23 @@
     const n = name.toLowerCase();
     return n.endsWith('.gz') && !n.endsWith('.tar.gz');
   }
+  function isImage(name: string): boolean {
+    return /\.(png|jpe?g|gif|webp|bmp|ico|svg|avif)$/i.test(name);
+  }
+  function isNbt(name: string): boolean {
+    return /\.(dat|dat_old|nbt|schem|schematic)$/i.test(name);
+  }
+  function isRegion(name: string): boolean {
+    return /\.mca$/i.test(name);
+  }
 
   function onRowClick(entry: SftpEntry) {
     if (entry.is_dir) void load(entry.path);
     else if (isArchive(entry.name)) void openArchive(entry);
     else if (isGz(entry.name)) void openGz(entry);
+    else if (isImage(entry.name)) void openImage(entry);
+    else if (isNbt(entry.name)) void openNbt(entry);
+    else if (isRegion(entry.name)) void openRegion(entry);
     else void openFile(entry);
   }
 
@@ -193,6 +214,56 @@
     }
   }
 
+  // --- Aperçu image (data-URI, lecture seule) ---
+  async function openImage(entry: SftpEntry) {
+    try {
+      const uri = await api.sftpReadDataUri(serverId, entry.path);
+      image = { name: entry.name, uri };
+    } catch (e) {
+      error = humanizeError(e);
+    }
+  }
+
+  // --- NBT (.dat…, chunk) : arbre typé lecture seule (inspecteur NBTExplorer-grade). ---
+  async function openNbt(entry: SftpEntry) {
+    try {
+      const root = await api.sftpNbtTree(serverId, entry.path);
+      nbt = { title: entry.name, root };
+    } catch (e) {
+      error = humanizeError(e);
+    }
+  }
+
+  // --- Région .mca : navigateur de chunks (→ arbre NBT d'un chunk) + rapport de corruption. ---
+  async function openRegion(entry: SftpEntry) {
+    region = { name: entry.name, path: entry.path, chunks: null };
+    try {
+      const chunks = await api.sftpRegionChunks(serverId, entry.path);
+      if (region && region.path === entry.path) region.chunks = chunks;
+    } catch (e) {
+      error = humanizeError(e);
+      if (region?.path === entry.path) region = null;
+    }
+  }
+  async function openChunk(rg: { path: string }, c: RegionChunk) {
+    try {
+      const root = await api.sftpRegionChunkTree(serverId, rg.path, c.x, c.z);
+      nbt = { title: `chunk (${c.x}, ${c.z})`, root };
+    } catch (e) {
+      error = humanizeError(e);
+    }
+  }
+  async function openReport(rg: { name: string; path: string }) {
+    report = { name: rg.name, text: null };
+    try {
+      const text = await api.sftpInspectRegion(serverId, rg.path);
+      if (report?.name === rg.name) report = { name: rg.name, text };
+    } catch (e) {
+      error = humanizeError(e);
+      if (report?.name === rg.name) report = null;
+    }
+  }
+
   // --- Sélection multiple ---
   function toggleSel(path: string) {
     const s = new Set(selected);
@@ -201,6 +272,20 @@
   }
   function clearSel() {
     selected = new Set();
+  }
+
+  /// Supprime la SÉLECTION (fichiers/dossiers du dossier courant), après confirmation.
+  async function deleteSelected() {
+    confirmDelSel = false;
+    const byPath = new Map(entries.map((e) => [e.path, e.is_dir]));
+    const paths = [...selected].filter((p) => byPath.has(p));
+    clearSel();
+    try {
+      for (const p of paths) await api.sftpDelete(serverId, p, byPath.get(p) ?? false);
+      await load(cwd);
+    } catch (e) {
+      error = humanizeError(e);
+    }
   }
 
   function closeEditor() {
@@ -421,6 +506,9 @@
       <button class="btn small" onclick={downloadSelected}>
         <Icon name="download" size={14} /> {t('sftp.downloadZip')}
       </button>
+      <button class="btn danger-btn small" onclick={() => (confirmDelSel = true)}>
+        <Icon name="trash" size={14} /> {t('sftp.delete')}
+      </button>
       <button class="btn btn--ghost small" onclick={clearSel}>{t('sftp.clearSel')}</button>
     </div>
   {/if}
@@ -474,7 +562,11 @@
                     ? 'folder'
                     : isArchive(entry.name) || isGz(entry.name)
                       ? 'archive'
-                      : 'file'}
+                      : isImage(entry.name)
+                        ? 'image'
+                        : isNbt(entry.name) || isRegion(entry.name)
+                          ? 'package'
+                          : 'file'}
                   size={16}
                 />
               </span>
@@ -550,6 +642,90 @@
   </div>
 {/if}
 
+{#if image}
+  {@const im = image}
+  <div class="overlay center">
+    <button class="backdrop" onclick={() => (image = null)} aria-label={t('common.close')}></button>
+    <div class="imgview">
+      <div class="abar">
+        <span class="fname"><Icon name="image" size={15} /> {im.name}</span>
+        <span class="robadge">{t('sftp.readonly')}</span>
+        <div class="grow"></div>
+        <button class="close" onclick={() => (image = null)} title={t('common.close')}><Icon name="x" size={16} /></button>
+      </div>
+      <div class="imgwrap"><img src={im.uri} alt={im.name} /></div>
+    </div>
+  </div>
+{/if}
+
+{#if region}
+  {@const rg = region}
+  <div class="overlay">
+    <div class="archview">
+      <div class="abar">
+        <span class="fname"><Icon name="package" size={15} /> {rg.name}</span>
+        <span class="robadge">{t('sftp.readonly')}</span>
+        <div class="grow"></div>
+        <button class="btn small" onclick={() => openReport(rg)}>
+          <Icon name="search" size={14} /> {t('sftp.inspectReport')}
+        </button>
+        <button class="close" onclick={() => (region = null)} title={t('common.close')}><Icon name="x" size={16} /></button>
+      </div>
+      <div class="alist">
+        {#if rg.chunks === null}
+          <div class="center"><span class="spinner"></span></div>
+        {:else if rg.chunks.length === 0}
+          <div class="center dim">{t('sftp.noChunks')}</div>
+        {:else}
+          <div class="chunkhead dim">{t('sftp.chunkCount', { n: rg.chunks.length })}</div>
+          <div class="chunkgrid">
+            {#each rg.chunks as c (`${c.x},${c.z}`)}
+              <button class="chunk" onclick={() => openChunk(rg, c)}>
+                <span class="ccoord">{c.x}, {c.z}</span>
+                <span class="csize dim">{fmtSize(c.size)}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if report}
+  {@const rp = report}
+  <div class="overlay center top">
+    <button class="backdrop" onclick={() => (report = null)} aria-label={t('common.close')}></button>
+    <div class="report">
+      <div class="abar">
+        <span class="fname"><Icon name="search" size={15} /> {rp.name}</span>
+        <div class="grow"></div>
+        <button class="close" onclick={() => (report = null)} title={t('common.close')}><Icon name="x" size={16} /></button>
+      </div>
+      {#if rp.text === null}
+        <div class="rload dim"><span class="spinner"></span>{t('sftp.inspecting')}</div>
+      {:else}
+        <pre class="reportbody">{rp.text}</pre>
+      {/if}
+    </div>
+  </div>
+{/if}
+
+{#if nbt}
+  {@const nb = nbt}
+  <div class="overlay top">
+    <div class="archview">
+      <div class="abar">
+        <span class="fname"><Icon name="package" size={15} /> {nb.title}</span>
+        <span class="robadge">{t('sftp.readonly')}</span>
+        <div class="grow"></div>
+        <button class="close" onclick={() => (nbt = null)} title={t('common.close')}><Icon name="x" size={16} /></button>
+      </div>
+      <div class="nbtbody"><NbtTree node={nb.root} /></div>
+    </div>
+  </div>
+{/if}
+
 {#if prompt}
   {@const pr = prompt}
   <div class="overlay center">
@@ -573,6 +749,18 @@
       <div class="modal-actions">
         <button class="btn btn--ghost" onclick={() => (confirmDel = null)}>{t('common.cancel')}</button>
         <button class="btn danger-btn" onclick={doDelete}>{t('sftp.delete')}</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if confirmDelSel}
+  <div class="overlay center">
+    <div class="modal card">
+      <h3>{t('sftp.confirmDeleteSel', { n: selected.size })}</h3>
+      <div class="modal-actions">
+        <button class="btn btn--ghost" onclick={() => (confirmDelSel = false)}>{t('common.cancel')}</button>
+        <button class="btn danger-btn" onclick={deleteSelected}>{t('sftp.delete')}</button>
       </div>
     </div>
   </div>
@@ -1137,5 +1325,118 @@
   }
   .arow:disabled {
     cursor: default;
+  }
+
+  /* --- Aperçu image (lecture seule) --- */
+  .imgview {
+    position: relative;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    max-width: min(920px, 92vw);
+    max-height: 86vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .imgwrap {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    overflow: auto;
+    /* Damier subtil pour révéler la transparence (icônes/skins). */
+    background: repeating-conic-gradient(
+        color-mix(in srgb, var(--text) 7%, transparent) 0 25%,
+        transparent 0 50%
+      )
+      0 0 / 22px 22px;
+  }
+  .imgwrap img {
+    max-width: 100%;
+    max-height: 74vh;
+    object-fit: contain;
+    border-radius: 4px;
+  }
+
+  /* --- Rapport d'inspection de région .mca (lecture seule) --- */
+  .report {
+    position: relative;
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    width: min(640px, 92vw);
+    max-height: 80vh;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .reportbody {
+    margin: 0;
+    padding: 16px 18px;
+    overflow: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
+  }
+  .rload {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px;
+    flex: 1;
+  }
+
+  /* --- Navigateur de chunks .mca + corps de l'arbre NBT --- */
+  .chunkhead {
+    padding: 10px 14px 4px;
+    font-size: 12px;
+  }
+  .chunkgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 8px;
+    padding: 8px 14px 16px;
+  }
+  .chunk {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    cursor: pointer;
+    font: inherit;
+    color: var(--text);
+    padding: 8px 10px;
+  }
+  .chunk:hover {
+    border-color: var(--brand-primary);
+    background: color-mix(in srgb, var(--brand-primary) 8%, var(--elevated));
+  }
+  .ccoord {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .csize {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .nbtbody {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 6px 0;
   }
 </style>

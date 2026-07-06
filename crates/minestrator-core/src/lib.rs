@@ -22,6 +22,7 @@ mod llm;
 mod mca;
 pub mod mcp;
 mod models;
+mod nbt;
 mod official_mcp;
 mod perf;
 mod persist;
@@ -43,6 +44,7 @@ pub use events::{
 };
 pub use llm::Provider;
 pub use mcp::McpConfig;
+pub use nbt::NbtNode;
 pub use redact::PrivacyConfig;
 pub use models::{
     Backup, CpuLimits, InstalledItem, LimitMb, LiveLight, MarketItem, MarketPage, MarketVersion,
@@ -830,6 +832,67 @@ impl Core {
             .map_err(|_| Error::Unexpected("Contenu binaire (non affichable).".into()))
     }
 
+    /// Lit une image distante et la renvoie en **data-URI** base64 (`data:image/png;base64,…`)
+    /// pour l'aperçu intégré. Type MIME déduit de l'extension, plafond `IMAGE_CAP`.
+    pub async fn sftp_read_data_uri(&self, id: i64, path: &str) -> Result<String> {
+        use base64::Engine as _;
+        let mime = image_mime(path)
+            .ok_or_else(|| Error::Unexpected("Format d'image non reconnu.".into()))?;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, IMAGE_CAP).await)?;
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        Ok(format!("data:{mime};base64,{b64}"))
+    }
+
+    /// Décode un fichier NBT distant (`.dat`, `level.dat`, playerdata, `.nbt`/`.schem`) en arbre
+    /// typé (lecture seule). Décompression gzip/zlib/brut gérée par `nbt::to_tree`.
+    pub async fn sftp_nbt_tree(&self, id: i64, path: &str) -> Result<nbt::NbtNode> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, NBT_CAP).await)?;
+        nbt::to_tree(&bytes).map_err(Error::Unexpected)
+    }
+
+    /// Inspection LECTURE SEULE d'une région `.mca` (chunks générés / corrompus) — réutilise
+    /// l'outil monde `inspect_region`. Renvoie un rapport texte lisible.
+    pub async fn sftp_inspect_region(&self, id: i64, path: &str) -> Result<String> {
+        crate::world::inspect_region(self, id, path).await.map_err(Error::Unexpected)
+    }
+
+    /// Liste les chunks générés d'une région `.mca` (coordonnées de chunk GLOBALES + taille).
+    pub async fn sftp_region_chunks(&self, id: i64, path: &str) -> Result<Vec<RegionChunk>> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, REGION_CAP).await)?;
+        let (rx, rz) = crate::world::region_coords(path);
+        Ok(mca::chunks(&bytes)
+            .into_iter()
+            .map(|c| RegionChunk {
+                x: rx.unwrap_or(0) * 32 + c.local_x as i64,
+                z: rz.unwrap_or(0) * 32 + c.local_z as i64,
+                size: c.len as u64,
+            })
+            .collect())
+    }
+
+    /// Arbre NBT typé d'UN chunk d'une région `.mca` (coordonnées de chunk GLOBALES → locales).
+    pub async fn sftp_region_chunk_tree(
+        &self,
+        id: i64,
+        path: &str,
+        x: i64,
+        z: i64,
+    ) -> Result<nbt::NbtNode> {
+        let (rx, rz) = crate::world::region_coords(path);
+        let lx = x - rx.unwrap_or(0) * 32;
+        let lz = z - rz.unwrap_or(0) * 32;
+        if !(0..32).contains(&lx) || !(0..32).contains(&lz) {
+            return Err(Error::Unexpected("chunk hors de cette région".into()));
+        }
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, REGION_CAP).await)?;
+        let chunk = mca::chunk_nbt(&bytes, lx as usize, lz as usize).map_err(Error::Unexpected)?;
+        nbt::to_tree(&chunk).map_err(Error::Unexpected)
+    }
+
     /// Extrait UNE entrée d'archive vers un fichier local (téléchargement d'une entrée).
     pub async fn sftp_extract_entry(&self, id: i64, path: &str, entry: &str, local: &str) -> Result<()> {
         let kind = archive::kind_from_name(path)
@@ -894,6 +957,20 @@ impl Core {
 
 /// Plafond de lecture d'une archive en mémoire pour l'ouverture virtuelle (64 Mio).
 const ARCHIVE_CAP: u64 = 64 * 1024 * 1024;
+/// Plafond de lecture d'une image pour l'aperçu intégré data-URI (16 Mio).
+const IMAGE_CAP: u64 = 16 * 1024 * 1024;
+/// Plafond de lecture d'un fichier NBT (`.dat`…) pour le décodage en arbre (32 Mio).
+const NBT_CAP: u64 = 32 * 1024 * 1024;
+/// Plafond de lecture d'un fichier de région `.mca` (64 Mio ; largement au-dessus du réel).
+const REGION_CAP: u64 = 64 * 1024 * 1024;
+
+/// Chunk généré d'une région (coordonnées de chunk GLOBALES + taille compressée), pour l'UI.
+#[derive(serde::Serialize)]
+pub struct RegionChunk {
+    pub x: i64,
+    pub z: i64,
+    pub size: u64,
+}
 /// Pas minimal (octets) entre deux events de progression d'un transfert (anti-spam du broadcast).
 const PROGRESS_STEP: u64 = 512 * 1024;
 /// Plafonds de `search_files` : résultats renvoyés et entrées explorées.
@@ -906,6 +983,21 @@ const EXTRACT_MAX_TOTAL: u64 = 256 * 1024 * 1024;
 /// Dernier segment d'un chemin distant (nom de fichier/dossier).
 fn base_name(p: &str) -> String {
     p.trim_end_matches('/').rsplit('/').next().unwrap_or(p).to_string()
+}
+
+/// Type MIME d'une image d'après son extension (aperçu data-URI) ; `None` si non-image.
+fn image_mime(path: &str) -> Option<&'static str> {
+    Some(match path.rsplit('.').next()?.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "svg" => "image/svg+xml",
+        "avif" => "image/avif",
+        _ => return None,
+    })
 }
 
 /// Dossier parent d'un chemin distant (`/` à la racine).

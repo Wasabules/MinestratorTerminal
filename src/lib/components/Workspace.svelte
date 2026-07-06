@@ -3,10 +3,11 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { tabs } from '$lib/tabs/tabs.svelte';
   import { t } from '$lib/i18n';
-  import { alertEvents, copilotEvents, sftpEvents } from '$lib/events';
+  import { alertEvents, copilotEvents, sftpEvents, consoleEvents } from '$lib/events';
   import { addAlert } from '$lib/alerts/alerts.svelte';
   import { addDiagnosis, startRun, progressRun } from '$lib/copilot/diagnoses.svelte';
   import { applyProgress } from '$lib/transfers/transfers.svelte';
+  import { setServerRuntime } from '$lib/servers/runtime.svelte';
   import TabBar from './TabBar.svelte';
   import UserMenu from './UserMenu.svelte';
   import AlertCenter from './AlertCenter.svelte';
@@ -19,12 +20,31 @@
 
   const unlisteners: UnlistenFn[] = [];
   let destroyed = false;
+
+  // Résout un serveur depuis un `conn_id` console : moniteur du superviseur (`mon:{id}`) ou
+  // connexion d'une vue ouverte (conn_id = id d'onglet). Alimente la pastille d'état des onglets.
+  function serverIdFor(connId: string): number | null {
+    if (connId.startsWith('mon:')) {
+      const n = Number(connId.slice(4));
+      return Number.isFinite(n) ? n : null;
+    }
+    const tab = tabs.tabs.find((x) => x.id === connId);
+    return tab && tab.kind === 'server' ? tab.serverId : null;
+  }
+  function onRuntime(connId: string, state: string) {
+    if (!state) return;
+    const id = serverIdFor(connId);
+    if (id != null) setServerRuntime(id, state);
+  }
+
   onMount(async () => {
     unlisteners.push(await alertEvents.new(addAlert));
     unlisteners.push(await copilotEvents.diagnosis(addDiagnosis));
     unlisteners.push(await copilotEvents.started(startRun));
     unlisteners.push(await copilotEvents.progress(progressRun));
     unlisteners.push(await sftpEvents.progress(applyProgress));
+    unlisteners.push(await consoleEvents.status((p) => onRuntime(p.conn_id, p.state)));
+    unlisteners.push(await consoleEvents.stats((p) => onRuntime(p.conn_id, p.state)));
     if (destroyed) unlisteners.forEach((u) => u()); // démonté pendant l'enregistrement
   });
   onDestroy(() => {

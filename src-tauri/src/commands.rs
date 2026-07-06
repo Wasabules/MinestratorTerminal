@@ -3,8 +3,8 @@
 
 use minestrator_core::{
     ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, InstalledItem,
-    LiveLight, MarketPage, MarketVersion, McpConfig, MetricSample, PrivacyConfig, ServerDetails,
-    ServersOverview, SftpEntry, Snapshot, SupervisorConfig, UserProfile,
+    LiveLight, MarketPage, MarketVersion, McpConfig, MetricSample, NbtNode, PrivacyConfig,
+    RegionChunk, ServerDetails, ServersOverview, SftpEntry, Snapshot, SupervisorConfig, UserProfile,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -278,6 +278,58 @@ pub async fn sftp_gz_text(
     path: String,
 ) -> Result<String, Error> {
     core.sftp_gz_text(server_id, &path).await
+}
+
+/// Aperçu image : renvoie le fichier distant en data-URI base64 (`data:image/...`).
+#[tauri::command]
+pub async fn sftp_read_data_uri(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_read_data_uri(server_id, &path).await
+}
+
+/// Décode un fichier NBT distant (`.dat`, `level.dat`, playerdata…) en arbre typé.
+#[tauri::command]
+pub async fn sftp_nbt_tree(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<NbtNode, Error> {
+    core.sftp_nbt_tree(server_id, &path).await
+}
+
+/// Inspection lecture seule d'une région `.mca` (chunks générés / corrompus).
+#[tauri::command]
+pub async fn sftp_inspect_region(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_inspect_region(server_id, &path).await
+}
+
+/// Liste les chunks générés d'une région `.mca`.
+#[tauri::command]
+pub async fn sftp_region_chunks(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<Vec<RegionChunk>, Error> {
+    core.sftp_region_chunks(server_id, &path).await
+}
+
+/// Arbre NBT typé d'un chunk d'une région `.mca` (coordonnées de chunk globales).
+#[tauri::command]
+pub async fn sftp_region_chunk_tree(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    x: i64,
+    z: i64,
+) -> Result<NbtNode, Error> {
+    core.sftp_region_chunk_tree(server_id, &path, x, z).await
 }
 
 #[tauri::command]

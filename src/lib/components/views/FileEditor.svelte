@@ -3,6 +3,7 @@
   import { EditorState, Compartment, type Extension } from '@codemirror/state';
   import { EditorView, keymap, lineNumbers, highlightActiveLine } from '@codemirror/view';
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+  import { search, searchKeymap, highlightSelectionMatches } from '@codemirror/search';
   import { StreamLanguage, LanguageSupport, indentUnit } from '@codemirror/language';
   import { oneDark } from '@codemirror/theme-one-dark';
   import { json } from '@codemirror/lang-json';
@@ -98,11 +99,14 @@
       extensions: [
         lineNumbers(),
         highlightActiveLine(),
+        highlightSelectionMatches(),
+        search({ top: true }),
         history(),
         indentUnit.of('  '),
         keymap.of([
           ...defaultKeymap,
           ...historyKeymap,
+          ...searchKeymap,
           indentWithTab,
           {
             key: 'Mod-s',

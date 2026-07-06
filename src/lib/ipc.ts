@@ -20,9 +20,11 @@ import type {
   MarketVersion,
   McpConfig,
   MetricSample,
+  NbtNode,
   PlayerAction,
   PowerAction,
   PrivacyConfig,
+  RegionChunk,
   ServerDetails,
   ServersOverview,
   SftpEntry,
@@ -204,6 +206,16 @@ export const api = {
     invoke<string>('sftp_archive_read_text', { serverId, path, entry }),
   sftpGzText: (serverId: number, path: string) =>
     invoke<string>('sftp_gz_text', { serverId, path }),
+  sftpReadDataUri: (serverId: number, path: string) =>
+    invoke<string>('sftp_read_data_uri', { serverId, path }),
+  sftpNbtTree: (serverId: number, path: string) =>
+    invoke<NbtNode>('sftp_nbt_tree', { serverId, path }),
+  sftpInspectRegion: (serverId: number, path: string) =>
+    invoke<string>('sftp_inspect_region', { serverId, path }),
+  sftpRegionChunks: (serverId: number, path: string) =>
+    invoke<RegionChunk[]>('sftp_region_chunks', { serverId, path }),
+  sftpRegionChunkTree: (serverId: number, path: string, x: number, z: number) =>
+    invoke<NbtNode>('sftp_region_chunk_tree', { serverId, path, x, z }),
   sftpExtractEntry: (serverId: number, path: string, entry: string, localPath: string) =>
     invoke<void>('sftp_extract_entry', { serverId, path, entry, localPath }),
   sftpDisconnect: (serverId: number) => invoke<void>('sftp_disconnect', { serverId }),

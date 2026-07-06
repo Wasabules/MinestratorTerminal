@@ -127,7 +127,7 @@ fn format_report(path: &str, r: &crate::mca::RegionReport) -> String {
 }
 
 /// Extrait (rx, rz) du nom `r.rx.rz.mca`.
-fn region_coords(path: &str) -> (Option<i64>, Option<i64>) {
+pub(crate) fn region_coords(path: &str) -> (Option<i64>, Option<i64>) {
     let name = path.rsplit('/').next().unwrap_or("");
     let stem = name.strip_suffix(".mca").unwrap_or(name);
     let parts: Vec<&str> = stem.split('.').collect();

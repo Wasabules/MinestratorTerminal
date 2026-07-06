@@ -41,6 +41,9 @@ flate2 = "1.1.9"
 tar = "0.4.46"
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
+# Décodage NBT (`.dat` Minecraft : level.dat, playerdata, structures) → JSON lisible. Pur Rust.
+fastnbt = "2"
+
 # Trousseau natif de l'OS (fonctionne aussi headless).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
