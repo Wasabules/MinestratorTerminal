@@ -9,4 +9,4 @@ members = ["src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
 version = "0.1.1"
 edition = "2021"
 authors = ["Geoffrey Lecoq"]
-license = "MIT"
+license = "GPL-3.0-or-later"

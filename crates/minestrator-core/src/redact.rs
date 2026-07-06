@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn masks_email() {
-        assert_eq!(redact("contact ai@octogency.com svp"), "contact [EMAIL] svp");
+        assert_eq!(redact("contact user@example.com svp"), "contact [EMAIL] svp");
     }
 
     #[test]

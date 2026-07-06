@@ -6,7 +6,7 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs Mi
 ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)
 ![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-GPLv3-blue)
 
 > Windows · macOS · Linux — la clé API est stockée dans le **trousseau natif** de l'OS, aucun secret en clair.
 
@@ -119,4 +119,7 @@ Le workflow [`release.yml`](./.github/workflows/release.yml) build les trois OS 
 
 ## 📄 Licence
 
-[MIT](./LICENSE) © Geoffrey Lecoq
+[GNU GPL v3.0 ou ultérieure](./LICENSE) © Geoffrey Lecoq
+
+Logiciel libre : vous pouvez l'utiliser, l'étudier, le modifier et le redistribuer, à condition que
+tout dérivé distribué reste sous licence GPL (copyleft).

@@ -22,6 +22,14 @@ vite.config.ts.timestamp-*
 # --- Claude Code (sessions, mémoire, historique local) ---
 .claude
 
+# --- Références tierces / brouillons (hors dépôt public) ---
+MCP_MINESTRATOR.txt
+message(1).txt
+
+# --- Clés de signature de l'updater (JAMAIS dans le dépôt) ---
+*.key
+*.pem
+
 # --- OS / éditeurs / divers ---
 .DS_Store
 Thumbs.db
