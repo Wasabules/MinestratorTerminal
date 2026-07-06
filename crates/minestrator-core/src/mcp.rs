@@ -108,6 +108,7 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "read_gz",
     "list_archive",
     "read_archive_entry",
+    "search_files",
     "read_startup",
     "list_installed_mods",
     "list_installed_plugins",
@@ -131,6 +132,7 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "create_dir",
     "delete_path",
     "rename_path",
+    "extract_archive",
     "set_startup_params",
     "install_mod",
     // Snapshot = additif/sans risque → l'agent peut le créer (filet avant une intervention).
@@ -153,10 +155,12 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "read_gz",
     "list_archive",
     "read_archive_entry",
+    "search_files",
     "write_file",
     "create_dir",
     "delete_path",
     "rename_path",
+    "extract_archive",
     "inspect_region",
     "diagnose_startup",
     "analyze_performance",
@@ -347,7 +351,7 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // Archives / gz : téléchargent + décompressent → on évite de re-télécharger dans la foulée.
         "list_archive" | "read_archive_entry" | "read_gz" => 30,
         // Config / fichiers / arborescence : purgés après toute écriture, donc sûrs à cacher un instant.
-        "list_files" | "read_file" | "read_startup" => 15,
+        "list_files" | "read_file" | "read_startup" | "search_files" => 15,
         "list_servers" => 10,
         "server_status" => 5,
         // Volontairement absents : server_metrics (local, déjà rapide), read_console (live),
@@ -442,6 +446,30 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             let path = req_str(&args, "path")?;
             let entry = req_str(&args, "entry")?;
             Ok(core.redact_ai(&core.sftp_archive_read_text(id, &path, &entry).await.map_err(es)?))
+        }
+
+        "search_files" => {
+            let id = req_i64(&args, "server_id")?;
+            let root = opt_str(&args, "root", "/");
+            let query = req_str(&args, "query")?;
+            let (hits, truncated) = core.sftp_search(id, &root, &query).await.map_err(es)?;
+            let mut out = format!(
+                "{} résultat(s) pour « {query} » sous « {root} »{} :",
+                hits.len(),
+                if truncated { " (tronqué — affine la recherche)" } else { "" }
+            );
+            for e in &hits {
+                let _ = write!(out, "\n{}{}", e.path, if e.is_dir { "/" } else { "" });
+            }
+            Ok(out)
+        }
+
+        "extract_archive" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = req_str(&args, "path")?;
+            let dest = req_str(&args, "dest_dir")?;
+            let n = core.sftp_extract_archive(id, &path, &dest).await.map_err(es)?;
+            Ok(format!("{n} fichier(s) extrait(s) dans « {dest} »."))
         }
 
         "write_file" => {
@@ -650,6 +678,8 @@ fn build_tool_list() -> Value {
         tool("read_gz", "Lit un fichier texte GZIPPÉ via SFTP en le décompressant (ex. log tourné `latest.log.gz`, `crash-report.gz`) — indispensable pour diagnostiquer sur des logs archivés. Complète read_file, qui refuse les binaires.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du .gz"))], &["server_id", "path"])),
         tool("list_archive", "Liste les entrées d'une archive distante (`.zip` / `.tar` / `.tar.gz`) SANS l'extraire — pour repérer un fichier à inspecter dans un backup, un modpack, etc.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant de l'archive"))], &["server_id", "path"])),
         tool("read_archive_entry", "Lit le contenu TEXTE d'UNE entrée d'archive (`.zip`/`.tar`/`.tar.gz`) sans l'extraire sur disque. `entry` = nom exact renvoyé par list_archive.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive")), ("entry", prop_str("Nom de l'entrée dans l'archive"))], &["server_id", "path", "entry"])),
+        tool("search_files", "Recherche RÉCURSIVE des fichiers/dossiers dont le nom contient `query` (insensible à la casse) sous `root` (défaut `/`). Renvoie les chemins (dossiers suffixés `/`). Résultats et exploration plafonnés (« tronqué » → affine `query`/`root`). Idéal pour localiser une config sans connaître le chemin exact.", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Sous-chaîne du nom à chercher")), ("root", prop_str("Dossier de départ (défaut /)"))], &["server_id", "query"])),
+        tool("extract_archive", "Extrait une archive (`.zip`/`.tar`/`.tar.gz`) présente sur le serveur DANS `dest_dir` (via SFTP) — p. ex. installer un modpack/monde/backup en place. Crée les dossiers manquants, refuse les chemins dangereux, plafonné (anti zip-bomb). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive sur le serveur")), ("dest_dir", prop_str("Dossier cible d'extraction"))], &["server_id", "path", "dest_dir"])),
         tool("write_file", "Écrit/écrase un fichier de config via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant")), ("content", prop_str("Nouveau contenu"))], &["server_id", "path", "content"])),
         tool("create_dir", "Crée un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin du nouveau dossier"))], &["server_id", "path"])),
         tool("delete_path", "Supprime un fichier ou un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin à supprimer")), ("is_dir", prop_bool("true si c'est un dossier"))], &["server_id", "path"])),

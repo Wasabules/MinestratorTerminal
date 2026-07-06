@@ -43,14 +43,14 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (30)
+## 5. Capacités — catalogue d'outils (32)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **20 outils de lecture**
-> + **10 modifiants**.
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **21 outils de lecture**
+> + **11 modifiants**.
 
 #### Découverte & état
 
@@ -78,10 +78,12 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `read_gz` | | `server_id`, `path` | Contenu d'un fichier texte **gzippé**, décompressé (ex. log tourné `latest.log.gz`) — pour diagnostiquer sur des logs archivés. |
 | `list_archive` | | `server_id`, `path` | Entrées d'une archive `.zip`/`.tar`/`.tar.gz` **sans l'extraire** (repérer un fichier dans un backup/modpack). |
 | `read_archive_entry` | | `server_id`, `path`, `entry` | Contenu **texte** d'une entrée d'archive, sans extraction disque. |
+| `search_files` | | `server_id`, `query`, `root?` | **Recherche récursive** de fichiers/dossiers par sous-chaîne de nom (bornée) — localiser une config sans le chemin exact. |
 | `write_file` | ✎ | `server_id`, `path`, `content` | Écrit/écrase un fichier de config. |
 | `create_dir` | ✎ | `server_id`, `path` | Crée un dossier. |
 | `delete_path` | ✎ | `server_id`, `path`, `is_dir?` | Supprime un fichier ou un dossier. |
 | `rename_path` | ✎ | `server_id`, `from`, `to` | Renomme ou déplace un fichier/dossier. |
+| `extract_archive` | ✎ | `server_id`, `path`, `dest_dir` | **Extrait** une archive `.zip`/`.tar`/`.tar.gz` sur le serveur (anti zip-slip, plafonné). |
 
 #### Démarrage & JVM
 

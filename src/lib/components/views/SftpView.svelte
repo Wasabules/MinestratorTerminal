@@ -499,7 +499,7 @@
 
 {#if editor}
   {@const ed = editor}
-  <div class="overlay">
+  <div class="overlay top">
     <FileEditor
       serverId={serverId}
       path={ed.path}
@@ -900,6 +900,10 @@
   .overlay.center {
     display: grid;
     place-items: center;
+  }
+  /* L'éditeur (ouvert depuis une entrée d'archive) doit passer AU-DESSUS de l'overlay d'archive. */
+  .overlay.top {
+    z-index: 12;
   }
   .backdrop {
     position: fixed;

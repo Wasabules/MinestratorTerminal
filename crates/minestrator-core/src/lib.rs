@@ -842,6 +842,38 @@ impl Core {
             .map_err(|e| Error::Unexpected(format!("écriture locale: {e}")))
     }
 
+    /// Recherche RÉCURSIVE (bornée) de fichiers/dossiers par sous-chaîne de nom sous `root`.
+    /// Renvoie `(résultats, tronqué)`.
+    pub async fn sftp_search(&self, id: i64, root: &str, query: &str) -> Result<(Vec<SftpEntry>, bool)> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        self.drop_on_err(
+            id,
+            sftp::search(&conn, root, query, SEARCH_MAX_RESULTS, SEARCH_MAX_SCAN).await,
+        )
+    }
+
+    /// Extrait une archive distante (`.zip`/`.tar`/`.tar.gz`) DANS `dest_dir` sur le serveur (via
+    /// SFTP). Anti zip-slip + plafonds (voir `archive::extract_all`). Renvoie le nombre de fichiers.
+    pub async fn sftp_extract_archive(&self, id: i64, archive_path: &str, dest_dir: &str) -> Result<usize> {
+        let kind = archive::kind_from_name(archive_path)
+            .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, archive_path, ARCHIVE_CAP).await)?;
+        let files = archive::extract_all(&bytes, kind, EXTRACT_MAX_ENTRIES, EXTRACT_MAX_TOTAL)
+            .map_err(Error::Unexpected)?;
+        let mut ensured: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let count = files.len();
+        for (name, data) in files {
+            let target = path_join(dest_dir, &name);
+            let dir = parent_dir(&target);
+            if ensured.insert(dir.clone()) {
+                sftp::ensure_dir(&conn, &dir).await;
+            }
+            self.drop_on_err(id, sftp::write_bytes(&conn, &target, &data).await)?;
+        }
+        Ok(count)
+    }
+
     /// Transfert simple AWAITÉ (sans progression) — usage INTERNE (world.rs : réparation `.mca`).
     pub(crate) async fn sftp_download_file(&self, id: i64, remote: &str, local: &str) -> Result<()> {
         let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
@@ -864,6 +896,12 @@ impl Core {
 const ARCHIVE_CAP: u64 = 64 * 1024 * 1024;
 /// Pas minimal (octets) entre deux events de progression d'un transfert (anti-spam du broadcast).
 const PROGRESS_STEP: u64 = 512 * 1024;
+/// Plafonds de `search_files` : résultats renvoyés et entrées explorées.
+const SEARCH_MAX_RESULTS: usize = 200;
+const SEARCH_MAX_SCAN: usize = 20_000;
+/// Plafonds d'extraction d'archive (nb de fichiers, taille décompressée totale) — anti zip-bomb.
+const EXTRACT_MAX_ENTRIES: usize = 4000;
+const EXTRACT_MAX_TOTAL: u64 = 256 * 1024 * 1024;
 
 /// Dernier segment d'un chemin distant (nom de fichier/dossier).
 fn base_name(p: &str) -> String {
@@ -883,6 +921,11 @@ fn parent_dir(p: &str) -> String {
 fn rel_to(full: &str, parent: &str) -> String {
     let parent = parent.trim_end_matches('/');
     full.strip_prefix(parent).unwrap_or(full).trim_start_matches('/').to_string()
+}
+
+/// Joint un dossier distant et un chemin relatif (nom d'entrée d'archive à extraire).
+fn path_join(dir: &str, rel: &str) -> String {
+    format!("{}/{}", dir.trim_end_matches('/'), rel.trim_start_matches('/'))
 }
 
 impl Default for Core {

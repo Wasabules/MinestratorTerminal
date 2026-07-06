@@ -187,6 +187,62 @@ pub async fn stat(conn: &SftpConn, path: &str) -> Result<(bool, u64)> {
     Ok((m.is_dir(), m.size.unwrap_or(0)))
 }
 
+/// Recherche RÉCURSIVE des entrées dont le nom contient `query` (insensible à la casse) sous `root`.
+/// Bornée : `max_results` résultats et `max_scan` entrées explorées → renvoie `(hits, tronqué)`. Un
+/// dossier illisible (permissions) est ignoré, pas fatal.
+pub async fn search(
+    conn: &SftpConn,
+    root: &str,
+    query: &str,
+    max_results: usize,
+    max_scan: usize,
+) -> Result<(Vec<SftpEntry>, bool)> {
+    let q = query.to_lowercase();
+    let mut out: Vec<SftpEntry> = Vec::new();
+    let mut scanned = 0usize;
+    let mut truncated = false;
+    let mut stack = vec![root.to_string()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = conn.sftp.read_dir(&dir).await else {
+            continue; // dossier illisible → on saute
+        };
+        for entry in entries {
+            let name = entry.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            scanned += 1;
+            if scanned > max_scan {
+                truncated = true;
+                break;
+            }
+            let meta = entry.metadata();
+            let is_dir = meta.is_dir();
+            let full = join(&dir, &name);
+            if is_dir {
+                stack.push(full.clone());
+            }
+            if name.to_lowercase().contains(&q) {
+                out.push(SftpEntry {
+                    path: full,
+                    is_dir,
+                    size: meta.size.unwrap_or(0),
+                    modified: meta.mtime.map(|m| m as i64),
+                    name,
+                });
+                if out.len() >= max_results {
+                    truncated = true;
+                    break;
+                }
+            }
+        }
+        if truncated {
+            break;
+        }
+    }
+    Ok((out, truncated))
+}
+
 pub async fn write_text(conn: &SftpConn, path: &str, content: &str) -> Result<()> {
     let mut file = conn.sftp.create(path).await.map_err(sftp_err)?;
     file.write_all(content.as_bytes())
@@ -280,6 +336,29 @@ pub async fn download(
 
 pub async fn mkdir(conn: &SftpConn, path: &str) -> Result<()> {
     conn.sftp.create_dir(path).await.map_err(sftp_err)
+}
+
+/// Crée un dossier distant ET tous ses parents (`mkdir -p`) ; ignore « existe déjà ».
+pub async fn ensure_dir(conn: &SftpConn, path: &str) {
+    let mut acc = String::new();
+    for part in path.split('/').filter(|s| !s.is_empty()) {
+        acc.push('/');
+        acc.push_str(part);
+        let _ = conn.sftp.create_dir(&acc).await; // erreur ignorée si le dossier existe déjà
+    }
+}
+
+/// Écrit des octets bruts dans un fichier distant (crée / tronque).
+pub async fn write_bytes(conn: &SftpConn, path: &str, data: &[u8]) -> Result<()> {
+    let mut file = conn.sftp.create(path).await.map_err(sftp_err)?;
+    file.write_all(data)
+        .await
+        .map_err(|e| Error::Unexpected(format!("écriture SFTP: {e}")))?;
+    file.flush()
+        .await
+        .map_err(|e| Error::Unexpected(format!("flush SFTP: {e}")))?;
+    let _ = file.shutdown().await;
+    Ok(())
 }
 
 pub async fn remove(conn: &SftpConn, path: &str, is_dir: bool) -> Result<()> {

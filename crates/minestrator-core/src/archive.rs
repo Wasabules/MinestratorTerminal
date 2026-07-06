@@ -69,6 +69,88 @@ pub fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// Un nom d'entrée est-il SÛR à extraire vers un dossier cible ? (anti *zip-slip* : refuse les chemins
+/// absolus, un composant `..`, ou une lettre de lecteur Windows.)
+pub fn safe_entry(name: &str) -> bool {
+    !name.starts_with('/')
+        && !name.starts_with('\\')
+        && !name.contains(':')
+        && !name.split(['/', '\\']).any(|c| c == "..")
+}
+
+/// Toutes les entrées FICHIER d'une archive `(nom, octets)`, en un seul passage. Ignore les dossiers
+/// (recréés à l'écriture) et les entrées à chemin dangereux. Plafonné (nombre d'entrées + taille
+/// décompressée totale) — garde-fou anti *zip-bomb*.
+pub fn extract_all(
+    bytes: &[u8],
+    kind: ArchiveKind,
+    max_entries: usize,
+    max_total: u64,
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    match kind {
+        ArchiveKind::Zip => extract_all_zip(bytes, max_entries, max_total),
+        ArchiveKind::Tar => tar_extract_all(tar::Archive::new(Cursor::new(bytes)), max_entries, max_total),
+        ArchiveKind::TarGz => {
+            tar_extract_all(tar::Archive::new(GzDecoder::new(Cursor::new(bytes))), max_entries, max_total)
+        }
+    }
+}
+
+fn over_limits(count: usize, total: u64, max_entries: usize, max_total: u64) -> Result<(), String> {
+    if count >= max_entries || total > max_total {
+        return Err("Archive trop volumineuse à extraire (limite dépassée).".into());
+    }
+    Ok(())
+}
+
+fn extract_all_zip(bytes: &[u8], max_entries: usize, max_total: u64) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut ar =
+        zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("zip illisible : {e}"))?;
+    let mut out = Vec::new();
+    let mut total = 0u64;
+    for i in 0..ar.len() {
+        let mut f = ar.by_index(i).map_err(|e| format!("zip (entrée {i}) : {e}"))?;
+        if f.is_dir() {
+            continue;
+        }
+        let name = f.name().to_string();
+        if !safe_entry(&name) {
+            continue;
+        }
+        total += f.size();
+        over_limits(out.len(), total, max_entries, max_total)?;
+        let mut buf = Vec::with_capacity(f.size() as usize);
+        f.read_to_end(&mut buf).map_err(|e| format!("extraction : {e}"))?;
+        out.push((name, buf));
+    }
+    Ok(out)
+}
+
+fn tar_extract_all<R: Read>(
+    mut ar: tar::Archive<R>,
+    max_entries: usize,
+    max_total: u64,
+) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let mut out = Vec::new();
+    let mut total = 0u64;
+    for e in ar.entries().map_err(|e| format!("tar illisible : {e}"))? {
+        let mut e = e.map_err(|e| format!("tar (entrée) : {e}"))?;
+        if e.header().entry_type().is_dir() {
+            continue;
+        }
+        let name = e.path().map_err(|e| format!("tar (chemin) : {e}"))?.to_string_lossy().into_owned();
+        if !safe_entry(&name) {
+            continue;
+        }
+        total += e.size();
+        over_limits(out.len(), total, max_entries, max_total)?;
+        let mut buf = Vec::with_capacity(e.size() as usize);
+        e.read_to_end(&mut buf).map_err(|e| format!("extraction : {e}"))?;
+        out.push((name, buf));
+    }
+    Ok(out)
+}
+
 fn list_zip(bytes: &[u8]) -> Result<Vec<ArchiveEntry>, String> {
     let mut ar =
         zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| format!("zip illisible : {e}"))?;
@@ -178,5 +260,25 @@ mod tests {
         enc.write_all(b"log content").unwrap();
         let bytes = enc.finish().unwrap();
         assert_eq!(gunzip(&bytes).unwrap(), b"log content");
+    }
+
+    #[test]
+    fn extract_all_and_safe_entry() {
+        assert!(safe_entry("plugins/config.yml"));
+        assert!(!safe_entry("/etc/passwd"));
+        assert!(!safe_entry("../secret"));
+        assert!(!safe_entry("a/../b"));
+        assert!(!safe_entry("C:\\Windows"));
+
+        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        w.start_file("d/a.txt", zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(b"A").unwrap();
+        w.start_file("b.txt", zip::write::SimpleFileOptions::default()).unwrap();
+        w.write_all(b"BB").unwrap();
+        let bytes = w.finish().unwrap().into_inner();
+
+        let files = extract_all(&bytes, ArchiveKind::Zip, 100, 1024).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(extract_all(&bytes, ArchiveKind::Zip, 1, 1024).is_err()); // plafond d'entrées
     }
 }
