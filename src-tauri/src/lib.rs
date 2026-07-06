@@ -23,7 +23,21 @@ pub fn run() {
     let supervisor = core.supervisor();
     let copilot_core = core.clone();
 
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Instance unique : DOIT être le 1er plugin enregistré. Si une 2ᵉ instance est lancée alors que
+    // l'app tourne déjà (potentiellement masquée dans le tray), on ré-affiche et focus la fenêtre
+    // existante au lieu d'ouvrir un second processus.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }));
+    }
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
