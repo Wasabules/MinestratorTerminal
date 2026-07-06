@@ -154,11 +154,13 @@
         {@const rt = serverRuntime(tab.serverId)}
         <span class="glyph">
           <Icon name={viewMeta(tab.view).icon} size={15} />
-          <span
-            class="sbadge"
-            style="--sc: {rt ? runtimeMeta(rt).color : 'var(--text-dim)'}"
-            title={t(`status.${rt ? runtimeMeta(rt).key : 'offline'}`)}
-          ></span>
+          {#if !grouped}
+            <span
+              class="sbadge"
+              style="--sc: {rt ? runtimeMeta(rt).color : 'var(--text-dim)'}"
+              title={t(`status.${rt ? runtimeMeta(rt).key : 'offline'}`)}
+            ></span>
+          {/if}
         </span>
         {#if grouped}
           {#if !compact}<span class="name">{t(`view.${tab.view}`)}</span>{/if}
@@ -178,6 +180,7 @@
   {#each units as unit (unit.type === 'group' ? `g${unit.entries[0].tab.id}` : unit.entry.tab.id)}
     {#if unit.type === 'group'}
       {@const gcolor = serverColor(unit.serverId)}
+      {@const grt = serverRuntime(unit.serverId)}
       <div class="tgroup" class:colored={!!gcolor}>
         <span class="cstripe gstripe" style="background: {gcolor || 'color-mix(in srgb, var(--text) 28%, transparent)'}"></span>
         <button
@@ -186,7 +189,14 @@
           title={unit.serverName}
           onclick={() => tabs.activate(unit.entries[0].tab.id)}
           oncontextmenu={(e) => openMenu(e, unit.entries[0].tab)}
-        >{unit.serverName}</button>
+        >
+          <span
+            class="cdot"
+            style="--sc: {grt ? runtimeMeta(grt).color : 'var(--text-dim)'}"
+            title={t(`status.${grt ? runtimeMeta(grt).key : 'offline'}`)}
+          ></span>
+          {unit.serverName}
+        </button>
         {#each unit.entries as e (e.tab.id)}
           {@render tabEl(e.tab, e.index, true)}
         {/each}
@@ -342,6 +352,15 @@
   }
   .tchip:hover {
     color: var(--text);
+  }
+  /* Point d'état d'exécution du serveur, sur le chip (une seule fois pour tout le groupe). */
+  .cdot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sc);
+    flex: none;
+    margin-right: 7px;
   }
   /* Trait continu au-dessus du groupe (par-dessus onglets ET espaces) = la « liaison » du groupe. */
   .gstripe {
