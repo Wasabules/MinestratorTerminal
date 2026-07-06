@@ -125,6 +125,7 @@
     {/if}
     <button
       class="tab-main"
+      class:noclose={tab.kind === 'home'}
       role="tab"
       aria-selected={tab.id === tabs.activeId}
       onpointerdown={(e) => onPointerDown(e, tab)}
@@ -306,6 +307,10 @@
     min-width: 0;
     user-select: none;
     touch-action: none;
+  }
+  /* Onglet sans bouton fermer (Accueil) : padding droit symétrique (sinon le libellé colle à droite). */
+  .tab-main.noclose {
+    padding-right: 12px;
   }
   .tab.dragging {
     opacity: 0.55;
