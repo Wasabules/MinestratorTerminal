@@ -116,6 +116,8 @@ pub fn run() {
             commands::sftp_inspect_region,
             commands::sftp_region_chunks,
             commands::sftp_region_chunk_tree,
+            commands::sftp_nbt_snbt,
+            commands::sftp_region_chunk_snbt,
             commands::sftp_extract_entry,
             commands::sftp_disconnect,
             commands::get_copilot_config,

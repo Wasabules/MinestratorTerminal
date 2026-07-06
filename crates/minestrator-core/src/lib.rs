@@ -869,18 +869,14 @@ impl Core {
                 x: rx.unwrap_or(0) * 32 + c.local_x as i64,
                 z: rz.unwrap_or(0) * 32 + c.local_z as i64,
                 size: c.len as u64,
+                timestamp: c.timestamp,
+                corrupt: c.corrupt,
             })
             .collect())
     }
 
-    /// Arbre NBT typé d'UN chunk d'une région `.mca` (coordonnées de chunk GLOBALES → locales).
-    pub async fn sftp_region_chunk_tree(
-        &self,
-        id: i64,
-        path: &str,
-        x: i64,
-        z: i64,
-    ) -> Result<nbt::NbtNode> {
+    /// Télécharge la région et extrait les octets NBT décompressés d'UN chunk (coords GLOBALES).
+    async fn read_chunk_nbt(&self, id: i64, path: &str, x: i64, z: i64) -> Result<Vec<u8>> {
         let (rx, rz) = crate::world::region_coords(path);
         let lx = x - rx.unwrap_or(0) * 32;
         let lz = z - rz.unwrap_or(0) * 32;
@@ -889,8 +885,26 @@ impl Core {
         }
         let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
         let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, REGION_CAP).await)?;
-        let chunk = mca::chunk_nbt(&bytes, lx as usize, lz as usize).map_err(Error::Unexpected)?;
+        mca::chunk_nbt(&bytes, lx as usize, lz as usize).map_err(Error::Unexpected)
+    }
+
+    /// Arbre NBT typé d'UN chunk d'une région `.mca` (coordonnées de chunk GLOBALES).
+    pub async fn sftp_region_chunk_tree(&self, id: i64, path: &str, x: i64, z: i64) -> Result<nbt::NbtNode> {
+        let chunk = self.read_chunk_nbt(id, path, x, z).await?;
         nbt::to_tree(&chunk).map_err(Error::Unexpected)
+    }
+
+    /// SNBT (`/data`) d'un fichier NBT distant (`.dat`…) — fidèle, pour la vue/copie.
+    pub async fn sftp_nbt_snbt(&self, id: i64, path: &str) -> Result<String> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, NBT_CAP).await)?;
+        nbt::to_snbt(&bytes).map_err(Error::Unexpected)
+    }
+
+    /// SNBT (`/data`) d'UN chunk d'une région `.mca` (coordonnées GLOBALES).
+    pub async fn sftp_region_chunk_snbt(&self, id: i64, path: &str, x: i64, z: i64) -> Result<String> {
+        let chunk = self.read_chunk_nbt(id, path, x, z).await?;
+        nbt::to_snbt(&chunk).map_err(Error::Unexpected)
     }
 
     /// Extrait UNE entrée d'archive vers un fichier local (téléchargement d'une entrée).
@@ -964,12 +978,15 @@ const NBT_CAP: u64 = 32 * 1024 * 1024;
 /// Plafond de lecture d'un fichier de région `.mca` (64 Mio ; largement au-dessus du réel).
 const REGION_CAP: u64 = 64 * 1024 * 1024;
 
-/// Chunk généré d'une région (coordonnées de chunk GLOBALES + taille compressée), pour l'UI.
+/// Chunk généré d'une région (coordonnées GLOBALES, taille, date, corruption), pour la carte UI.
 #[derive(serde::Serialize)]
 pub struct RegionChunk {
     pub x: i64,
     pub z: i64,
     pub size: u64,
+    /// Dernière écriture (epoch secondes ; 0 si absente).
+    pub timestamp: u32,
+    pub corrupt: bool,
 }
 /// Pas minimal (octets) entre deux events de progression d'un transfert (anti-spam du broadcast).
 const PROGRESS_STEP: u64 = 512 * 1024;

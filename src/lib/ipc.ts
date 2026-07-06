@@ -216,6 +216,10 @@ export const api = {
     invoke<RegionChunk[]>('sftp_region_chunks', { serverId, path }),
   sftpRegionChunkTree: (serverId: number, path: string, x: number, z: number) =>
     invoke<NbtNode>('sftp_region_chunk_tree', { serverId, path, x, z }),
+  sftpNbtSnbt: (serverId: number, path: string) =>
+    invoke<string>('sftp_nbt_snbt', { serverId, path }),
+  sftpRegionChunkSnbt: (serverId: number, path: string, x: number, z: number) =>
+    invoke<string>('sftp_region_chunk_snbt', { serverId, path, x, z }),
   sftpExtractEntry: (serverId: number, path: string, entry: string, localPath: string) =>
     invoke<void>('sftp_extract_entry', { serverId, path, entry, localPath }),
   sftpDisconnect: (serverId: number) => invoke<void>('sftp_disconnect', { serverId }),

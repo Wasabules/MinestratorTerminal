@@ -112,6 +112,114 @@ fn build(name: Option<String>, v: &fastnbt::Value, budget: &mut usize) -> NbtNod
     }
 }
 
+/// Sérialise un fichier NBT en **SNBT** indenté (format des commandes `/data`), fidèle (tableaux
+/// complets, non tronqués) — pour la vue SNBT et le copier-coller vers une commande.
+pub fn to_snbt(bytes: &[u8]) -> Result<String, String> {
+    let data = decompress(bytes)?;
+    let value: fastnbt::Value =
+        fastnbt::from_bytes(&data).map_err(|e| format!("NBT illisible : {e}"))?;
+    let mut out = String::new();
+    write_snbt(&mut out, &value, 0);
+    Ok(out)
+}
+
+fn snbt_indent(out: &mut String, depth: usize) {
+    for _ in 0..depth {
+        out.push_str("  ");
+    }
+}
+
+fn write_snbt(out: &mut String, v: &fastnbt::Value, depth: usize) {
+    use fastnbt::Value as N;
+    use std::fmt::Write as _;
+    match v {
+        N::Byte(x) => { let _ = write!(out, "{x}b"); }
+        N::Short(x) => { let _ = write!(out, "{x}s"); }
+        N::Int(x) => { let _ = write!(out, "{x}"); }
+        N::Long(x) => { let _ = write!(out, "{x}L"); }
+        N::Float(x) => { let _ = write!(out, "{x}f"); }
+        N::Double(x) => { let _ = write!(out, "{x}d"); }
+        N::String(s) => snbt_string(out, s),
+        N::ByteArray(a) => snbt_num_array(out, 'B', a.iter().map(|x| format!("{x}b"))),
+        N::IntArray(a) => snbt_num_array(out, 'I', a.iter().map(|x| x.to_string())),
+        N::LongArray(a) => snbt_num_array(out, 'L', a.iter().map(|x| format!("{x}L"))),
+        N::List(l) => {
+            if l.is_empty() {
+                out.push_str("[]");
+                return;
+            }
+            out.push_str("[\n");
+            for (i, e) in l.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(",\n");
+                }
+                snbt_indent(out, depth + 1);
+                write_snbt(out, e, depth + 1);
+            }
+            out.push('\n');
+            snbt_indent(out, depth);
+            out.push(']');
+        }
+        N::Compound(m) => {
+            if m.is_empty() {
+                out.push_str("{}");
+                return;
+            }
+            let mut kv: Vec<_> = m.iter().collect();
+            kv.sort_by(|a, b| a.0.cmp(b.0));
+            out.push_str("{\n");
+            for (i, (k, val)) in kv.iter().enumerate() {
+                if i > 0 {
+                    out.push_str(",\n");
+                }
+                snbt_indent(out, depth + 1);
+                snbt_key(out, k);
+                out.push_str(": ");
+                write_snbt(out, val, depth + 1);
+            }
+            out.push('\n');
+            snbt_indent(out, depth);
+            out.push('}');
+        }
+    }
+}
+
+/// Tableau typé SNBT en ligne : `[I;1,2,3]`, `[B;1b,2b]`, `[L;1L,2L]`.
+fn snbt_num_array(out: &mut String, tag: char, items: impl Iterator<Item = String>) {
+    out.push('[');
+    out.push(tag);
+    out.push(';');
+    for (i, s) in items.enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&s);
+    }
+    out.push(']');
+}
+
+/// Clé de compound : nue si simple, sinon entre guillemets.
+fn snbt_key(out: &mut String, k: &str) {
+    let simple = !k.is_empty()
+        && k.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'+' | b'-'));
+    if simple {
+        out.push_str(k);
+    } else {
+        snbt_string(out, k);
+    }
+}
+
+fn snbt_string(out: &mut String, s: &str) {
+    out.push('"');
+    for c in s.chars() {
+        if c == '"' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -169,5 +277,13 @@ mod tests {
     #[test]
     fn rejects_garbage() {
         assert!(super::to_tree(&[9, 9, 9, 9, 9]).is_err());
+    }
+
+    #[test]
+    fn snbt_preserves_type_suffixes() {
+        let snbt = super::to_snbt(&sample()).unwrap();
+        assert!(snbt.contains("LevelName: \"monde\""));
+        assert!(snbt.contains("RandomSeed: 123456789L")); // suffixe Long
+        assert!(snbt.contains("SpawnX: 42")); // Int, sans suffixe
     }
 }

@@ -250,11 +250,14 @@ export interface NbtNode {
   children?: NbtNode[];
 }
 
-/** Chunk généré d'une région `.mca` (coordonnées de chunk globales + taille compressée). */
+/** Chunk généré d'une région `.mca` (coordonnées de chunk globales, taille, date, corruption). */
 export interface RegionChunk {
   x: number;
   z: number;
   size: number;
+  /** Dernière écriture (epoch secondes ; 0 si absente). */
+  timestamp: number;
+  corrupt: boolean;
 }
 
 /** Progression d'un transfert SFTP (event `sftp://progress`), pour le gestionnaire de transferts. */

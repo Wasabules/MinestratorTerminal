@@ -111,11 +111,16 @@ pub(crate) fn clear_corrupt(bytes: &mut [u8], report: &RegionReport) -> usize {
 pub(crate) struct ChunkLoc {
     pub local_x: usize,
     pub local_z: usize,
-    /// Taille des données compressées du chunk (octets).
+    /// Taille des données compressées du chunk (octets ; 0 si illisible).
     pub len: usize,
+    /// Date de dernière écriture (table de timestamps, epoch secondes ; 0 si absente).
+    pub timestamp: u32,
+    /// Entrée présente mais incohérente (pointeur/longueur) → chunk corrompu.
+    pub corrupt: bool,
 }
 
-/// Liste les chunks générés (entrée de localisation valide + longueur déclarée cohérente).
+/// Liste les chunks générés (entrée de localisation non vide), avec taille, timestamp et drapeau de
+/// corruption — un chunk présent mais incohérent est renvoyé avec `corrupt = true` (pour la carte).
 pub(crate) fn chunks(bytes: &[u8]) -> Vec<ChunkLoc> {
     let mut out = Vec::new();
     if bytes.len() < HEADER || !bytes.len().is_multiple_of(SECTOR) {
@@ -126,16 +131,29 @@ pub(crate) fn chunks(bytes: &[u8]) -> Vec<ChunkLoc> {
         let e = i * 4;
         let offset = u32::from_be_bytes([0, bytes[e], bytes[e + 1], bytes[e + 2]]) as usize;
         let count = bytes[e + 3] as usize;
-        if offset < 2 || count == 0 || offset + count > sectors {
-            continue;
+        if offset == 0 && count == 0 {
+            continue; // chunk non généré (normal)
         }
-        let s = offset * SECTOR;
-        let declared =
-            u32::from_be_bytes([bytes[s], bytes[s + 1], bytes[s + 2], bytes[s + 3]]) as usize;
-        if declared == 0 || declared > count * SECTOR {
-            continue;
-        }
-        out.push(ChunkLoc { local_x: i % 32, local_z: i / 32, len: declared.saturating_sub(1) });
+        let ts = u32::from_be_bytes([
+            bytes[SECTOR + e],
+            bytes[SECTOR + e + 1],
+            bytes[SECTOR + e + 2],
+            bytes[SECTOR + e + 3],
+        ]);
+        // Mêmes contrôles de cohérence que `validate`, mais on CONSERVE l'entrée (drapeau corrupt).
+        let (len, corrupt) = if offset < 2 || count == 0 || offset + count > sectors {
+            (0, true)
+        } else {
+            let s = offset * SECTOR;
+            let declared =
+                u32::from_be_bytes([bytes[s], bytes[s + 1], bytes[s + 2], bytes[s + 3]]) as usize;
+            if declared == 0 || declared > count * SECTOR {
+                (0, true)
+            } else {
+                (declared.saturating_sub(1), false)
+            }
+        };
+        out.push(ChunkLoc { local_x: i % 32, local_z: i / 32, len, timestamp: ts, corrupt });
     }
     out
 }

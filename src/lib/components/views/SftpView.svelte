@@ -52,9 +52,17 @@
   let archive = $state<{ path: string; name: string; entries: ArchiveEntry[] } | null>(null);
   let image = $state<{ name: string; uri: string } | null>(null);
   // Inspecteur NBT (arbre typé), pour un .dat ou un chunk de région.
-  let nbt = $state<{ title: string; root: NbtNode } | null>(null);
+  type NbtSource = { kind: 'file'; path: string } | { kind: 'chunk'; path: string; x: number; z: number };
+  let nbt = $state<{ title: string; root: NbtNode; source: NbtSource } | null>(null);
+  let nbtQuery = $state('');
+  let nbtBulk = $state<{ gen: number; open: boolean } | null>(null);
+  let nbtView = $state<'tree' | 'snbt'>('tree');
+  let nbtSnbtText = $state<string | null>(null);
+  let nbtMenu = $state<{ x: number; y: number; node: NbtNode; path: string } | null>(null);
   // Navigateur de chunks d'une région .mca (`chunks === null` = chargement).
   let region = $state<{ name: string; path: string; chunks: RegionChunk[] | null } | null>(null);
+  let gotoInput = $state('');
+  let gotoErr = $state('');
   // Rapport d'inspection de corruption (`text === null` = chargement).
   let report = $state<{ name: string; text: string | null } | null>(null);
   let xfersOpen = $state(false);
@@ -74,6 +82,14 @@
       .filter(Boolean)
       .join(' ')
   );
+  // Arbre NBT filtré par la recherche (pré-élagage → auto-dépli + surlignage côté composant).
+  const nbtShown = $derived.by(() => {
+    if (!nbt) return null;
+    const q = nbtQuery.trim().toLowerCase();
+    return q ? filterTree(nbt.root, q) : nbt.root;
+  });
+  // Grille 32×32 de la région (indexée par coordonnées locales).
+  const chunkCells = $derived(region?.chunks ? mapCells(region.chunks) : []);
 
   let destroyed = false;
   onMount(async () => {
@@ -225,10 +241,25 @@
   }
 
   // --- NBT (.dat…, chunk) : arbre typé lecture seule (inspecteur NBTExplorer-grade). ---
+  function resetNbtView() {
+    nbtQuery = '';
+    nbtBulk = null;
+    nbtView = 'tree';
+    nbtSnbtText = null;
+    nbtMenu = null;
+  }
+  function showNbt(title: string, root: NbtNode, source: NbtSource) {
+    resetNbtView();
+    nbt = { title, root, source };
+  }
+  function closeNbt() {
+    nbt = null;
+    nbtMenu = null;
+  }
   async function openNbt(entry: SftpEntry) {
     try {
       const root = await api.sftpNbtTree(serverId, entry.path);
-      nbt = { title: entry.name, root };
+      showNbt(entry.name, root, { kind: 'file', path: entry.path });
     } catch (e) {
       error = humanizeError(e);
     }
@@ -237,6 +268,8 @@
   // --- Région .mca : navigateur de chunks (→ arbre NBT d'un chunk) + rapport de corruption. ---
   async function openRegion(entry: SftpEntry) {
     region = { name: entry.name, path: entry.path, chunks: null };
+    gotoInput = '';
+    gotoErr = '';
     try {
       const chunks = await api.sftpRegionChunks(serverId, entry.path);
       if (region && region.path === entry.path) region.chunks = chunks;
@@ -248,7 +281,7 @@
   async function openChunk(rg: { path: string }, c: RegionChunk) {
     try {
       const root = await api.sftpRegionChunkTree(serverId, rg.path, c.x, c.z);
-      nbt = { title: `chunk (${c.x}, ${c.z})`, root };
+      showNbt(`chunk (${c.x}, ${c.z})`, root, { kind: 'chunk', path: rg.path, x: c.x, z: c.z });
     } catch (e) {
       error = humanizeError(e);
     }
@@ -261,6 +294,89 @@
     } catch (e) {
       error = humanizeError(e);
       if (report?.name === rg.name) report = null;
+    }
+  }
+
+  // --- Inspecteur NBT : recherche (pré-élagage), dépli groupé, vue/copie SNBT, menu contextuel ---
+  function filterTree(node: NbtNode, q: string): NbtNode | null {
+    const selfMatch =
+      (node.name?.toLowerCase().includes(q) ?? false) || (node.value?.toLowerCase().includes(q) ?? false);
+    if (selfMatch) return node; // garde le sous-arbre complet (contexte)
+    const kids = (node.children ?? [])
+      .map((c) => filterTree(c, q))
+      .filter((c): c is NbtNode => c !== null);
+    return kids.length ? { ...node, children: kids } : null;
+  }
+  function nbtSetAll(open: boolean) {
+    nbtBulk = { gen: (nbtBulk?.gen ?? 0) + 1, open };
+  }
+  async function ensureSnbt(): Promise<string | null> {
+    if (nbtSnbtText !== null) return nbtSnbtText;
+    if (!nbt) return null;
+    try {
+      const s = nbt.source;
+      nbtSnbtText =
+        s.kind === 'file'
+          ? await api.sftpNbtSnbt(serverId, s.path)
+          : await api.sftpRegionChunkSnbt(serverId, s.path, s.x, s.z);
+      return nbtSnbtText;
+    } catch (e) {
+      error = humanizeError(e);
+      return null;
+    }
+  }
+  async function toggleSnbt() {
+    if (nbtView === 'snbt') {
+      nbtView = 'tree';
+      return;
+    }
+    nbtView = 'snbt';
+    await ensureSnbt();
+  }
+  async function copySnbt() {
+    const text = await ensureSnbt();
+    if (text != null) void navigator.clipboard.writeText(text).catch(() => {});
+  }
+  function copyText(text: string) {
+    void navigator.clipboard.writeText(text).catch(() => {});
+    nbtMenu = null;
+  }
+  function onNbtContext(e: MouseEvent, node: NbtNode, path: string) {
+    e.preventDefault();
+    nbtMenu = { x: e.clientX, y: e.clientY, node, path };
+  }
+
+  // --- Carte de chunks .mca (grille 32×32, indexée par coords locales) ---
+  function mapCells(chunks: RegionChunk[]): { key: number; chunk: RegionChunk | null; intensity: number }[] {
+    const byIdx = new Map<number, RegionChunk>();
+    let maxSize = 1;
+    for (const c of chunks) {
+      const lx = ((c.x % 32) + 32) % 32;
+      const lz = ((c.z % 32) + 32) % 32;
+      byIdx.set(lz * 32 + lx, c);
+      if (c.size > maxSize) maxSize = c.size;
+    }
+    const cells: { key: number; chunk: RegionChunk | null; intensity: number }[] = [];
+    for (let idx = 0; idx < 1024; idx++) {
+      const chunk = byIdx.get(idx) ?? null;
+      cells.push({ key: idx, chunk, intensity: chunk ? Math.min(1, chunk.size / maxSize) : 0 });
+    }
+    return cells;
+  }
+  function gotoChunk(rg: { path: string; chunks: RegionChunk[] | null }) {
+    gotoErr = '';
+    const nums = gotoInput.trim().split(/[\s,]+/).filter(Boolean).map(Number);
+    if (nums.length < 2 || !nums.slice(0, 2).every(Number.isFinite)) {
+      gotoErr = t('sftp.badCoord');
+      return;
+    }
+    const [x, z] = nums;
+    const c = rg.chunks?.find((k) => k.x === x && k.z === z);
+    if (c) {
+      gotoInput = '';
+      void openChunk(rg, c);
+    } else {
+      gotoErr = t('sftp.chunkNotFound');
     }
   }
 
@@ -674,18 +790,41 @@
       <div class="alist">
         {#if rg.chunks === null}
           <div class="center"><span class="spinner"></span></div>
-        {:else if rg.chunks.length === 0}
-          <div class="center dim">{t('sftp.noChunks')}</div>
         {:else}
-          <div class="chunkhead dim">{t('sftp.chunkCount', { n: rg.chunks.length })}</div>
-          <div class="chunkgrid">
-            {#each rg.chunks as c (`${c.x},${c.z}`)}
-              <button class="chunk" onclick={() => openChunk(rg, c)}>
-                <span class="ccoord">{c.x}, {c.z}</span>
-                <span class="csize dim">{fmtSize(c.size)}</span>
-              </button>
-            {/each}
+          <div class="rgtools">
+            <span class="dim">{t('sftp.chunkCount', { n: rg.chunks.length })}</span>
+            <span class="legend dim"><i class="lg present"></i>{t('sftp.present')} <i class="lg corrupt"></i>{t('sftp.corrupt')}</span>
+            <div class="grow"></div>
+            <form class="goto" onsubmit={(e) => { e.preventDefault(); gotoChunk(rg); }}>
+              <input class="gotoin" placeholder={t('sftp.gotoPlaceholder')} bind:value={gotoInput} />
+              <button class="tb ghost small" type="submit">{t('sftp.goto')}</button>
+            </form>
           </div>
+          {#if gotoErr}<div class="gotoerr">{gotoErr}</div>{/if}
+          {#if rg.chunks.length === 0}
+            <div class="center dim">{t('sftp.noChunks')}</div>
+          {:else}
+            <div class="mapwrap">
+              <div class="chunkmap">
+                {#each chunkCells as cell (cell.key)}
+                  {#if cell.chunk}
+                    {@const ch = cell.chunk}
+                    <button
+                      class="cell"
+                      class:corrupt={ch.corrupt}
+                      class:present={!ch.corrupt}
+                      style="--i: {cell.intensity}"
+                      title="({ch.x}, {ch.z}) · {fmtSize(ch.size)}{ch.timestamp ? ' · ' + fmtDate(ch.timestamp) : ''}"
+                      aria-label="chunk {ch.x}, {ch.z}"
+                      onclick={() => openChunk(rg, ch)}
+                    ></button>
+                  {:else}
+                    <span class="cell empty"></span>
+                  {/if}
+                {/each}
+              </div>
+            </div>
+          {/if}
         {/if}
       </div>
     </div>
@@ -719,10 +858,41 @@
         <span class="fname"><Icon name="package" size={15} /> {nb.title}</span>
         <span class="robadge">{t('sftp.readonly')}</span>
         <div class="grow"></div>
-        <button class="close" onclick={() => (nbt = null)} title={t('common.close')}><Icon name="x" size={16} /></button>
+        <div class="nbtsearch">
+          <Icon name="search" size={13} />
+          <input class="nbtsearchin" placeholder={t('sftp.searchTree')} bind:value={nbtQuery} />
+          {#if nbtQuery}<button class="nbtx" onclick={() => (nbtQuery = '')} aria-label={t('common.close')}>×</button>{/if}
+        </div>
+        <button class="tb ghost small ico-btn" onclick={() => nbtSetAll(true)} title={t('sftp.expandAll')} aria-label={t('sftp.expandAll')}><Icon name="plus" size={13} /></button>
+        <button class="tb ghost small collapse" onclick={() => nbtSetAll(false)} title={t('sftp.collapseAll')} aria-label={t('sftp.collapseAll')}>−</button>
+        <button class="tb ghost small" class:on={nbtView === 'snbt'} onclick={toggleSnbt}>SNBT</button>
+        <button class="tb ghost small ico-btn" onclick={copySnbt} title={t('sftp.copySnbt')} aria-label={t('sftp.copySnbt')}><Icon name="copy" size={13} /></button>
+        <button class="close" onclick={closeNbt} title={t('common.close')}><Icon name="x" size={16} /></button>
       </div>
-      <div class="nbtbody"><NbtTree node={nb.root} /></div>
+      {#if nbtView === 'snbt'}
+        {#if nbtSnbtText === null}
+          <div class="center"><span class="spinner"></span></div>
+        {:else}
+          <pre class="reportbody">{nbtSnbtText}</pre>
+        {/if}
+      {:else if nbtShown}
+        <div class="nbtbody"><NbtTree node={nbtShown} query={nbtQuery.trim()} bulk={nbtBulk} onContext={onNbtContext} /></div>
+      {:else}
+        <div class="center dim">{t('sftp.noMatch')}</div>
+      {/if}
     </div>
+  </div>
+{/if}
+
+{#if nbtMenu}
+  {@const nm = nbtMenu}
+  <button class="backdrop" onclick={() => (nbtMenu = null)} aria-label={t('common.close')}></button>
+  <div class="ctxmenu" style="left: {nm.x}px; top: {nm.y}px" role="menu">
+    {#if nm.node.value != null}
+      <button class="citem" onclick={() => copyText(nm.node.value ?? '')}>{t('sftp.copyValue')}</button>
+    {/if}
+    <button class="citem" onclick={() => copyText(nm.path)}>{t('sftp.copyPath')}</button>
+    <button class="citem" onclick={() => { nbtMenu = null; void copySnbt(); }}>{t('sftp.copySnbt')}</button>
   </div>
 {/if}
 
@@ -1396,47 +1566,166 @@
     flex: 1;
   }
 
-  /* --- Navigateur de chunks .mca + corps de l'arbre NBT --- */
-  .chunkhead {
-    padding: 10px 14px 4px;
-    font-size: 12px;
-  }
-  .chunkgrid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
-    gap: 8px;
-    padding: 8px 14px 16px;
-  }
-  .chunk {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    background: var(--elevated);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    cursor: pointer;
-    font: inherit;
-    color: var(--text);
-    padding: 8px 10px;
-  }
-  .chunk:hover {
-    border-color: var(--brand-primary);
-    background: color-mix(in srgb, var(--brand-primary) 8%, var(--elevated));
-  }
-  .ccoord {
-    font-family: var(--font-mono);
-    font-size: 12.5px;
-    font-weight: 600;
-  }
-  .csize {
-    font-family: var(--font-mono);
-    font-size: 11px;
-  }
+  /* --- Corps de l'arbre NBT + barre d'outils (recherche/dépli/SNBT) --- */
   .nbtbody {
     flex: 1;
     min-height: 0;
     overflow: auto;
     padding: 6px 0;
+  }
+  .nbtsearch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    color: var(--text-dim);
+  }
+  .nbtsearchin {
+    background: none;
+    border: none;
+    outline: none;
+    font: inherit;
+    font-size: 12.5px;
+    color: var(--text);
+    width: 150px;
+  }
+  .nbtx {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .nbtx:hover {
+    color: var(--text);
+  }
+  .tb.small {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  .tb.small.on {
+    color: #fff;
+    background: var(--brand-primary);
+    border-color: var(--brand-primary);
+  }
+  .collapse {
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  /* --- Menu contextuel (copier valeur/chemin/SNBT) --- */
+  .ctxmenu {
+    position: fixed;
+    z-index: 42;
+    min-width: 170px;
+    background: var(--elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 5px;
+    display: flex;
+    flex-direction: column;
+  }
+  .citem {
+    text-align: left;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text);
+    padding: 7px 11px;
+    border-radius: 7px;
+  }
+  .citem:hover {
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+  }
+
+  /* --- Carte de région .mca (heatmap 32×32) --- */
+  .rgtools {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    flex-wrap: wrap;
+  }
+  .legend {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .lg {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .lg.present {
+    background: var(--brand-primary);
+  }
+  .lg.corrupt {
+    background: var(--state-danger);
+  }
+  .goto {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .gotoin {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 9px;
+    font: inherit;
+    font-size: 12.5px;
+    font-family: var(--font-mono);
+    color: var(--text);
+    width: 92px;
+  }
+  .gotoerr {
+    padding: 0 14px 6px;
+    font-size: 12px;
+    color: var(--state-danger);
+  }
+  .mapwrap {
+    display: flex;
+    justify-content: center;
+    padding: 8px 14px 18px;
+  }
+  .chunkmap {
+    display: grid;
+    grid-template-columns: repeat(32, 1fr);
+    gap: 2px;
+    width: min(560px, 100%);
+    aspect-ratio: 1;
+  }
+  .cell {
+    aspect-ratio: 1;
+    border: none;
+    border-radius: 2px;
+    padding: 0;
+  }
+  .cell.empty {
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+  }
+  .cell.present {
+    cursor: pointer;
+    background: color-mix(in srgb, var(--brand-primary) calc(var(--i) * 55% + 30%), transparent);
+  }
+  .cell.corrupt {
+    cursor: pointer;
+    background: var(--state-danger);
+  }
+  .cell.present:hover,
+  .cell.corrupt:hover {
+    outline: 2px solid var(--text);
+    outline-offset: -1px;
   }
 </style>

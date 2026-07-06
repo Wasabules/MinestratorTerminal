@@ -332,6 +332,28 @@ pub async fn sftp_region_chunk_tree(
     core.sftp_region_chunk_tree(server_id, &path, x, z).await
 }
 
+/// SNBT (`/data`) d'un fichier NBT distant.
+#[tauri::command]
+pub async fn sftp_nbt_snbt(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_nbt_snbt(server_id, &path).await
+}
+
+/// SNBT (`/data`) d'un chunk d'une région `.mca`.
+#[tauri::command]
+pub async fn sftp_region_chunk_snbt(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    x: i64,
+    z: i64,
+) -> Result<String, Error> {
+    core.sftp_region_chunk_snbt(server_id, &path, x, z).await
+}
+
 #[tauri::command]
 pub async fn sftp_extract_entry(
     core: State<'_, Arc<Core>>,
