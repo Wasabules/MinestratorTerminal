@@ -19,9 +19,10 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
-# Auto-update — PRÉPARÉ mais NON ACTIVÉ (voir docs/AUTO-UPDATE.md). Le plugin est enregistré, mais
-# aucune vérification n'est déclenchée tant que `endpoints` + `pubkey` ne sont pas renseignés.
+# Auto-update (activé) : vérifie/télécharge/installe les mises à jour signées depuis les releases
+# GitHub ; `tauri-plugin-process` sert à relancer l'app après installation.
 tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 # Toute la logique métier vit dans le core (réutilisable daemon/CLI).
 minestrator-core = { path = "../crates/minestrator-core" }

@@ -365,6 +365,12 @@ export const en: Dict = {
     exporting: 'Exporting…',
     exported: 'Exported (link opened & copied)',
   },
+  update: {
+    available: 'Version {v} available',
+    install: 'Update',
+    later: 'Later',
+    installing: 'Installing…',
+  },
   sftp: {
     upload: 'Upload',
     download: 'Download',

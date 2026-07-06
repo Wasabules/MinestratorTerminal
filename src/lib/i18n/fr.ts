@@ -363,6 +363,12 @@ export const fr = {
     exporting: 'Export en cours…',
     exported: 'Exporté (lien ouvert et copié)',
   },
+  update: {
+    available: 'Version {v} disponible',
+    install: 'Mettre à jour',
+    later: 'Plus tard',
+    installing: 'Installation…',
+  },
   sftp: {
     upload: 'Téléverser',
     download: 'Télécharger',

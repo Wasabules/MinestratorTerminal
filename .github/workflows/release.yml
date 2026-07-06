@@ -65,6 +65,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signature des artefacts de mise à jour (clé privée en secret ; mot de passe vide).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: ${{ github.ref_name }}
           releaseName: 'Minestrator Terminal ${{ github.ref_name }}'
@@ -76,8 +79,10 @@ jobs:
             - macOS : `.dmg` (universel Intel + Apple Silicon)
             - Linux : `.AppImage` et `.deb`
 
-            > Binaires non signés (première release) : Windows SmartScreen / macOS Gatekeeper
-            > peuvent afficher un avertissement au premier lancement.
+            Mise à jour automatique intégrée : les versions installées proposeront cette release.
+
+            > Non signés au niveau OS : Windows SmartScreen / macOS Gatekeeper peuvent afficher un
+            > avertissement au premier lancement (les artefacts de mise à jour, eux, sont signés et vérifiés).
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

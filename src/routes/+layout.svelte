@@ -9,6 +9,7 @@
   import { initLocale, t } from '$lib/i18n';
   import { initColors } from '$lib/servers/colors.svelte';
   import { initSftpView } from '$lib/sftp/columns.svelte';
+  import UpdateBanner from '$lib/components/UpdateBanner.svelte';
 
   let { children } = $props();
 
@@ -53,6 +54,8 @@
 {:else}
   {@render children()}
 {/if}
+
+<UpdateBanner />
 
 <style>
   .boot {

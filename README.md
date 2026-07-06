@@ -112,7 +112,7 @@ Le workflow [`release.yml`](./.github/workflows/release.yml) build les trois OS 
 | [`DESIGN.md`](./DESIGN.md) | Charte graphique / design system |
 | [`COPILOT.md`](./COPILOT.md) | Fonctionnement du Copilote IA |
 | [`MCP.md`](./MCP.md) | Serveur MCP : catalogue d'outils, sécurité, connexion |
-| [`docs/AUTO-UPDATE.md`](./docs/AUTO-UPDATE.md) | Mise à jour automatique (préparée, non activée) |
+| [`docs/AUTO-UPDATE.md`](./docs/AUTO-UPDATE.md) | Mise à jour automatique (activée) : signature, endpoint, publication |
 | [`ROADMAP.md`](./ROADMAP.md) | Suite prévue |
 
 ---

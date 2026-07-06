@@ -26,6 +26,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "publisher": "Geoffrey Lecoq",
     "copyright": "© 2026 Geoffrey Lecoq",
@@ -46,7 +47,7 @@
       "endpoints": [
         "https://github.com/Wasabules/MinestratorTerminal/releases/latest/download/latest.json"
       ],
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM4RDY4QkIwN0JBOTBEQTgKUldTb0RhbDdzSXZXeU5QWTBWb2I4Z0JlWVVqVlF6THVzUzFZdzJPS01aM3BLOGdLM1dWMk1qQVMK"
     }
   }
 }

@@ -27,10 +27,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_process::init())
         .manage(core)
         .setup(move |app| {
-            // Auto-update : plugin PRÉPARÉ (desktop). Inerte tant qu'aucun `check()` n'est appelé et
-            // que `plugins.updater` (endpoints + pubkey) n'est pas renseigné — voir docs/AUTO-UPDATE.md.
+            // Auto-update (desktop) : vérifie les releases GitHub signées. Le check est déclenché
+            // côté front au démarrage (voir src/lib/updater.ts) ; la vérification de signature se fait
+            // avec la `pubkey` de tauri.conf.json.
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;

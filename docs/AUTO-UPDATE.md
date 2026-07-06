@@ -1,67 +1,47 @@
-# Auto-update — état & activation
+# Auto-update — ACTIVÉ
 
-L'infrastructure de mise à jour automatique est **préparée mais NON activée**. Rien ne vérifie
-de mise à jour au démarrage ; l'app se comporte comme si l'updater n'existait pas.
+Les mises à jour automatiques sont **actives**. Chaque app installée vérifie au démarrage la
+présence d'une release plus récente sur GitHub, propose de l'installer (bandeau non intrusif),
+vérifie la **signature** de l'artefact, puis installe et relance.
 
-## Ce qui est déjà en place
+## Comment ça marche
 
-| Élément | Fichier | État |
-|---|---|---|
-| Plugin Rust `tauri-plugin-updater` | `src-tauri/Cargo.toml` | ajouté |
-| Enregistrement du plugin (desktop) | `src-tauri/src/lib.rs` (`setup`) | actif mais inerte |
-| Plugin JS `@tauri-apps/plugin-updater` | `package.json` | ajouté |
-| Permission `updater:default` | `src-tauri/capabilities/default.json` | ajoutée |
-| Config `plugins.updater` | `src-tauri/tauri.conf.json` | **placeholder** (`pubkey: ""`) |
-| Helpers front `checkForUpdate()` / `applyUpdate()` | `src/lib/updater.ts` | prêts, **non appelés** |
+| Élément | Fichier |
+|---|---|
+| Vérification au démarrage + bandeau | `src/lib/components/UpdateBanner.svelte` (monté dans `+layout.svelte`) |
+| Helpers `checkForUpdate()` / `applyUpdate()` | `src/lib/updater.ts` |
+| Plugin updater + process (relance) | `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`, `package.json` |
+| Permissions `updater` + `process` | `src-tauri/capabilities/default.json` |
+| Endpoint + clé publique | `src-tauri/tauri.conf.json` → `plugins.updater` |
+| Artefacts signés | `bundle.createUpdaterArtifacts: true` |
+| Signature en CI | `.github/workflows/release.yml` (secret `TAURI_SIGNING_PRIVATE_KEY`) |
 
-Tant que `pubkey` est vide et qu'on n'appelle jamais `checkForUpdate()`, l'updater ne fait rien.
+Le check n'est fait que dans la **fenêtre principale** (`label === "main"`) pour éviter les doublons
+dans les fenêtres détachées. En cas d'échec (hors-ligne, endpoint injoignable), rien ne s'affiche.
 
-## Activer (checklist)
+## Clé de signature
 
-1. **Générer la clé de signature** (une fois) :
-   ```
-   npm run tauri signer generate -- -w ~/.tauri/minestrator-terminal.key
-   ```
-   Garde **la clé privée hors du dépôt** (elle est déjà couverte par `.gitignore` si placée hors du
-   projet). Note le mot de passe choisi.
-
-2. **Renseigner la clé publique** dans `src-tauri/tauri.conf.json` → `plugins.updater.pubkey`
-   (la valeur affichée par la commande ci-dessus).
-
-3. **Activer la génération des artefacts signés** dans `src-tauri/tauri.conf.json` :
-   ```json
-   "bundle": { "createUpdaterArtifacts": true, ... }
-   ```
-
-4. **Ajouter les secrets CI** (repo → Settings → Secrets → Actions) puis les passer à
-   `tauri-apps/tauri-action` dans `.github/workflows/release.yml` :
-   ```yaml
-   env:
-     TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-     TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-   ```
-   La CI produira alors, en plus des installeurs, les fichiers `.sig` et un `latest.json`.
-
-5. **Vérifier l'endpoint** (`plugins.updater.endpoints`). Le placeholder pointe vers
-   `releases/latest/download/latest.json`.
-   ⚠️ **Repo privé** : l'endpoint GitHub exige une authentification — soit publier les binaires sur
-   un hébergement public/CDN, soit servir `latest.json` derrière une URL autorisée, soit rendre le
-   dépôt (ou juste les releases) public. À trancher au moment de l'activation.
-
-6. **Brancher le check au démarrage** — p. ex. dans `src/routes/+layout.svelte`, après l'init :
-   ```ts
-   import { checkForUpdate, applyUpdate } from '$lib/updater';
-   // ... dans onMount, sans bloquer :
-   const update = await checkForUpdate();
-   if (update) {
-     // proposer la MàJ à l'utilisateur, puis :
-     await applyUpdate(update);
-     // relancer via @tauri-apps/plugin-process si nécessaire.
-   }
-   ```
+- Clé **publique** : dans `tauri.conf.json` (`plugins.updater.pubkey`) — publique, versionnée.
+- Clé **privée** : fichier `updater-private.key` à la racine (**gitignoré**, `*.key`) **et** secret
+  GitHub `TAURI_SIGNING_PRIVATE_KEY` (utilisé par la CI). Mot de passe **vide**.
+- ⚠️ **Sauvegarde impérative** de `updater-private.key` (coffre / gestionnaire de mots de passe) :
+  sans elle, plus aucune release ne peut être signée et l'auto-update casse. Si elle est perdue,
+  il faut générer une nouvelle paire, republier `pubkey`, et les clients devront réinstaller à la main.
 
 ## Publier une mise à jour
 
-Une fois activé : incrémenter la version (`tauri.conf.json`, `package.json`, `Cargo.toml`), taguer
-`vX.Y.Z` et pousser le tag. La CI build, signe et publie `latest.json` — les clients installés le
-détecteront au prochain `checkForUpdate()`.
+1. **Bumper la version** dans les 3 fichiers (garder les 3 identiques) :
+   - `src-tauri/tauri.conf.json` → `"version"`
+   - `package.json` → `"version"`
+   - `Cargo.toml` (racine) → `[workspace.package] version`
+2. Committer, puis **taguer et pousser** :
+   ```
+   git tag v0.2.0 && git push origin v0.2.0
+   ```
+3. La CI build Windows/macOS/Linux, **signe** les artefacts, génère `latest.json` et crée une release
+   **draft**.
+4. **Revoir la release draft** sur GitHub → **Publish** (elle devient « latest »).
+5. Les apps installées détectent la nouvelle version au prochain lancement → bandeau → un clic.
+
+> L'endpoint `releases/latest/download/latest.json` ne résout que vers une release **publiée**
+> (pas draft). Tant que la draft n'est pas publiée, personne ne voit la mise à jour.
