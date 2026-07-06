@@ -225,6 +225,13 @@ pub(crate) fn build_command(
     for (k, v) in env {
         cmd.env(k, v);
     }
+    // Windows : l'app est une GUI. Sans ce flag, lancer un process console (`cmd`, `claude`,
+    // `gemini`, `opencode`…) fait SURGIR une fenêtre de console. CREATE_NO_WINDOW (0x08000000)
+    // l'empêche — et comme le flag s'applique à `cmd /c <cli>`, il couvre aussi le CLI enfant.
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x0800_0000);
+    }
     cmd
 }
 
