@@ -79,13 +79,14 @@ pub fn run() {
 
             setup_tray(app)?;
 
-            // Fermer la fenêtre la masque (le superviseur reste actif en fond).
+            // Croix de la fenêtre : on empêche la fermeture et on délègue le choix au front (réduire
+            // dans le tray / quitter, avec « se souvenir ») — voir src/lib/components/CloseDialog.svelte.
             if let Some(window) = app.get_webview_window("main") {
                 let w = window.clone();
                 window.on_window_event(move |event| {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
-                        let _ = w.hide();
+                        let _ = w.emit("close-requested", ());
                     }
                 });
             }
@@ -161,6 +162,8 @@ pub fn run() {
             commands::install_mod,
             commands::installed_mods,
             commands::installed_plugins,
+            commands::hide_to_tray,
+            commands::quit_app,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

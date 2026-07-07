@@ -364,6 +364,18 @@ pub async fn paste_upload(
     core.paste_upload(&service, &content).await
 }
 
+/// Réduit l'application dans le tray (elle continue en tâche de fond).
+#[tauri::command]
+pub fn hide_to_tray(window: tauri::Window) {
+    let _ = window.hide();
+}
+
+/// Quitte complètement l'application.
+#[tauri::command]
+pub fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
+}
+
 #[tauri::command]
 pub async fn sftp_extract_entry(
     core: State<'_, Arc<Core>>,

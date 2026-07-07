@@ -15,6 +15,13 @@ export const fr = {
     comingSoon: 'bientôt',
     justNow: "à l'instant",
   },
+  close: {
+    title: 'Fermer Minestrator Terminal ?',
+    body: 'Veux-tu quitter complètement ou réduire dans la barre système ? Réduit, il continue de surveiller tes serveurs en arrière-plan.',
+    minimize: 'Réduire dans le tray',
+    quit: 'Quitter',
+    remember: 'Se souvenir de mon choix',
+  },
   onboarding: {
     subtitle:
       'Colle ta clé API pour connecter ton compte. Elle est stockée dans le trousseau sécurisé de ton système — jamais en clair.',
@@ -219,6 +226,11 @@ export const fr = {
     general: 'Général',
     compactTabs: 'Onglets compacts',
     compactTabsDesc: 'Afficher uniquement les icônes des vues (le nom du serveur reste visible).',
+    closeBehavior: 'À la fermeture de la fenêtre',
+    closeBehaviorDesc: 'Ce qui se passe quand tu cliques sur la croix.',
+    closeAsk: 'Demander',
+    closeMinimize: 'Réduire dans le tray',
+    closeQuit: 'Quitter',
     updates: 'Mises à jour',
     installedVersion: 'Version installée',
     autoUpdate: 'Mises à jour automatiques',

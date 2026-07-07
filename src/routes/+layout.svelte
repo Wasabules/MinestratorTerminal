@@ -10,7 +10,9 @@
   import { initColors } from '$lib/servers/colors.svelte';
   import { initSftpView } from '$lib/sftp/columns.svelte';
   import { initTabMode } from '$lib/tabs/mode.svelte';
+  import { initCloseBehavior } from '$lib/close.svelte';
   import UpdateBanner from '$lib/components/UpdateBanner.svelte';
+  import CloseDialog from '$lib/components/CloseDialog.svelte';
 
   let { children } = $props();
 
@@ -23,6 +25,7 @@
     initColors();
     initSftpView();
     initTabMode();
+    initCloseBehavior();
     try {
       if (!(await api.hasStoredKey())) {
         setAuth({ status: 'signed_out' });
@@ -58,6 +61,7 @@
 {/if}
 
 <UpdateBanner />
+<CloseDialog />
 
 <style>
   .boot {

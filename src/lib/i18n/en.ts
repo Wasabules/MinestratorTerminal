@@ -17,6 +17,13 @@ export const en: Dict = {
     comingSoon: 'soon',
     justNow: 'just now',
   },
+  close: {
+    title: 'Close Minestrator Terminal?',
+    body: 'Quit the app entirely, or minimize it to the system tray? Minimized, it keeps watching your servers in the background.',
+    minimize: 'Minimize to tray',
+    quit: 'Quit',
+    remember: 'Remember my choice',
+  },
   onboarding: {
     subtitle:
       'Paste your API key to connect your account. It is stored in your system’s secure keychain — never in plain text.',
@@ -221,6 +228,11 @@ export const en: Dict = {
     general: 'General',
     compactTabs: 'Compact tabs',
     compactTabsDesc: 'Show only view icons (the server name stays visible).',
+    closeBehavior: 'When closing the window',
+    closeBehaviorDesc: 'What happens when you click the close button.',
+    closeAsk: 'Ask',
+    closeMinimize: 'Minimize to tray',
+    closeQuit: 'Quit',
     updates: 'Updates',
     installedVersion: 'Installed version',
     autoUpdate: 'Automatic updates',

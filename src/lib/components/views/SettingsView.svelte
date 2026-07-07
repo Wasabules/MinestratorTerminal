@@ -12,6 +12,7 @@
     setAutoUpdateEnabled,
   } from '$lib/updater';
   import { isCompactTabs, setCompactTabs } from '$lib/tabs/mode.svelte';
+  import { closeBehavior, setCloseBehavior, type CloseBehavior } from '$lib/close.svelte';
   import type {
     Autonomy,
     CliStatus,
@@ -34,6 +35,12 @@
 
   // --- Affichage ---
   let compactTabs = $state(false);
+  let closeBehav = $state<CloseBehavior>('ask');
+
+  function setCloseBehav(b: CloseBehavior) {
+    closeBehav = b;
+    setCloseBehavior(b);
+  }
 
   // --- Mises à jour ---
   let appVersion = $state('');
@@ -165,6 +172,7 @@
       /* défauts */
     }
     compactTabs = isCompactTabs();
+    closeBehav = closeBehavior();
     autoUpdate = isAutoUpdateEnabled();
     try {
       appVersion = await getVersion();
@@ -469,6 +477,24 @@
         </div>
         <input type="checkbox" bind:checked={compactTabs} onchange={() => setCompactTabs(compactTabs)} />
       </label>
+
+      <div class="closepref">
+        <div class="tl">
+          <div class="tl-title">{t('settings.closeBehavior')}</div>
+          <div class="tl-desc dim">{t('settings.closeBehaviorDesc')}</div>
+        </div>
+        <div class="effort-seg closeseg">
+          <button class:on={closeBehav === 'ask'} onclick={() => setCloseBehav('ask')}>
+            {t('settings.closeAsk')}
+          </button>
+          <button class:on={closeBehav === 'minimize'} onclick={() => setCloseBehav('minimize')}>
+            {t('settings.closeMinimize')}
+          </button>
+          <button class:on={closeBehav === 'quit'} onclick={() => setCloseBehav('quit')}>
+            {t('settings.closeQuit')}
+          </button>
+        </div>
+      </div>
 
       <h2>{t('settings.updates')}</h2>
       <div class="row">
@@ -1157,6 +1183,17 @@
     background: var(--brand-primary);
     color: #fff;
     font-weight: 600;
+  }
+  .closepref {
+    display: flex;
+    flex-direction: column;
+    gap: 11px;
+    padding: 14px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+  .closeseg {
+    align-self: flex-start;
+    flex-wrap: wrap;
   }
   .tool-name {
     font-size: 13px;

@@ -227,6 +227,11 @@ export const api = {
   pasteUpload: (service: string, content: string) =>
     invoke<string>('paste_upload', { service, content }),
 
+  /** Réduit l'application dans le tray (elle continue en tâche de fond). */
+  hideToTray: () => invoke<void>('hide_to_tray'),
+  /** Quitte complètement l'application. */
+  quitApp: () => invoke<void>('quit_app'),
+
   /** Efface la clé enregistrée. */
   logout: () => invoke<void>('logout'),
 };
