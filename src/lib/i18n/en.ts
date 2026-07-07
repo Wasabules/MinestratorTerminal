@@ -119,6 +119,9 @@ export const en: Dict = {
     noColor: 'None',
   },
   overview: {
+    copyAddress: 'Copy connection address',
+    copy: 'Copy',
+    copied: 'Copied',
     openView: 'Open a view',
     newTabHint:
       '“+” opens a new tab (duplicates allowed) — handy to compare two consoles or keep an SFTP alongside.',

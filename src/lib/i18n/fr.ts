@@ -117,6 +117,9 @@ export const fr = {
     noColor: 'Aucune',
   },
   overview: {
+    copyAddress: 'Copier l’adresse de connexion',
+    copy: 'Copier',
+    copied: 'Copié',
     openView: 'Ouvrir une vue',
     newTabHint:
       '« + » ouvre un nouvel onglet (les doublons sont permis) — pratique pour comparer deux consoles ou garder un SFTP à côté.',

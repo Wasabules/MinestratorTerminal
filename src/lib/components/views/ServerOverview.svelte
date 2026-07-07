@@ -19,6 +19,9 @@
   const connId = $derived(tab.id);
 
   let live = $state<LiveLight | null>(null);
+  let address = $state(''); // adresse de connexion (dns ou ip:port), depuis la liste des serveurs
+  let copied = $state(false);
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   let stats = $state<ConsoleStats | null>(null);
   let runState = $state('offline');
   let hibernated = $state(false);
@@ -47,6 +50,7 @@
   let destroyed = false;
   onMount(() => {
     void loadLive();
+    void loadAddress();
     void connect();
     void loadMetrics();
     metricsTimer = setInterval(loadMetrics, 15000);
@@ -56,6 +60,7 @@
     unlisteners.forEach((u) => u());
     clearInterval(metricsTimer);
     clearTimeout(perfTimer);
+    clearTimeout(copiedTimer);
     api.consoleDisconnect(connId).catch(() => {});
   });
 
@@ -65,6 +70,23 @@
     } catch {
       /* limites indisponibles */
     }
+  }
+
+  async function loadAddress() {
+    try {
+      const list = await api.listServers();
+      address = list.servers.find((s) => s.id === serverId)?.address ?? '';
+    } catch {
+      /* liste indisponible */
+    }
+  }
+
+  function copyAddress() {
+    if (!address) return;
+    void navigator.clipboard.writeText(address).catch(() => {});
+    copied = true;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied = false), 1500);
   }
 
   async function loadMetrics() {
@@ -145,6 +167,20 @@
     </div>
     <PowerControl {serverId} {running} disabled={hibernated} />
   </header>
+
+  {#if address}
+    <button class="addrbar" onclick={copyAddress} title={t('overview.copyAddress')}>
+      <span class="ag"><Icon name="globe" size={15} /></span>
+      <span class="av">{address}</span>
+      <span class="ac">
+        {#if copied}
+          <Icon name="check" size={14} /> {t('overview.copied')}
+        {:else}
+          <Icon name="copy" size={14} /> {t('overview.copy')}
+        {/if}
+      </span>
+    </button>
+  {/if}
 
   {#if hibernated}
     <div class="note">{t('overview.hibernated')}</div>
@@ -273,6 +309,50 @@
     border-radius: var(--radius);
     padding: 12px 14px;
     font-size: 13.5px;
+    color: var(--text-muted);
+  }
+  /* Barre d'adresse de connexion (clic = copie). */
+  .addrbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font: inherit;
+    color: var(--text);
+    padding: 10px 14px;
+    text-align: left;
+  }
+  .addrbar:hover {
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+  }
+  .ag {
+    display: inline-flex;
+    color: var(--brand-primary);
+    flex: none;
+  }
+  .av {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ac {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .addrbar:hover .ac {
     color: var(--text-muted);
   }
   .gauges {
