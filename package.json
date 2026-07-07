@@ -1,6 +1,6 @@
 {
   "name": "minestrator-terminal",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Client desktop pour piloter ses serveurs Minecraft via l'API MineStrator",
   "type": "module",
   "scripts": {
