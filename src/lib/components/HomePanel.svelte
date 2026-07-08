@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { api, humanizeError } from '$lib/ipc';
   import { t } from '$lib/i18n';
+  import { rememberCaps } from '$lib/games/capabilities.svelte';
   import type { MyBoxSummary, ServerListItem, ServersOverview } from '$lib/types';
   import ServerCard from './ServerCard.svelte';
 
@@ -14,6 +15,7 @@
     error = null;
     try {
       data = await api.listServers();
+      rememberCaps(data.servers);
     } catch (e) {
       error = humanizeError(e);
     } finally {

@@ -116,6 +116,8 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "list_snapshots",
     "market_search",
     "list_mod_versions",
+    "ficsit_search",
+    "ficsit_versions",
     "analyze_performance",
     "parse_spark_report",
     "diagnose_startup",
@@ -135,6 +137,7 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "extract_archive",
     "set_startup_params",
     "install_mod",
+    "install_ficsit_mod",
     // Snapshot = additif/sans risque → l'agent peut le créer (filet avant une intervention).
     // NB : restore_snapshot / restore_backup / delete_snapshot sont DESTRUCTIFS et volontairement
     // ABSENTS d'ici → jamais auto-exécutés par l'agent ; uniquement via « Appliquer » (intent user).
@@ -144,6 +147,40 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
 /// Un outil est-il modifiant ? Default-deny : tout ce qui n'est PAS un outil de lecture connu.
 pub(crate) fn is_write_tool(name: &str) -> bool {
     !READ_TOOLS.contains(&name)
+}
+
+/// Outils propres à **Minecraft** (marketplace, joueurs, Spark, flags JVM, régions…) — masqués pour
+/// l'IA d'un serveur d'un autre jeu.
+pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
+    "player_action",
+    "market_search",
+    "list_mod_versions",
+    "install_mod",
+    "list_installed_mods",
+    "list_installed_plugins",
+    "read_startup",
+    "set_startup_params",
+    "analyze_performance",
+    "parse_spark_report",
+    "diagnose_startup",
+    "inspect_region",
+    "repair_region",
+];
+
+/// Outils propres à **Satisfactory** (mods via ficsit.app).
+pub(crate) const SATISFACTORY_ONLY_TOOLS: &[&str] =
+    &["ficsit_search", "ficsit_versions", "install_ficsit_mod"];
+
+/// Un outil est-il pertinent pour la famille de jeu `family` ? Universel (console/SFTP/métriques/
+/// backups/power…) par défaut ; sinon réservé au jeu correspondant.
+pub(crate) fn tool_for_game(name: &str, family: &str) -> bool {
+    if SATISFACTORY_ONLY_TOOLS.contains(&name) {
+        return family == "satisfactory";
+    }
+    if MINECRAFT_ONLY_TOOLS.contains(&name) {
+        return family == "minecraft";
+    }
+    true
 }
 
 /// Sous-ensemble que NOTRE MCP conserve quand le **MCP officiel** prend en charge la gestion : le
@@ -651,6 +688,36 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             Ok(format!("« {slug} » ({version_id}) installé sur le serveur {id}."))
         }
 
+        "ficsit_search" => {
+            let query = opt_str(&args, "query", "");
+            let order_by = opt_str(&args, "order_by", "popularity");
+            let page = opt_i64(&args, "page", 1).max(1);
+            let limit = 20;
+            let res = core
+                .ficsit_search(&query, (page - 1) * limit, limit, &order_by, "desc")
+                .await
+                .map_err(es)?;
+            json_pretty(&res)
+        }
+
+        "ficsit_versions" => {
+            let mod_id = req_str(&args, "mod_id")?;
+            let versions = core.ficsit_mod_versions(&mod_id).await.map_err(es)?;
+            json_pretty(&versions)
+        }
+
+        "install_ficsit_mod" => {
+            let id = req_i64(&args, "server_id")?;
+            let reference = req_str(&args, "reference")?;
+            let version_id = req_str(&args, "version_id")?;
+            core.ficsit_install_inner(id, &[(reference.clone(), version_id.clone())], "mcp")
+                .await
+                .map_err(es)?;
+            Ok(format!(
+                "« {reference} » ({version_id}) installé sur le serveur {id} (mod + SML + dépendances) ; le serveur a été redémarré."
+            ))
+        }
+
         _ => Err(format!("outil inconnu : {name}")),
     }
 }
@@ -698,6 +765,9 @@ fn build_tool_list() -> Value {
         tool("diagnose_startup", "Docteur démarrage : pour un serveur qui NE DÉMARRE PAS / crash-loop, rassemble en UN appel la commande de démarrage + la fin de logs/latest.log + le dernier crash-report, et pré-scanne les pannes connues (EULA, port occupé, OOM, version Java, dépendance/mixin de mod, monde corrompu). Utilise-le AVANT de proposer un correctif.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("inspect_region", "Inspecte un fichier de région Minecraft (`.mca`) et repère les chunks structurellement CORROMPUS (pointeurs/longueurs invalides — cause des crash au chargement de monde). Chemin ex. `/world/region/r.0.0.mca` (Nether : `/world/DIM-1/region/…`, End : `/world/DIM1/region/…`). Lecture seule ; croise avec les coordonnées du crash pour cibler la bonne région.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin absolu du fichier .mca"))], &["server_id", "path"])),
         tool("install_mod", "Installe un mod/plugin. `modrinth` = mods ET plugins (corps {slug, version_id}, PAS de loader) ; `spigot` = plugins (`slug` = id numérique de la ressource, `version_id` = id de version). Récupère `version_id` via list_mod_versions. N'installe PAS un projet premium/external (non installable → 403 ; vérifie via market_search). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("source", prop_str("modrinth|spigot (défaut modrinth)")), ("kind", prop_str("mod|plugin (défaut mod)")), ("slug", prop_str("Slug Modrinth ou id numérique SpigotMC")), ("version_id", prop_str("ID de la version à installer")), ("loader", prop_str("Optionnel : modloader (ignoré par Modrinth et Spigot)"))], &["server_id", "slug", "version_id"])),
+        tool("ficsit_search", "Cherche des mods SATISFACTORY dans le catalogue ficsit.app (SMR). `query` vide = parcours trié. `order_by` ∈ popularity|hotness|downloads|last_version_date|name (défaut popularity). Renvoie id, mod_reference, name, downloads. À réserver aux serveurs Satisfactory (pas Minecraft).", obj(&[("query", prop_str("Recherche par nom (optionnel, ≥ 3 car.)")), ("order_by", prop_str("Tri (défaut popularity)")), ("page", prop_int("Page (défaut 1)"))], &[])),
+        tool("ficsit_versions", "Versions d'un mod Satisfactory (par son `mod_id` ficsit, renvoyé par ficsit_search) : `id` de version + contrainte SML + dépendances — nécessaires pour installer.", obj(&[("mod_id", prop_str("id ficsit du mod"))], &["mod_id"])),
+        tool("install_ficsit_mod", "Installe un mod SATISFACTORY : télécharge le mod + SML + dépendances (cible LinuxServer) et les écrit dans Mods/ via SFTP, avec ARRÊT puis REDÉMARRAGE automatiques du serveur. `reference` = mod_reference, `version_id` via ficsit_versions. ✎ (modifiant — redémarre le serveur)", obj(&[("server_id", prop_int("ID du serveur")), ("reference", prop_str("mod_reference du mod")), ("version_id", prop_str("ID de la version à installer"))], &["server_id", "reference", "version_id"])),
     ])
 }
 

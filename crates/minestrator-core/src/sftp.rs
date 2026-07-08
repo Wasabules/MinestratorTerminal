@@ -372,3 +372,17 @@ pub async fn remove(conn: &SftpConn, path: &str, is_dir: bool) -> Result<()> {
 pub async fn rename(conn: &SftpConn, from: &str, to: &str) -> Result<()> {
     conn.sftp.rename(from, to).await.map_err(sftp_err)
 }
+
+/// Supprime un dossier distant et TOUT son contenu (l'API `remove_dir` exige un dossier vide).
+/// Récursif : vide les enfants (fichiers + sous-dossiers) avant de retirer le dossier lui-même.
+pub async fn remove_recursive(conn: &SftpConn, dir: &str) -> Result<()> {
+    let entries = list(conn, dir).await?;
+    for e in entries {
+        if e.is_dir {
+            Box::pin(remove_recursive(conn, &e.path)).await?;
+        } else {
+            conn.sftp.remove_file(&e.path).await.map_err(sftp_err)?;
+        }
+    }
+    conn.sftp.remove_dir(dir).await.map_err(sftp_err)
+}

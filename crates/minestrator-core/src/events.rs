@@ -145,6 +145,21 @@ pub struct SftpProgress {
     pub error: Option<String>,
 }
 
+/// Progression d'une installation de mod Satisfactory (ficsit → SFTP). `id` = id de transfert
+/// (généré côté front). `phase` ∈ {resolving, downloading, stopping, uploading, restarting, done,
+/// error}. `done`/`total` = nombre d'artefacts (mod + SML + dépendances).
+#[derive(Debug, Clone, Serialize)]
+pub struct ModInstallProgress {
+    pub id: String,
+    pub phase: String,
+    pub mod_name: String,
+    pub done: u64,
+    pub total: u64,
+    /// `active` | `done` | `error`.
+    pub status: String,
+    pub error: Option<String>,
+}
+
 /// Événement métier. Les frontends font le mapping vers leur canal de sortie.
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
@@ -159,4 +174,5 @@ pub enum CoreEvent {
     ChatDelta(ChatDelta),
     Diagnosis(Diagnosis),
     SftpProgress(SftpProgress),
+    ModInstallProgress(ModInstallProgress),
 }

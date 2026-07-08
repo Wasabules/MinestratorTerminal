@@ -6,7 +6,8 @@
   import { t } from '$lib/i18n';
   import { runtimeMeta, isRunning } from '$lib/status';
   import { fmtBytes } from '$lib/copilot/format';
-  import { tabs, VIEWS, type ServerTab, type ServerView } from '$lib/tabs/tabs.svelte';
+  import { tabs, type ServerTab, type ServerView } from '$lib/tabs/tabs.svelte';
+  import { serverCaps, availableViews } from '$lib/games/capabilities.svelte';
   import type { ConsoleStats, LiveLight, MetricSample } from '$lib/types';
   import Gauge from '../Gauge.svelte';
   import PowerControl from '../PowerControl.svelte';
@@ -32,7 +33,8 @@
   let perfBusy = $state(false);
   const unlisteners: UnlistenFn[] = [];
 
-  const openable = VIEWS.filter((v) => v.id !== 'overview');
+  const caps = $derived(serverCaps(serverId));
+  const openable = $derived(availableViews(caps).filter((v) => v.id !== 'overview'));
   const rt = $derived(runtimeMeta(runState));
   const running = $derived(isRunning(runState));
 
@@ -211,10 +213,12 @@
   </section>
 
   <section class="facts">
-    <div class="fact">
-      <span class="k">{t('overview.players')}</span>
-      <span class="v">{live?.players ? `${live.players.current} / ${live.players.limit}` : '—'}</span>
-    </div>
+    {#if !caps || caps.players}
+      <div class="fact">
+        <span class="k">{t('overview.players')}</span>
+        <span class="v">{live?.players ? `${live.players.current} / ${live.players.limit}` : '—'}</span>
+      </div>
+    {/if}
     <div class="fact">
       <span class="k">{t('overview.version')}</span>
       <span class="v">{live?.version ?? '—'}</span>

@@ -2,9 +2,11 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, InstalledItem,
-    LiveLight, MarketPage, MarketVersion, McpConfig, MetricSample, NbtNode, PrivacyConfig,
-    RegionChunk, ServerDetails, ServersOverview, SftpEntry, Snapshot, SupervisorConfig, UserProfile,
+    ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, FicsitInstallItem,
+    FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
+    MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
+    MetricSample, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
+    ServersOverview, SftpEntry, SmlVersion, Snapshot, SupervisorConfig, UserProfile,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -605,4 +607,175 @@ pub async fn installed_plugins(
     server_id: i64,
 ) -> Result<Vec<InstalledItem>, Error> {
     core.installed_plugins(server_id).await
+}
+
+// --- Mods Satisfactory (ficsit.app) ---------------------------------------
+
+#[tauri::command]
+pub async fn ficsit_search(
+    core: State<'_, Arc<Core>>,
+    search: String,
+    offset: i64,
+    limit: i64,
+    order_by: String,
+    order: String,
+) -> Result<FicsitModPage, Error> {
+    core.ficsit_search(&search, offset, limit, &order_by, &order).await
+}
+
+#[tauri::command]
+pub async fn ficsit_mod_versions(
+    core: State<'_, Arc<Core>>,
+    mod_id: String,
+) -> Result<Vec<FicsitVersion>, Error> {
+    core.ficsit_mod_versions(&mod_id).await
+}
+
+#[tauri::command]
+pub async fn ficsit_sml_versions(core: State<'_, Arc<Core>>) -> Result<Vec<SmlVersion>, Error> {
+    core.ficsit_sml_versions().await
+}
+
+// --- Marketplaces de mods multi-sources (Thunderstore / Factorio / uMod) ---
+
+#[tauri::command]
+pub async fn mods_search(
+    core: State<'_, Arc<Core>>,
+    source: String,
+    family: String,
+    query: String,
+    order: String,
+    page: i64,
+) -> Result<MarketModPage, Error> {
+    core.mods_search(&source, &family, &query, &order, page).await
+}
+
+#[tauri::command]
+pub async fn mods_versions(
+    core: State<'_, Arc<Core>>,
+    source: String,
+    reference: String,
+) -> Result<Vec<MarketModVersion>, Error> {
+    core.mods_versions(&source, &reference).await
+}
+
+/// Installe un OU plusieurs mods (fond, un seul redémarrage) : suivi via l'event
+/// `mods://install-progress` (corrélé par `transferId`).
+#[tauri::command]
+pub fn mods_install(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    source: String,
+    items: Vec<ModInstallItem>,
+    transfer_id: String,
+) {
+    let core = core.inner().clone();
+    let items: Vec<(String, String)> =
+        items.into_iter().map(|i| (i.reference, i.version)).collect();
+    tauri::async_runtime::spawn(async move {
+        core.run_mods_install(server_id, source, items, transfer_id).await;
+    });
+}
+
+#[tauri::command]
+pub async fn mods_installed(
+    core: State<'_, Arc<Core>>,
+    source: String,
+    server_id: i64,
+) -> Result<Vec<MarketInstalledMod>, Error> {
+    core.mods_installed(&source, server_id).await
+}
+
+#[tauri::command]
+pub async fn mods_set_enabled(
+    core: State<'_, Arc<Core>>,
+    source: String,
+    server_id: i64,
+    reference: String,
+    enabled: bool,
+) -> Result<(), Error> {
+    core.mods_set_enabled(&source, server_id, &reference, enabled).await
+}
+
+#[tauri::command]
+pub async fn mods_remove(
+    core: State<'_, Arc<Core>>,
+    source: String,
+    server_id: i64,
+    reference: String,
+) -> Result<(), Error> {
+    core.mods_remove(&source, server_id, &reference).await
+}
+
+// --- Réglages par jeu (Paramètres → Jeux) ---------------------------------
+
+#[tauri::command]
+pub fn get_game_settings(core: State<'_, Arc<Core>>) -> Result<GameSettings, Error> {
+    Ok(core.get_game_settings())
+}
+
+#[tauri::command]
+pub fn set_game_settings(core: State<'_, Arc<Core>>, settings: GameSettings) -> Result<(), Error> {
+    core.set_game_settings(settings);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_factorio_token(core: State<'_, Arc<Core>>, token: String) -> Result<(), Error> {
+    core.set_factorio_token(&token)
+}
+
+#[tauri::command]
+pub fn has_factorio_token(core: State<'_, Arc<Core>>) -> Result<bool, Error> {
+    core.has_factorio_token()
+}
+
+#[tauri::command]
+pub fn clear_factorio_token(core: State<'_, Arc<Core>>) -> Result<(), Error> {
+    core.clear_factorio_token()
+}
+
+/// Mods Satisfactory installés sur le serveur (via listing SFTP du dossier `Mods/`).
+#[tauri::command]
+pub async fn ficsit_installed(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<Vec<FicsitInstalledMod>, Error> {
+    core.ficsit_installed(server_id).await
+}
+
+#[tauri::command]
+pub async fn ficsit_set_enabled(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    reference: String,
+    enabled: bool,
+) -> Result<(), Error> {
+    core.ficsit_set_enabled(server_id, &reference, enabled).await
+}
+
+#[tauri::command]
+pub async fn ficsit_remove(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    reference: String,
+) -> Result<(), Error> {
+    core.ficsit_remove(server_id, &reference).await
+}
+
+/// Installe un OU plusieurs mods en un lot (fond, un seul redémarrage) : suivi via l'event
+/// `mods://install-progress` (corrélé par `transferId`).
+#[tauri::command]
+pub fn ficsit_install(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    items: Vec<FicsitInstallItem>,
+    transfer_id: String,
+) {
+    let core = core.inner().clone();
+    let items: Vec<(String, String)> =
+        items.into_iter().map(|i| (i.reference, i.version_id)).collect();
+    tauri::async_runtime::spawn(async move {
+        core.run_ficsit_install(server_id, items, transfer_id).await;
+    });
 }

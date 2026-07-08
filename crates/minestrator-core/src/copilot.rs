@@ -100,10 +100,11 @@ fn action_enum() -> Value {
     Value::Array(WRITE_TOOLS.iter().map(|n| json!(n)).collect())
 }
 
-/// Liste lisible des outils MCP de lecture (pour les prompts), dérivée de la source unique.
-fn read_tools_mcp_list() -> String {
+/// Liste lisible des outils MCP de lecture (pour les prompts), filtrée par jeu.
+fn read_tools_mcp_list(family: &str) -> String {
     READ_TOOLS
         .iter()
+        .filter(|n| crate::mcp::tool_for_game(n, family))
         .map(|n| format!("mcp__minestrator__{n}"))
         .collect::<Vec<_>>()
         .join(", ")
@@ -553,7 +554,8 @@ async fn run_cli_oneshot(core: &Core, cfg: &CopilotConfig, inc: &Incident) -> Re
     .await
     .unwrap_or_else(|_| "(métriques indisponibles)".into());
 
-    let prompt = cli_prompt(inc, &console_tail, &metrics);
+    let family = core.server_family(inc.server_id).await;
+    let prompt = cli_prompt(inc, &console_tail, &metrics, &family);
     cli::run(&cfg.cli_command, &cfg.cli_args, &prompt, CLI_TIMEOUT_S).await
 }
 
@@ -583,7 +585,8 @@ async fn run_cli_agentic(
             official_mcp: cfg.use_official_mcp.then_some(true), // diagnostic = lecture seule
         },
     )?;
-    let prompt = cli_agentic_prompt(inc);
+    let family = core.server_family(inc.server_id).await;
+    let prompt = cli_agentic_prompt(inc, &family);
     let mut last_phase = String::new();
     let mut final_result: Option<String> = None;
     let ndjson = cli::run_streaming(
@@ -774,8 +777,9 @@ async fn diagnose_http(
         (true, Some(tok)) => crate::official_mcp::list_tools(tok, true).await.unwrap_or_default(),
         _ => Vec::new(),
     };
-    let (tools, official_names) = merge_tools(agent_tools(&cfg.disabled_tools), official);
-    let system = with_effort(SYSTEM_PROMPT, cfg.effort);
+    let family = core.server_family(inc.server_id).await;
+    let (tools, official_names) = merge_tools(agent_tools(&cfg.disabled_tools, &family), official);
+    let system = with_effort(&system_prompt(&family), cfg.effort);
     let mut transcript = vec![Msg::User(user_prompt(inc, &console_tail))];
 
     for _turn in 0..MAX_TURNS {
@@ -873,9 +877,11 @@ fn tool_specs(keep: impl Fn(&str) -> bool) -> Vec<ToolSpec> {
         .collect()
 }
 
-/// Outils de lecture (dérivés du catalogue MCP) + `report_diagnosis` (sortie structurée).
-fn agent_tools(disabled: &[String]) -> Vec<ToolSpec> {
-    let mut tools = tool_specs(|n| !tool_disabled(n, disabled) && READ_TOOLS.contains(&n));
+/// Outils de lecture (dérivés du catalogue MCP), filtrés par jeu, + `report_diagnosis`.
+fn agent_tools(disabled: &[String], family: &str) -> Vec<ToolSpec> {
+    let mut tools = tool_specs(|n| {
+        !tool_disabled(n, disabled) && READ_TOOLS.contains(&n) && crate::mcp::tool_for_game(n, family)
+    });
     tools.push(report_tool());
     tools
 }
@@ -1029,15 +1035,29 @@ fn apply_aliases(tool: &str, map: &mut serde_json::Map<String, Value>) {
 
 // --- Prompts ---------------------------------------------------------------
 
-const SYSTEM_PROMPT: &str = "Tu es le copilote d'administration d'un serveur Minecraft hébergé chez MineStrator (base Pterodactyl). \
+const SYSTEM_BASE: &str = "Tu es le copilote d'administration d'un serveur de jeu hébergé chez MineStrator (base Pterodactyl). \
 Un incident vient d'être détecté par le superviseur. Ta mission : diagnostiquer la cause avec les outils de LECTURE à ta disposition \
 (console, historique de métriques CPU/RAM/disque, fichiers de configuration via SFTP), puis livrer un rapport actionnable en appelant \
 l'outil report_diagnosis.\n\n\
-Méthode : lis la console récente pour repérer erreurs/exceptions/stacktraces ; corrèle avec les métriques ; inspecte les fichiers pertinents \
-(server.properties, config des plugins) si utile. Fais uniquement les appels nécessaires (sois économe). Puis appelle report_diagnosis avec : \
+Méthode : lis la console récente pour repérer erreurs/exceptions/stacktraces ; corrèle avec les métriques ; inspecte les fichiers de config \
+pertinents si utile. Fais uniquement les appels nécessaires (sois économe). Puis appelle report_diagnosis avec : \
 un résumé clair, la cause probable justifiée par ce que tu as observé, un correctif détaillé, et 0 à 3 actions concrètes applicables. \
 Classe chaque action : safe (réversible, sans perte : redémarrer, ajuster une option), caution (modifie une config), danger (destructif). \
 N'invente aucune donnée ; si une information te manque, dis-le. Réponds en français.";
+
+/// Contexte + outils propres au jeu, injecté dans les prompts diagnostic ET chat (source unique).
+fn game_playbook(family: &str) -> &'static str {
+    match family {
+        "minecraft" => "JEU — Minecraft. Mods/plugins via le MARKETPLACE : `market_search` (Modrinth/CurseForge/SpigotMC, filtrable `loader`/`game_version`) → `list_mod_versions` → `install_mod` (modrinth = mods ET plugins ; spigot = plugins). Ne propose JAMAIS un projet `premium`/`external` (403) ; vérifie via market_search, ne te fie pas à ta mémoire. Détecte loader/version via les installés ou la commande de démarrage (`read_startup`). PERFORMANCE : `analyze_performance` (Spark natif ; `with_profiler` pour le CPU) ; une URL spark.lucko.me → `parse_spark_report` (jamais un outil web dessus). NE DÉMARRE PAS / crash-loop : `diagnose_startup` AVANT de conclure (EULA, port occupé, OOM, version Java, mod fautif à renommer en .jar.disabled…). Config : server.properties, flags JVM (`set_startup_params`, Aikar). Modération joueurs : `player_action`.",
+        "satisfactory" => "JEU — Satisfactory. Les mods viennent de ficsit.app : `ficsit_search` → `ficsit_versions` → `install_ficsit_mod` (installe le mod + SML + dépendances, cible LinuxServer, et REDÉMARRE le serveur). Il N'Y A PAS de plugins/Skript/Modrinth/Spigot/Spark/joueurs ici — n'utilise PAS market_search/install_mod/analyze_performance/player_action. Config du serveur dédié : Engine.ini / Game.ini / GameUserSettings.ini via SFTP.",
+        _ => "JEU — serveur générique (ni Minecraft ni Satisfactory) : NE suppose AUCUN concept Minecraft (pas de plugins, pas de marketplace de mods, pas de Spark, pas d'action joueur). Appuie-toi sur la console, les métriques et les fichiers de configuration via SFTP.",
+    }
+}
+
+/// Prompt système du diagnostic, adapté au jeu.
+fn system_prompt(family: &str) -> String {
+    format!("{SYSTEM_BASE}\n\n{}", game_playbook(family))
+}
 
 fn user_prompt(inc: &Incident, console_tail: &str) -> String {
     let console = console_or_default(console_tail);
@@ -1072,8 +1092,9 @@ fn console_or_default(console_tail: &str) -> String {
 }
 
 /// Prompt autonome pour un agent CLI local : tout le contexte + consigne de sortie JSON.
-fn cli_prompt(inc: &Incident, console_tail: &str, metrics: &str) -> String {
+fn cli_prompt(inc: &Incident, console_tail: &str, metrics: &str, family: &str) -> String {
     let console = console_or_default(console_tail);
+    let sys = system_prompt(family);
     let focus = match &inc.selection {
         Some(sel) => format!(
             "Analyse demandée par l'utilisateur. Extrait sélectionné à analyser :\n```\n{}\n```\n\n",
@@ -1082,7 +1103,7 @@ fn cli_prompt(inc: &Incident, console_tail: &str, metrics: &str) -> String {
         None => format!("Déclencheur : {} — {}.\n\n", inc.trigger, inc.message),
     };
     format!(
-        "{SYSTEM_PROMPT}\n\n\
+        "{sys}\n\n\
          Serveur « {} » (server_id = {}).\n\
          {}\
          Dernières lignes de console :\n```\n{}\n```\n\n\
@@ -1096,7 +1117,8 @@ fn cli_prompt(inc: &Incident, console_tail: &str, metrics: &str) -> String {
 }
 
 /// Prompt pour l'agent CLI branché sur le MCP : il investigue lui-même via les outils.
-fn cli_agentic_prompt(inc: &Incident) -> String {
+fn cli_agentic_prompt(inc: &Incident, family: &str) -> String {
+    let sys = system_prompt(family);
     let focus = match &inc.selection {
         Some(sel) => format!(
             "Analyse demandée par l'utilisateur. Extrait à analyser :\n```\n{}\n```\n\n",
@@ -1105,7 +1127,7 @@ fn cli_agentic_prompt(inc: &Incident) -> String {
         None => format!("Déclencheur : {} — {}.\n\n", inc.trigger, inc.message),
     };
     format!(
-        "{SYSTEM_PROMPT}\n\n\
+        "{sys}\n\n\
          Serveur « {} » (server_id = {}).\n\
          {}\
          Tu disposes d'outils MCP de LECTURE : {}. \
@@ -1114,7 +1136,7 @@ fn cli_agentic_prompt(inc: &Incident) -> String {
          Réponds UNIQUEMENT avec un objet JSON valide (sans texte ni balises autour), de la forme : \
          {{\"summary\": string, \"cause\": string, \"suggested_fix\": string, \"actions\": [{{\"tool\": string, \"args\": object, \"label\": string, \"risk\": \"safe\"|\"caution\"|\"danger\"}}]}}. \
          {ACTION_TOOLS_SPEC}",
-        inc.server_name, inc.server_id, focus, read_tools_mcp_list()
+        inc.server_name, inc.server_id, focus, read_tools_mcp_list(family)
     )
 }
 
@@ -1319,9 +1341,11 @@ async fn chat_http(
     } else {
         Vec::new()
     };
-    let (tools, official_names) = merge_tools(chat_tools(autonomous, &cfg.disabled_tools), official);
+    let family = core.server_family(server_id).await;
+    let (tools, official_names) =
+        merge_tools(chat_tools(autonomous, &cfg.disabled_tools, &family), official);
     let api_token = crate::secrets::read_key().ok().flatten(); // pour exécuter les outils officiels
-    let system = with_effort(&chat_system(autonomous), cfg.effort);
+    let system = with_effort(&chat_system(autonomous, &family), cfg.effort);
 
     let prompt = if session.transcript.is_empty() {
         format!("[Serveur « {server_name} », server_id = {server_id}]\n{message}")
@@ -1504,10 +1528,11 @@ async fn chat_cli_persistent(
     let user_text = if p.primed {
         message.to_string()
     } else {
+        let family = core.server_family(server_id).await;
         format!(
             "{}\n\n[Serveur « {server_name} », server_id = {server_id}]\n\
              Utilise les outils MCP pour investiguer. Question :\n{message}",
-            chat_system(autonomous)
+            chat_system(autonomous, &family)
         )
     };
     p.primed = true;
@@ -1573,10 +1598,11 @@ async fn chat_cli_oneshot(
 
     let first = session.cli_session.is_none();
     let prompt = if first {
+        let family = core.server_family(server_id).await;
         format!(
             "{}\n\n[Serveur « {server_name} », server_id = {server_id}]\n\
              Utilise les outils MCP pour investiguer. Question :\n{message}",
-            chat_system(autonomous)
+            chat_system(autonomous, &family)
         )
     } else {
         message.to_string()
@@ -1625,22 +1651,23 @@ async fn chat_cli_oneshot(
 }
 
 /// Outils exposés au chat : lecture toujours, + actions si autonome.
-fn chat_tools(autonomous: bool, disabled: &[String]) -> Vec<ToolSpec> {
+fn chat_tools(autonomous: bool, disabled: &[String], family: &str) -> Vec<ToolSpec> {
     tool_specs(|n| {
-        !tool_disabled(n, disabled) && (READ_TOOLS.contains(&n) || (autonomous && is_write_tool(n)))
+        !tool_disabled(n, disabled)
+            && crate::mcp::tool_for_game(n, family)
+            && (READ_TOOLS.contains(&n) || (autonomous && is_write_tool(n)))
     })
 }
 
-fn chat_system(autonomous: bool) -> String {
-    let base = "Tu es l'assistant d'administration d'un serveur Minecraft MineStrator. L'utilisateur te pose des questions sur SON serveur. \
-        Utilise les outils de LECTURE (console, métriques, fichiers de config, liste des plugins/mods installés, commande de démarrage) pour INVESTIGUER avant de répondre — ne suppose pas, vérifie sur le serveur. \
-        Tu disposes AUSSI d'un MARKETPLACE : `market_search` (mods/plugins depuis Modrinth/CurseForge/SpigotMC, filtrable par `loader` et `game_version`), `list_mod_versions` (récupère le `version_id`), et `install_mod` (source `modrinth` = mods ET plugins ; `spigot` = plugins). \
-        AVANT de proposer une installation, vérifie via `market_search` que le projet est INSTALLABLE : un item marqué `premium: true` (payant/restreint) ou `external: true` (téléchargement externe SpigotMC) N'EST PAS installable via MineStrator — l'API renvoie 403. Ne le propose pas : signale-le et choisis une alternative gratuite et non-externe. Ne te fie JAMAIS à ta mémoire pour l'existence, la compatibilité ou l'installabilité d'un plugin — passe toujours par market_search. \
-        Pour une demande de type « quels plugins/mods pour un serveur PvP/faction ? » ou « les mods incontournables pour X » : si tu disposes d'un outil de RECHERCHE WEB (WebSearch/WebFetch), sers-t'en pour identifier ce qui se fait de mieux/de plus populaire actuellement (listes, guides, tendances) ; sinon appuie-toi sur ta connaissance. Ensuite retrouve SYSTÉMATIQUEMENT chaque projet via `market_search` (vérifie compatibilité loader/version + existence réelle dans le catalogue) avant de recommander ou de proposer l'installation. Détecte le loader/la version du serveur via la liste des installés ou la commande de démarrage. \
-        Pour toute question de PERFORMANCE / lag / CPU / RAM : utilise `analyze_performance` (Spark natif, rapport PARSÉ : TPS/MSPT/GC + points chauds) — mets `with_profiler: true` pour l'analyse CPU approfondie. Si l'utilisateur te donne une URL de rapport Spark (`spark.lucko.me/…`), parse-la avec `parse_spark_report` (profiler OU heapsummary mémoire). N'essaie JAMAIS d'ouvrir/fetcher une URL `spark.lucko.me` avec un outil web : c'est une app JS servant du protobuf binaire, illisible ainsi. \
-        Pour un serveur qui NE DÉMARRE PAS / crash-loop : utilise `diagnose_startup` (rassemble commande de démarrage + fin de latest.log + dernier crash-report + pré-scan des pannes connues) AVANT de conclure, puis propose un correctif ciblé (désactiver le mod fautif en renommant son .jar en .jar.disabled via `rename_path`, corriger une config, accepter l'EULA…). \
-        FILET DE SÉCURITÉ : avant toute opération risquée/destructive (restauration, suppression de fichiers, réécriture massive de config), propose d'abord un snapshot via `create_snapshot` ; pour revenir en arrière, propose restore_snapshot ou restore_backup. \
-        Réponds en français, clair, concret et sans blabla.";
+/// Base conversationnelle agnostique du jeu (le contexte jeu vient de `game_playbook`).
+const CHAT_BASE: &str = "Tu es l'assistant d'administration d'un serveur de jeu MineStrator. L'utilisateur te pose des questions sur SON serveur. \
+    Utilise les outils de LECTURE (console, métriques, fichiers de config, commande de démarrage) pour INVESTIGUER avant de répondre — ne suppose pas, vérifie sur le serveur. \
+    Si tu disposes d'un outil de RECHERCHE WEB (WebSearch/WebFetch), sers-t'en quand c'est pertinent (mods/plugins populaires, guides, tendances) puis vérifie sur le serveur / le catalogue. \
+    FILET DE SÉCURITÉ : avant toute opération risquée/destructive (restauration, suppression de fichiers, réécriture massive de config), propose d'abord un snapshot via `create_snapshot` ; pour revenir en arrière, propose restore_snapshot ou restore_backup. \
+    Réponds en français, clair, concret et sans blabla.";
+
+fn chat_system(autonomous: bool, family: &str) -> String {
+    let base = format!("{CHAT_BASE}\n\n{}", game_playbook(family));
     if autonomous {
         format!("{base} Tu es en mode AUTONOME : tu peux exécuter directement les actions nécessaires via les outils d'action ; explique ce que tu fais et pourquoi. {ACTION_TOOLS_SPEC}")
     } else {

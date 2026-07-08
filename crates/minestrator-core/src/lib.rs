@@ -18,10 +18,14 @@ mod copilot;
 mod doctor;
 mod error;
 mod events;
+mod factorio;
+mod ficsit;
+mod games;
 mod llm;
 mod mca;
 pub mod mcp;
 mod models;
+mod mods;
 mod nbt;
 mod official_mcp;
 mod paste;
@@ -32,6 +36,8 @@ mod secrets;
 mod sftp;
 mod store;
 mod supervisor;
+mod thunderstore;
+mod umod;
 mod util;
 mod world;
 
@@ -41,9 +47,19 @@ pub use copilot::{Autonomy, ChatReply, CopilotConfig, Effort};
 pub use error::{Error, Result};
 pub use events::{
     Alert, ChatDelta, ConsoleConnection, ConsoleOutput, ConsoleStats, ConsoleStatus,
-    CopilotProgress, CopilotStarted, CoreEvent, Diagnosis, ProposedAction, SftpProgress,
+    CopilotProgress, CopilotStarted, CoreEvent, Diagnosis, ModInstallProgress, ProposedAction,
+    SftpProgress,
 };
+pub use ficsit::{
+    FicsitDep, FicsitInstallItem, FicsitInstalledMod, FicsitMod, FicsitModPage, FicsitTarget,
+    FicsitVersion, SmlTarget, SmlVersion,
+};
+pub use games::GameCapabilities;
 pub use llm::Provider;
+pub use mods::{
+    FactorioSettings, GameSettings, MarketInstalledMod, MarketMod, MarketModPage, MarketModVersion,
+    ModInstallItem,
+};
 pub use mcp::McpConfig;
 pub use nbt::NbtNode;
 pub use redact::PrivacyConfig;
@@ -75,6 +91,10 @@ pub struct Core {
     mcp: PersistedConfig<McpConfig>,
     copilot: PersistedConfig<CopilotConfig>,
     privacy: PersistedConfig<PrivacyConfig>,
+    /// Chemin résolu du dossier `Mods/` par serveur Satisfactory (sondé une fois via SFTP, persisté).
+    ficsit_paths: PersistedConfig<HashMap<i64, String>>,
+    /// Réglages par jeu (non-secrets) : ex. le `username` Factorio. Secrets → trousseau.
+    game_settings: PersistedConfig<GameSettings>,
     /// Une conversation = une cellule verrouillable (Mutex async). Le Mutex sync externe ne protège
     /// QUE l'accès à la map ; le tour, lui, tient le Mutex async de la cellule → warm et send (et
     /// deux envois concurrents) se sérialisent sur la MÊME session au lieu de s'écraser.
@@ -111,6 +131,8 @@ impl Core {
             mcp: PersistedConfig::load(&dir, "mcp.json"),
             copilot: PersistedConfig::load(&dir, "copilot.json"),
             privacy: PersistedConfig::load(&dir, "privacy.json"),
+            ficsit_paths: PersistedConfig::load(&dir, "ficsit_paths.json"),
+            game_settings: PersistedConfig::load(&dir, "game_settings.json"),
             chat_sessions: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
             token_cache: Mutex::new(None),
@@ -416,6 +438,17 @@ impl Core {
         self.api.list_servers(&token, user_id).await
     }
 
+    /// Famille de jeu d'un serveur (`minecraft` | `satisfactory` | `generic`), pour adapter l'IA
+    /// (prompts + outils) au jeu. Repli `generic` si indisponible. Lookup léger (un GET).
+    pub(crate) async fn server_family(&self, id: i64) -> String {
+        self.list_servers()
+            .await
+            .ok()
+            .and_then(|o| o.servers.into_iter().find(|s| s.id == id))
+            .map(|s| s.capabilities.family)
+            .unwrap_or_else(|| "generic".to_string())
+    }
+
     pub async fn server_details(&self, id: i64) -> Result<ServerDetails> {
         self.api.get_server(&self.token()?, id).await
     }
@@ -532,6 +565,443 @@ impl Core {
     /// Plugins installés sur un serveur.
     pub async fn installed_plugins(&self, id: i64) -> Result<Vec<InstalledItem>> {
         self.api.installed_plugins(&self.token()?, id).await
+    }
+
+    // --- Mods Satisfactory (ficsit.app / SMR) ------------------------------
+    // Catalogue = API externe publique (pas de token MineStrator). L'installation télécharge les
+    // artefacts `LinuxServer` et les écrit dans le dossier `Mods/` du serveur via NOTRE SFTP.
+
+    /// Recherche / tri paginé du catalogue ficsit.app.
+    pub async fn ficsit_search(
+        &self,
+        search: &str,
+        offset: i64,
+        limit: i64,
+        order_by: &str,
+        order: &str,
+    ) -> Result<FicsitModPage> {
+        ficsit::search_mods(search, offset, limit, order_by, order).await
+    }
+
+    /// Versions d'un mod ficsit (identifié par son id), récentes d'abord.
+    pub async fn ficsit_mod_versions(&self, mod_id: &str) -> Result<Vec<FicsitVersion>> {
+        ficsit::mod_versions(mod_id).await
+    }
+
+    /// Versions disponibles du Satisfactory Mod Loader (SML).
+    pub async fn ficsit_sml_versions(&self) -> Result<Vec<SmlVersion>> {
+        ficsit::sml_versions().await
+    }
+
+    // --- Marketplaces de mods multi-sources (Thunderstore/Factorio/uMod) — read-path ------
+    // Catalogues = API externes publiques ; `source` vient des capacités du serveur (côté front).
+
+    /// Recherche / tri dans le catalogue d'une source de mods.
+    pub async fn mods_search(
+        &self,
+        source: &str,
+        family: &str,
+        query: &str,
+        order: &str,
+        page: i64,
+    ) -> Result<MarketModPage> {
+        mods::search(source, family, query, order, page).await
+    }
+
+    /// Versions d'un mod d'une source (référence source-spécifique).
+    pub async fn mods_versions(
+        &self,
+        source: &str,
+        reference: &str,
+    ) -> Result<Vec<MarketModVersion>> {
+        mods::mod_versions(source, reference).await
+    }
+
+    // --- Marketplaces génériques : install / gestion (aiguillage par source) ---
+
+    /// Installe un lot de mods d'une source « push SFTP » (tâche de fond). `items` = (référence,
+    /// version ; version vide = dernière). Progression via `CoreEvent::ModInstallProgress` (`tid`).
+    pub async fn run_mods_install(
+        &self,
+        server_id: i64,
+        source: String,
+        items: Vec<(String, String)>,
+        tid: String,
+    ) {
+        let res = match source.as_str() {
+            "factorio" => self.factorio_install_inner(server_id, &items, &tid).await,
+            other => Err(Error::Unexpected(format!(
+                "installation pas encore disponible pour la source « {other} »."
+            ))),
+        };
+        if let Err(e) = res {
+            let _ = self.events.send(CoreEvent::ModInstallProgress(ModInstallProgress {
+                id: tid,
+                phase: "error".into(),
+                mod_name: install_label(&items),
+                done: 0,
+                total: 0,
+                status: "error".into(),
+                error: Some(e.to_string()),
+            }));
+        }
+    }
+
+    /// Mods installés d'une source, avec leur état activé.
+    pub async fn mods_installed(&self, source: &str, server_id: i64) -> Result<Vec<MarketInstalledMod>> {
+        match source {
+            "factorio" => {
+                let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+                let list = self.factorio_read_mod_list(&conn, server_id).await?;
+                Ok(factorio::mod_list_entries(&list)
+                    .into_iter()
+                    .map(|(name, enabled)| MarketInstalledMod {
+                        reference: name.clone(),
+                        name,
+                        enabled,
+                    })
+                    .collect())
+            }
+            other => Err(Error::Unexpected(format!(
+                "gestion des mods indisponible pour « {other} »."
+            ))),
+        }
+    }
+
+    /// Active/désactive un mod installé (effet au prochain redémarrage du serveur).
+    pub async fn mods_set_enabled(
+        &self,
+        source: &str,
+        server_id: i64,
+        reference: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        match source {
+            "factorio" => {
+                let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+                let list = self.factorio_read_mod_list(&conn, server_id).await?;
+                let updated = factorio::mod_list_set_enabled(&list, reference, enabled);
+                let path = format!("{FACTORIO_MODS_DIR}/mod-list.json");
+                self.drop_on_err(server_id, sftp::write_bytes(&conn, &path, updated.as_bytes()).await)
+            }
+            other => Err(Error::Unexpected(format!(
+                "gestion des mods indisponible pour « {other} »."
+            ))),
+        }
+    }
+
+    /// Supprime un mod installé : retire son entrée de `mod-list.json` + efface son/ses zip(s).
+    pub async fn mods_remove(&self, source: &str, server_id: i64, reference: &str) -> Result<()> {
+        match source {
+            "factorio" => {
+                let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+                // 1. Efface le(s) zip(s) `{reference}_{version}.zip`.
+                if let Ok(entries) = sftp::list(&conn, FACTORIO_MODS_DIR).await {
+                    let prefix = format!("{reference}_");
+                    for e in entries {
+                        if !e.is_dir && e.name.starts_with(&prefix) && e.name.ends_with(".zip") {
+                            let _ = sftp::remove(&conn, &e.path, false).await;
+                        }
+                    }
+                }
+                // 2. Retire l'entrée de la liste blanche.
+                let list = self.factorio_read_mod_list(&conn, server_id).await?;
+                let updated = factorio::mod_list_remove(&list, reference);
+                let path = format!("{FACTORIO_MODS_DIR}/mod-list.json");
+                self.drop_on_err(server_id, sftp::write_bytes(&conn, &path, updated.as_bytes()).await)
+            }
+            other => Err(Error::Unexpected(format!(
+                "gestion des mods indisponible pour « {other} »."
+            ))),
+        }
+    }
+
+    /// Lit `mods/mod-list.json` (vide si absent — Factorio le régénère au démarrage).
+    async fn factorio_read_mod_list(&self, conn: &sftp::SftpConn, server_id: i64) -> Result<String> {
+        let path = format!("{FACTORIO_MODS_DIR}/mod-list.json");
+        match sftp::read_bytes(conn, &path, 4 * 1024 * 1024).await {
+            Ok(b) => Ok(String::from_utf8(b).unwrap_or_default()),
+            Err(_) => {
+                let _ = server_id;
+                Ok(String::new())
+            }
+        }
+    }
+
+    /// Installe un lot de mods Factorio : résout (mod + dépendances requises), télécharge (auth
+    /// factorio.com + sha1), dépose les zip dans `mods/`, met à jour `mod-list.json`, **redémarre**.
+    /// Factorio ne verrouille pas les zip (chargés au démarrage) → pas d'arrêt préalable.
+    pub(crate) async fn factorio_install_inner(
+        &self,
+        server_id: i64,
+        items: &[(String, String)],
+        tid: &str,
+    ) -> Result<()> {
+        let label = install_label(items);
+        self.mod_progress(tid, &label, "resolving", 0, 0, "active");
+
+        // Identifiants factorio.com (username en clair, token au trousseau).
+        let username = self.game_settings.with(|g| g.factorio.username.trim().to_string());
+        let token = secrets::read_game_secret("factorio")?.unwrap_or_default();
+        if username.is_empty() || token.trim().is_empty() {
+            return Err(Error::Unexpected(
+                "Configure ton compte factorio.com (username + token) dans Paramètres → Jeux.".into(),
+            ));
+        }
+
+        // Résolution : mod + dépendances requises, DÉDOUBLONNÉES (une lib partagée = 1 seul zip).
+        let mut by_ref: HashMap<String, factorio::FactorioArtifact> = HashMap::new();
+        for (reference, version) in items {
+            for a in factorio::resolve_install(reference, version).await? {
+                by_ref.entry(a.reference.clone()).or_insert(a);
+            }
+        }
+        let artifacts: Vec<factorio::FactorioArtifact> = by_ref.into_values().collect();
+        let total = artifacts.len() as u64;
+
+        // 1. Téléchargement (auth + vérification sha1).
+        let mut blobs: Vec<(String, String, Vec<u8>)> = Vec::with_capacity(artifacts.len());
+        for (i, a) in artifacts.iter().enumerate() {
+            self.mod_progress(tid, &label, "downloading", i as u64, total, "active");
+            let bytes = factorio::download(a, &username, &token).await?;
+            blobs.push((a.reference.clone(), a.file_name.clone(), bytes));
+        }
+
+        // 2. Dépôt des zip dans `/mods` (racine SFTP, confirmé).
+        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+        sftp::ensure_dir(&conn, FACTORIO_MODS_DIR).await;
+        for (i, (_r, file_name, bytes)) in blobs.iter().enumerate() {
+            self.mod_progress(tid, &label, "uploading", i as u64, total, "active");
+            let safe = file_name.rsplit(['/', '\\']).next().unwrap_or(file_name);
+            let path = format!("{FACTORIO_MODS_DIR}/{safe}");
+            self.drop_on_err(server_id, sftp::write_bytes(&conn, &path, bytes).await)?;
+        }
+
+        // 3. Liste blanche d'activation : ajoute les mods installés (conserve le reste).
+        let existing = self.factorio_read_mod_list(&conn, server_id).await?;
+        let names: Vec<String> = blobs.iter().map(|(r, _, _)| r.clone()).collect();
+        let updated = factorio::mod_list_add(
+            (!existing.is_empty()).then_some(existing.as_str()),
+            &names,
+        );
+        let list_path = format!("{FACTORIO_MODS_DIR}/mod-list.json");
+        self.drop_on_err(server_id, sftp::write_bytes(&conn, &list_path, updated.as_bytes()).await)?;
+
+        // 4. Redémarrage (applique les mods) + fin.
+        self.mod_progress(tid, &label, "restarting", total, total, "active");
+        let _ = self.power_action(server_id, "restart").await;
+        self.mod_progress(tid, &label, "done", total, total, "done");
+        Ok(())
+    }
+
+    // --- Réglages par jeu (Paramètres → Jeux) ------------------------------
+
+    /// Réglages par jeu (non-secrets).
+    pub fn get_game_settings(&self) -> GameSettings {
+        self.game_settings.get()
+    }
+    pub fn set_game_settings(&self, cfg: GameSettings) {
+        self.game_settings.set(cfg);
+    }
+
+    /// Enregistre le token de download factorio.com (trousseau OS).
+    pub fn set_factorio_token(&self, token: &str) -> Result<()> {
+        secrets::store_game_secret("factorio", token)
+    }
+    /// Un token Factorio est-il enregistré ?
+    pub fn has_factorio_token(&self) -> Result<bool> {
+        Ok(secrets::read_game_secret("factorio")?
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false))
+    }
+    pub fn clear_factorio_token(&self) -> Result<()> {
+        secrets::delete_game_secret("factorio")
+    }
+
+    /// Résout (et mémorise) le dossier `Mods/` d'un serveur en sondant le SFTP.
+    async fn ficsit_mods_dir(&self, server_id: i64) -> Result<String> {
+        if let Some(p) = self.ficsit_paths.with(|m| m.get(&server_id).cloned()) {
+            return Ok(p);
+        }
+        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+        // Candidats connus (MineStrator = `/SatisfactoryDedicatedServer/...`).
+        for factory in ["/SatisfactoryDedicatedServer/FactoryGame", "/FactoryGame"] {
+            if let Ok((true, _)) = sftp::stat(&conn, factory).await {
+                let mods = format!("{factory}/Mods");
+                sftp::ensure_dir(&conn, &mods).await;
+                let mut m = self.ficsit_paths.get();
+                m.insert(server_id, mods.clone());
+                self.ficsit_paths.set(m);
+                return Ok(mods);
+            }
+        }
+        Err(Error::Unexpected(
+            "Dossier des mods introuvable (FactoryGame). Est-ce bien un serveur Satisfactory ?".into(),
+        ))
+    }
+
+    /// Mods installés (dossiers de `Mods/`, hors SML), avec état activé/désactivé.
+    pub async fn ficsit_installed(&self, server_id: i64) -> Result<Vec<FicsitInstalledMod>> {
+        let mods_dir = self.ficsit_mods_dir(server_id).await?;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+        let entries = self.drop_on_err(server_id, sftp::list(&conn, &mods_dir).await)?;
+        let mut out = Vec::new();
+        for e in entries {
+            if !e.is_dir {
+                continue;
+            }
+            let (reference, enabled) = match e.name.strip_suffix(".disabled") {
+                Some(base) => (base.to_string(), false),
+                None => (e.name.clone(), true),
+            };
+            if reference.eq_ignore_ascii_case("SML") {
+                continue; // le loader, pas un mod utilisateur
+            }
+            out.push(FicsitInstalledMod { name: reference.clone(), reference, enabled });
+        }
+        out.sort_by_key(|m| m.name.to_lowercase());
+        Ok(out)
+    }
+
+    /// Active/désactive un mod (renomme son dossier `<ref>` ↔ `<ref>.disabled`).
+    pub async fn ficsit_set_enabled(
+        &self,
+        server_id: i64,
+        reference: &str,
+        enabled: bool,
+    ) -> Result<()> {
+        let base = self.ficsit_mods_dir(server_id).await?;
+        let base = base.trim_end_matches('/');
+        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+        let (from, to) = if enabled {
+            (format!("{base}/{reference}.disabled"), format!("{base}/{reference}"))
+        } else {
+            (format!("{base}/{reference}"), format!("{base}/{reference}.disabled"))
+        };
+        self.drop_on_err(server_id, sftp::rename(&conn, &from, &to).await)
+    }
+
+    /// Supprime définitivement un mod (dossier activé OU désactivé).
+    pub async fn ficsit_remove(&self, server_id: i64, reference: &str) -> Result<()> {
+        let base = self.ficsit_mods_dir(server_id).await?;
+        let base = base.trim_end_matches('/');
+        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+        for name in [reference.to_string(), format!("{reference}.disabled")] {
+            let p = format!("{base}/{name}");
+            if let Ok((true, _)) = sftp::stat(&conn, &p).await {
+                return self.drop_on_err(server_id, sftp::remove_recursive(&conn, &p).await);
+            }
+        }
+        Ok(()) // déjà absent
+    }
+
+    /// Installe UN OU PLUSIEURS mods ficsit en une opération (tâche de fond) : résout chaque mod
+    /// avec SML et dépendances, **dédoublonne** les artefacts partagés (SML, libs communes),
+    /// télécharge tout, **arrête le serveur UNE fois**, écrit dans `Mods/`, **redémarre UNE fois**.
+    /// Progression via `CoreEvent::ModInstallProgress` (`tid`). `items` = (référence, id de version).
+    pub async fn run_ficsit_install(&self, server_id: i64, items: Vec<(String, String)>, tid: String) {
+        if let Err(e) = self.ficsit_install_inner(server_id, &items, &tid).await {
+            let _ = self.events.send(CoreEvent::ModInstallProgress(ModInstallProgress {
+                id: tid,
+                phase: "error".into(),
+                mod_name: install_label(&items),
+                done: 0,
+                total: 0,
+                status: "error".into(),
+                error: Some(e.to_string()),
+            }));
+        }
+    }
+
+    pub(crate) async fn ficsit_install_inner(
+        &self,
+        server_id: i64,
+        items: &[(String, String)],
+        tid: &str,
+    ) -> Result<()> {
+        let label = install_label(items);
+        self.mod_progress(tid, &label, "resolving", 0, 0, "active");
+
+        // Résolution de tous les mods → artefacts LinuxServer, DÉDOUBLONNÉS par référence : SML et
+        // dépendances communes ne sont téléchargés/écrits qu'une seule fois pour tout le lot.
+        let mut by_ref: HashMap<String, ficsit::InstallArtifact> = HashMap::new();
+        for (reference, version_id) in items {
+            for a in ficsit::resolve_server_install(reference, version_id).await? {
+                by_ref.entry(a.reference.clone()).or_insert(a);
+            }
+        }
+        let artifacts: Vec<ficsit::InstallArtifact> = by_ref.into_values().collect();
+        let total = artifacts.len() as u64;
+
+        // 1. Téléchargement (avec vérification d'intégrité sha256).
+        let mut blobs: Vec<(String, Vec<u8>)> = Vec::with_capacity(artifacts.len());
+        for (i, a) in artifacts.iter().enumerate() {
+            self.mod_progress(tid, &label, "downloading", i as u64, total, "active");
+            let bytes = ficsit::download(&a.link, a.hash.as_deref()).await?;
+            blobs.push((a.reference.clone(), bytes));
+        }
+
+        // 2. Dossier des mods (sondé + persisté).
+        let mods_dir = self.ficsit_mods_dir(server_id).await?;
+        let mods_dir = mods_dir.trim_end_matches('/').to_string();
+
+        // 3. Arrêt du serveur (fichiers .so/.pak verrouillés tant qu'il tourne) + attente offline.
+        self.mod_progress(tid, &label, "stopping", 0, total, "active");
+        self.power_action(server_id, "stop").await?;
+        self.wait_offline(server_id).await;
+
+        // 4. Écriture SFTP : chaque artefact (zip) est extrait dans `Mods/<reference>/`.
+        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
+        for (i, (art_ref, bytes)) in blobs.iter().enumerate() {
+            self.mod_progress(tid, &label, "uploading", i as u64, total, "active");
+            let files = crate::archive::extract_all(
+                bytes,
+                crate::archive::ArchiveKind::Zip,
+                EXTRACT_MAX_ENTRIES,
+                EXTRACT_MAX_TOTAL,
+            )
+            .map_err(Error::Unexpected)?;
+            let dest = format!("{mods_dir}/{art_ref}");
+            sftp::ensure_dir(&conn, &dest).await;
+            for (rel, data) in files {
+                // `extract_all` a déjà écarté les chemins dangereux (anti zip-slip).
+                let path = format!("{dest}/{rel}");
+                if let Some((parent, _)) = path.rsplit_once('/') {
+                    sftp::ensure_dir(&conn, parent).await;
+                }
+                self.drop_on_err(server_id, sftp::write_bytes(&conn, &path, &data).await)?;
+            }
+        }
+
+        // 5. Redémarrage + fin.
+        self.mod_progress(tid, &label, "restarting", total, total, "active");
+        let _ = self.power_action(server_id, "start").await;
+        self.mod_progress(tid, &label, "done", total, total, "done");
+        Ok(())
+    }
+
+    /// Attend (borné ~24 s) que le serveur soit hors ligne après un stop, pour écrire sans verrou.
+    async fn wait_offline(&self, server_id: i64) {
+        for _ in 0..12 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            match self.sample_stats(server_id).await {
+                Ok(Some(s)) if s.state == "offline" => return,
+                Ok(None) | Err(_) => return,
+                _ => {}
+            }
+        }
+    }
+
+    fn mod_progress(&self, tid: &str, name: &str, phase: &str, done: u64, total: u64, status: &str) {
+        let _ = self.events.send(CoreEvent::ModInstallProgress(ModInstallProgress {
+            id: tid.to_string(),
+            phase: phase.to_string(),
+            mod_name: name.to_string(),
+            done,
+            total,
+            status: status.to_string(),
+            error: None,
+        }));
     }
 
     // --- Filet de sécurité : backups & snapshots ---------------------------
@@ -1009,9 +1479,20 @@ const SEARCH_MAX_SCAN: usize = 20_000;
 const EXTRACT_MAX_ENTRIES: usize = 4000;
 const EXTRACT_MAX_TOTAL: u64 = 256 * 1024 * 1024;
 
+/// Dossier des mods Factorio (racine SFTP — confirmé sur MineStrator).
+const FACTORIO_MODS_DIR: &str = "/mods";
+
 /// Dernier segment d'un chemin distant (nom de fichier/dossier).
 fn base_name(p: &str) -> String {
     p.trim_end_matches('/').rsplit('/').next().unwrap_or(p).to_string()
+}
+
+/// Libellé lisible d'une installation ficsit : le nom du mod si un seul, sinon « N mods ».
+fn install_label(items: &[(String, String)]) -> String {
+    match items {
+        [only] => only.0.clone(),
+        _ => format!("{} mods", items.len()),
+    }
 }
 
 /// Type MIME d'une image d'après son extension (aperçu data-URI) ; `None` si non-image.

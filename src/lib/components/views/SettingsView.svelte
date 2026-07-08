@@ -13,10 +13,12 @@
   } from '$lib/updater';
   import { isCompactTabs, setCompactTabs } from '$lib/tabs/mode.svelte';
   import { closeBehavior, setCloseBehavior, type CloseBehavior } from '$lib/close.svelte';
+  import { isDebug, setDebug } from '$lib/debug.svelte';
   import type {
     Autonomy,
     CliStatus,
     CopilotConfig,
+    GameSettings,
     LlmProvider,
     McpConfig,
     PrivacyConfig,
@@ -25,13 +27,20 @@
   } from '$lib/types';
   import Icon from '../Icon.svelte';
 
-  type Section = 'general' | 'supervisor' | 'mcp' | 'copilot' | 'privacy';
+  type Section = 'general' | 'games' | 'supervisor' | 'mcp' | 'copilot' | 'privacy' | 'debug';
   let section = $state<Section>('general');
+  let debugOn = $state(false);
 
   let config = $state<SupervisorConfig | null>(null);
   let servers = $state<ServerListItem[]>([]);
   let mcp = $state<McpConfig | null>(null);
   let privacy = $state<PrivacyConfig | null>(null);
+
+  // --- Réglages par jeu ---
+  let gameSettings = $state<GameSettings | null>(null);
+  let factorioToken = $state('');
+  let factorioTokenSet = $state(false);
+  let factorioBusy = $state(false);
 
   // --- Affichage ---
   let compactTabs = $state(false);
@@ -171,8 +180,15 @@
     } catch {
       /* défauts */
     }
+    try {
+      gameSettings = await api.getGameSettings();
+      factorioTokenSet = await api.hasFactorioToken();
+    } catch {
+      /* défauts */
+    }
     compactTabs = isCompactTabs();
     closeBehav = closeBehavior();
+    debugOn = isDebug();
     autoUpdate = isAutoUpdateEnabled();
     try {
       appVersion = await getVersion();
@@ -307,6 +323,42 @@
     }
   }
 
+  // --- Réglages par jeu ---
+  async function saveGameSettings() {
+    if (!gameSettings) return;
+    try {
+      await api.setGameSettings($state.snapshot(gameSettings));
+      flashSaved();
+    } catch (e) {
+      flashError(e);
+    }
+  }
+  async function saveFactorioToken() {
+    if (!factorioToken.trim()) return;
+    factorioBusy = true;
+    try {
+      await api.setFactorioToken(factorioToken.trim());
+      factorioToken = '';
+      factorioTokenSet = true;
+      flashSaved();
+    } catch (e) {
+      flashError(e);
+    } finally {
+      factorioBusy = false;
+    }
+  }
+  async function clearFactorioTokenFn() {
+    factorioBusy = true;
+    try {
+      await api.clearFactorioToken();
+      factorioTokenSet = false;
+    } catch (e) {
+      flashError(e);
+    } finally {
+      factorioBusy = false;
+    }
+  }
+
   function toolAllowed(name: string): boolean {
     return copilot ? !copilot.disabled_tools.includes(name) : true;
   }
@@ -423,6 +475,9 @@
     <button class="nav-item" class:on={section === 'general'} onclick={() => (section = 'general')}>
       {t('settings.general')}
     </button>
+    <button class="nav-item" class:on={section === 'games'} onclick={() => (section = 'games')}>
+      {t('settings.games')}
+    </button>
     <button
       class="nav-item"
       class:on={section === 'supervisor'}
@@ -446,6 +501,9 @@
       onclick={() => (section = 'privacy')}
     >
       {t('settings.privacy')}
+    </button>
+    <button class="nav-item" class:on={section === 'debug'} onclick={() => (section = 'debug')}>
+      {t('settings.debug')}
     </button>
   </nav>
 
@@ -521,6 +579,54 @@
             {updChecking ? t('settings.checking') : t('settings.checkNow')}
           </button>
         </div>
+      </div>
+    {:else if section === 'games'}
+      <h1>{t('settings.games')}</h1>
+      <p class="desc dim">{t('settings.gamesDesc')}</p>
+
+      <div class="gamecard">
+        <div class="gamehead"><span class="gicon">⚙️</span> Factorio</div>
+        <p class="cmd dim" style="margin-top:0">{t('settings.factorioHint')}</p>
+
+        {#if gameSettings}
+          <span class="glab">{t('settings.factorioUsername')}</span>
+          <input
+            class="txt"
+            type="text"
+            bind:value={gameSettings.factorio.username}
+            onchange={saveGameSettings}
+            placeholder="pseudo factorio.com"
+            spellcheck="false"
+          />
+        {/if}
+
+        <span class="glab">{t('settings.factorioToken')}</span>
+        <div class="keyrow">
+          <input
+            class="txt"
+            type="password"
+            placeholder={t('settings.factorioTokenPlaceholder')}
+            bind:value={factorioToken}
+            spellcheck="false"
+          />
+          <button
+            class="btn btn--ghost"
+            onclick={saveFactorioToken}
+            disabled={factorioBusy || !factorioToken.trim()}
+          >
+            {t('settings.copilotSaveKey')}
+          </button>
+        </div>
+        {#if factorioTokenSet}
+          <p class="cmd dim">
+            <Icon name="check" size={13} /> {t('settings.factorioTokenSet')} ·
+            <button class="linkbtn" onclick={clearFactorioTokenFn} disabled={factorioBusy}
+              >{t('settings.copilotClearKey')}</button
+            >
+          </p>
+        {:else}
+          <p class="cmd dim">{t('settings.factorioTokenWhere')}</p>
+        {/if}
       </div>
     {:else if section === 'supervisor' && config}
       <h1>{t('settings.supervisor')}</h1>
@@ -951,6 +1057,44 @@
       </label>
 
       <p class="cmd dim">{t('settings.privacyNote')}</p>
+    {:else if section === 'debug'}
+      <h1>{t('settings.debug')}</h1>
+      <label class="toggle-row">
+        <div class="tl">
+          <div class="tl-title">{t('settings.debugMode')}</div>
+          <div class="tl-desc dim">{t('settings.debugModeDesc')}</div>
+        </div>
+        <input type="checkbox" bind:checked={debugOn} onchange={() => setDebug(debugOn)} />
+      </label>
+
+      <h2>{t('settings.debugServers')}</h2>
+      <p class="desc dim">{t('settings.debugServersDesc')}</p>
+      {#if servers.length === 0}
+        <p class="cmd dim">{t('settings.debugNoServers')}</p>
+      {:else}
+        <div class="dbg-list">
+          {#each servers as s (s.id)}
+            <div class="dbg-row">
+              <div class="dbg-top">
+                <span class="dbg-name">{s.name}</span>
+                <span class="dbg-id dim">#{s.id}</span>
+              </div>
+              <div class="dbg-line">
+                <span class="dbg-k dim">egg</span>
+                <code class="dbg-v">{s.egg_name || '—'}{s.bedrock ? '  (bedrock)' : ''}</code>
+              </div>
+              <div class="dbg-line">
+                <span class="dbg-k dim">caps</span>
+                <code class="dbg-v"
+                  >family={s.capabilities.family} · mods={s.capabilities.mods} · log={s.capabilities
+                    .log_format} · players={s.capabilities.players} · autocomplete={s.capabilities
+                    .console_autocomplete}</code
+                >
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
 
     {#if saved}<div class="saved-toast">{t('settings.saved')}</div>{/if}
@@ -1396,5 +1540,72 @@
     color: var(--state-danger);
     border-color: color-mix(in srgb, var(--state-danger) 40%, var(--border));
     max-width: 320px;
+  }
+  .gamecard {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
+    margin-top: 6px;
+  }
+  .gamehead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    font-size: 15px;
+    margin-bottom: 4px;
+  }
+  .gicon {
+    font-size: 16px;
+  }
+  .glab {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 12px 0 6px;
+  }
+  .dbg-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .dbg-row {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .dbg-top {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .dbg-name {
+    font-weight: 600;
+    font-size: 13.5px;
+  }
+  .dbg-id {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .dbg-line {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+  }
+  .dbg-k {
+    flex: none;
+    width: 40px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .dbg-v {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    word-break: break-word;
   }
 </style>

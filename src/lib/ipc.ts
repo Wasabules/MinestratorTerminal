@@ -12,8 +12,15 @@ import type {
   ChatReply,
   CliStatus,
   CopilotConfig,
+  FicsitInstalledMod,
+  FicsitModPage,
+  FicsitVersion,
+  GameSettings,
   InstalledItem,
   LiveLight,
+  MarketInstalledMod,
+  MarketModPage,
+  MarketModVersion,
   MarketKind,
   MarketPage,
   MarketSource,
@@ -28,6 +35,7 @@ import type {
   ServerDetails,
   ServersOverview,
   SftpEntry,
+  SmlVersion,
   Snapshot,
   SupervisorConfig,
   UserProfile,
@@ -156,6 +164,68 @@ export const api = {
   /** Plugins installés sur un serveur. */
   installedPlugins: (serverId: number) =>
     invoke<InstalledItem[]>('installed_plugins', { serverId }),
+
+  // --- Mods Satisfactory (ficsit.app / SMR) ---
+  /** Recherche / tri paginé du catalogue ficsit.app (search vide/court = parcours trié). */
+  ficsitSearch: (
+    search: string,
+    offset: number,
+    limit: number,
+    orderBy: string,
+    order: string
+  ) => invoke<FicsitModPage>('ficsit_search', { search, offset, limit, orderBy, order }),
+  /** Versions d'un mod ficsit (par id). */
+  ficsitModVersions: (modId: string) =>
+    invoke<FicsitVersion[]>('ficsit_mod_versions', { modId }),
+  /** Versions disponibles du Satisfactory Mod Loader (SML). */
+  ficsitSmlVersions: () => invoke<SmlVersion[]>('ficsit_sml_versions'),
+  /** Mods Satisfactory installés sur le serveur (listing SFTP du dossier Mods/). */
+  ficsitInstalled: (serverId: number) =>
+    invoke<FicsitInstalledMod[]>('ficsit_installed', { serverId }),
+  /** Active/désactive un mod installé. */
+  ficsitSetEnabled: (serverId: number, reference: string, enabled: boolean) =>
+    invoke<void>('ficsit_set_enabled', { serverId, reference, enabled }),
+  /** Supprime définitivement un mod installé. */
+  ficsitRemove: (serverId: number, reference: string) =>
+    invoke<void>('ficsit_remove', { serverId, reference }),
+  /** Installe un lot de mods (fond, un seul redémarrage) : suivi via mods://install-progress. */
+  ficsitInstall: (
+    serverId: number,
+    items: { reference: string; versionId: string }[],
+    transferId: string
+  ) => invoke<void>('ficsit_install', { serverId, items, transferId }),
+
+  // --- Marketplaces de mods multi-sources (Thunderstore / Factorio / uMod) ---
+  /** Recherche / tri paginé dans le catalogue d'une source (family = jeu, pour Thunderstore). */
+  modsSearch: (source: string, family: string, query: string, order: string, page: number) =>
+    invoke<MarketModPage>('mods_search', { source, family, query, order, page }),
+  /** Versions d'un mod d'une source (référence source-spécifique). */
+  modsVersions: (source: string, reference: string) =>
+    invoke<MarketModVersion[]>('mods_versions', { source, reference }),
+  /** Installe un lot de mods d'une source (fond, un seul redémarrage) : suivi via mods://install-progress. */
+  modsInstall: (
+    serverId: number,
+    source: string,
+    items: { reference: string; version: string }[],
+    transferId: string
+  ) => invoke<void>('mods_install', { serverId, source, items, transferId }),
+  /** Mods installés d'une source, avec leur état activé. */
+  modsInstalled: (source: string, serverId: number) =>
+    invoke<MarketInstalledMod[]>('mods_installed', { source, serverId }),
+  /** Active/désactive un mod installé (effet au prochain redémarrage). */
+  modsSetEnabled: (source: string, serverId: number, reference: string, enabled: boolean) =>
+    invoke<void>('mods_set_enabled', { source, serverId, reference, enabled }),
+  /** Supprime un mod installé (retire de la liste + efface le zip). */
+  modsRemove: (source: string, serverId: number, reference: string) =>
+    invoke<void>('mods_remove', { source, serverId, reference }),
+
+  // --- Réglages par jeu (Paramètres → Jeux) ---
+  getGameSettings: () => invoke<GameSettings>('get_game_settings'),
+  setGameSettings: (settings: GameSettings) => invoke<void>('set_game_settings', { settings }),
+  /** Token de download factorio.com (trousseau OS). */
+  setFactorioToken: (token: string) => invoke<void>('set_factorio_token', { token }),
+  hasFactorioToken: () => invoke<boolean>('has_factorio_token'),
+  clearFactorioToken: () => invoke<void>('clear_factorio_token'),
 
   /** 100 dernières lignes de console (ANSI). */
   consoleLogs: (id: number) => invoke<string[]>('console_logs', { id }),

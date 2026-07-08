@@ -171,6 +171,8 @@ pub struct ServerListItem {
     pub status: String,
     pub owner: bool,
     pub bedrock: bool,
+    /// Capacités dérivées du jeu (quelles vues/fonctions exposer). Voir [`crate::games`].
+    pub capabilities: crate::games::GameCapabilities,
 }
 
 impl From<ServersData> for ServersOverview {
@@ -200,6 +202,7 @@ impl From<ServersData> for ServersOverview {
             .map(|s| ServerListItem {
                 status: server_status(&s).to_string(),
                 address: server_address(&s),
+                capabilities: crate::games::capabilities_for(&s.egg_name, s.is_bedrock != 0),
                 id: s.id,
                 name: s.name,
                 mybox_id: s.id_mybox,

@@ -44,6 +44,12 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # Décodage NBT (`.dat` Minecraft : level.dat, playerdata, structures) → JSON lisible. Pur Rust.
 fastnbt = "2"
 
+# Mods Satisfactory (ficsit.app) : vérification d'intégrité sha256 des artefacts + résolution des
+# contraintes de versions (SML/dépendances, syntaxe semver `^3.12.0`).
+sha2 = "0.10"
+sha1 = "0.10"
+semver = "1"
+
 # Trousseau natif de l'OS (fonctionne aussi headless).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }

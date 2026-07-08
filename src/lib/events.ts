@@ -11,6 +11,7 @@ import type {
   CopilotProgress,
   CopilotStarted,
   Diagnosis,
+  ModInstallProgress,
   SftpProgress,
 } from './types';
 
@@ -46,4 +47,10 @@ export const sftpEvents = {
   /** Progression des transferts SFTP (upload/download/zip). */
   progress: (cb: (p: SftpProgress) => void): Promise<UnlistenFn> =>
     listen<SftpProgress>('sftp://progress', (e) => cb(e.payload)),
+};
+
+export const modEvents = {
+  /** Progression d'une installation de mod Satisfactory (ficsit → SFTP). */
+  installProgress: (cb: (p: ModInstallProgress) => void): Promise<UnlistenFn> =>
+    listen<ModInstallProgress>('mods://install-progress', (e) => cb(e.payload)),
 };

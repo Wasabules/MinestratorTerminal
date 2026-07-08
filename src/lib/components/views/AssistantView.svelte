@@ -4,6 +4,7 @@
   import { api, humanizeError } from '$lib/ipc';
   import { copilotEvents } from '$lib/events';
   import { t } from '$lib/i18n';
+  import { serverCaps } from '$lib/games/capabilities.svelte';
   import { renderMarkdown } from '$lib/markdown';
   import { uid } from '$lib/util/id';
   import ActionList from '../ActionList.svelte';
@@ -58,13 +59,18 @@
     return t('assistant.working');
   });
 
-  const SUGGESTIONS = $derived([
-    t('assistant.sugg1'),
-    t('assistant.sugg2'),
-    t('assistant.sugg3'),
-    t('assistant.sugg4'),
-    t('assistant.sugg5'),
-  ]);
+  // Suggestions adaptées au jeu : Satisfactory (ficsit) vs Minecraft par défaut.
+  const SUGGESTIONS = $derived(
+    serverCaps(serverId)?.family === 'satisfactory'
+      ? [t('assistant.fsugg1'), t('assistant.fsugg2'), t('assistant.fsugg3')]
+      : [
+          t('assistant.sugg1'),
+          t('assistant.sugg2'),
+          t('assistant.sugg3'),
+          t('assistant.sugg4'),
+          t('assistant.sugg5'),
+        ]
+  );
 
   onMount(async () => {
     unlisten = await copilotEvents.progress((p) => {

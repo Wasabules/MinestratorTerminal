@@ -162,6 +162,24 @@ pub fn run() {
             commands::install_mod,
             commands::installed_mods,
             commands::installed_plugins,
+            commands::ficsit_search,
+            commands::ficsit_mod_versions,
+            commands::ficsit_sml_versions,
+            commands::ficsit_installed,
+            commands::ficsit_set_enabled,
+            commands::ficsit_remove,
+            commands::ficsit_install,
+            commands::mods_search,
+            commands::mods_versions,
+            commands::mods_install,
+            commands::mods_installed,
+            commands::mods_set_enabled,
+            commands::mods_remove,
+            commands::get_game_settings,
+            commands::set_game_settings,
+            commands::set_factorio_token,
+            commands::has_factorio_token,
+            commands::clear_factorio_token,
             commands::hide_to_tray,
             commands::quit_app,
         ])
@@ -188,6 +206,9 @@ fn forward(handle: &tauri::AppHandle, ev: CoreEvent) {
         CoreEvent::ConsoleLog(_) => {}
         CoreEvent::SftpProgress(p) => {
             let _ = handle.emit("sftp://progress", p);
+        }
+        CoreEvent::ModInstallProgress(p) => {
+            let _ = handle.emit("mods://install-progress", p);
         }
         CoreEvent::Alert(a) => {
             let title = if a.severity == "critical" {

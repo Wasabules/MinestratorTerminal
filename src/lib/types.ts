@@ -22,6 +22,20 @@ export interface MyBoxSummary {
   pro: boolean;
 }
 
+/** Capacités dérivées du jeu (quelles vues/fonctions exposer). Miroir de `crate::games`. */
+export interface GameCapabilities {
+  /** `minecraft` | `satisfactory` | `generic` */
+  family: string;
+  /** `minecraft_java` | `minecraft_bedrock` | `none` */
+  console_autocomplete: string;
+  /** `minecraft` | `unreal` | `generic` — détection des niveaux de log (filtres + couleurs). */
+  log_format: string;
+  players: boolean;
+  /** `minecraft` | `ficsit` | `none` */
+  mods: string;
+  backups: boolean;
+}
+
 export interface ServerListItem {
   id: number;
   name: string;
@@ -33,6 +47,7 @@ export interface ServerListItem {
   status: string;
   owner: boolean;
   bedrock: boolean;
+  capabilities: GameCapabilities;
 }
 
 export interface ServersOverview {
@@ -313,6 +328,113 @@ export interface InstalledItem {
   version: string;
   enabled: boolean;
   loader: string;
+}
+
+// --- Mods Satisfactory (ficsit.app / SMR) ---
+export interface FicsitMod {
+  id: string;
+  mod_reference: string;
+  name: string;
+  short_description: string;
+  downloads: number;
+  logo: string;
+}
+
+export interface FicsitModPage {
+  mods: FicsitMod[];
+  count: number;
+}
+
+export interface FicsitTarget {
+  target_name: string;
+  link: string;
+  hash: string;
+  size: number;
+}
+
+export interface FicsitDep {
+  mod_id: string;
+  condition: string;
+  optional: boolean;
+}
+
+export interface FicsitVersion {
+  id: string;
+  version: string;
+  sml_version: string;
+  size: number;
+  hash: string;
+  link: string;
+  targets: FicsitTarget[];
+  dependencies: FicsitDep[];
+}
+
+export interface SmlTarget {
+  target_name: string;
+  link: string;
+}
+
+export interface SmlVersion {
+  id: string;
+  version: string;
+  satisfactory_version: number;
+  targets: SmlTarget[];
+}
+
+export interface FicsitInstalledMod {
+  reference: string;
+  name: string;
+  enabled: boolean;
+}
+
+// --- Marketplaces de mods multi-sources (Thunderstore / Factorio / uMod) — modèles normalisés ---
+export interface MarketMod {
+  reference: string;
+  name: string;
+  description: string;
+  downloads: number;
+  icon_url: string;
+  /** `thunderstore` | `factorio` | `umod` */
+  source: string;
+}
+
+export interface MarketModPage {
+  mods: MarketMod[];
+  count: number;
+  has_more: boolean;
+}
+
+export interface MarketModVersion {
+  version: string;
+  game_version: string;
+  dependencies: string[];
+}
+
+/** Un mod installé sur le serveur (normalisé), avec son état activé. */
+export interface MarketInstalledMod {
+  reference: string;
+  name: string;
+  enabled: boolean;
+}
+
+// --- Réglages par jeu (Paramètres → Jeux) ---
+export interface FactorioSettings {
+  username: string;
+}
+export interface GameSettings {
+  factorio: FactorioSettings;
+}
+
+export interface ModInstallProgress {
+  id: string;
+  /** `resolving` | `downloading` | `stopping` | `uploading` | `restarting` | `done` | `error` */
+  phase: string;
+  mod_name: string;
+  done: number;
+  total: number;
+  /** `active` | `done` | `error` */
+  status: string;
+  error: string | null;
 }
 
 // --- Filet de sécurité : backups (quotidiens auto) & snapshots (à la demande) ---

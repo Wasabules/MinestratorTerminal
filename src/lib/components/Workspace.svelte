@@ -3,15 +3,17 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { tabs } from '$lib/tabs/tabs.svelte';
   import { t } from '$lib/i18n';
-  import { alertEvents, copilotEvents, sftpEvents, consoleEvents } from '$lib/events';
+  import { alertEvents, copilotEvents, sftpEvents, consoleEvents, modEvents } from '$lib/events';
   import { addAlert } from '$lib/alerts/alerts.svelte';
   import { addDiagnosis, startRun, progressRun } from '$lib/copilot/diagnoses.svelte';
   import { applyProgress } from '$lib/transfers/transfers.svelte';
+  import { applyInstallProgress } from '$lib/mods/installs.svelte';
   import { setServerRuntime } from '$lib/servers/runtime.svelte';
   import TabBar from './TabBar.svelte';
   import UserMenu from './UserMenu.svelte';
   import AlertCenter from './AlertCenter.svelte';
   import CopilotCenter from './CopilotCenter.svelte';
+  import ModInstallCenter from './ModInstallCenter.svelte';
   import CopilotContextMenu from './CopilotContextMenu.svelte';
   import HomePanel from './HomePanel.svelte';
   import ServerPanel from './ServerPanel.svelte';
@@ -43,6 +45,7 @@
     unlisteners.push(await copilotEvents.started(startRun));
     unlisteners.push(await copilotEvents.progress(progressRun));
     unlisteners.push(await sftpEvents.progress(applyProgress));
+    unlisteners.push(await modEvents.installProgress(applyInstallProgress));
     unlisteners.push(await consoleEvents.status((p) => onRuntime(p.conn_id, p.state)));
     unlisteners.push(await consoleEvents.stats((p) => onRuntime(p.conn_id, p.state)));
     if (destroyed) unlisteners.forEach((u) => u()); // démonté pendant l'enregistrement
@@ -60,6 +63,7 @@
     </button>
     <TabBar />
     <div class="controls">
+      <ModInstallCenter />
       <CopilotCenter />
       <AlertCenter />
       <UserMenu />

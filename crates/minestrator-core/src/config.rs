@@ -17,6 +17,9 @@ pub const KEYRING_ACCOUNT: &str = "api-key";
 /// Préfixe de compte trousseau pour les clés LLM du Copilote (une par fournisseur :
 /// `llm-key-anthropic`, `llm-key-openai`, …). Permet de changer de fournisseur sans perdre les clés.
 pub const KEYRING_ACCOUNT_LLM_PREFIX: &str = "llm-key-";
+/// Préfixe de compte trousseau pour les secrets par jeu (ex. `game-secret-factorio` = token du
+/// compte factorio.com pour télécharger des mods).
+pub const KEYRING_ACCOUNT_GAME_PREFIX: &str = "game-secret-";
 
 /// Version d'API Anthropic (en-tête `anthropic-version`).
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";

@@ -1,6 +1,6 @@
 # Minestrator Terminal
 
-Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs Minecraft via l'**API MineStrator** — console temps réel, SFTP natif complet, inspecteur NBT, marketplace, sauvegardes, et un **Copilote IA** capable de diagnostiquer et réparer.
+Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de jeu (**Minecraft, Satisfactory, Factorio, Valheim, Rust…**) via l'**API MineStrator** — console temps réel, SFTP natif complet, inspecteur NBT, **marketplace de mods multi-jeux**, sauvegardes, et un **Copilote IA** capable de diagnostiquer et réparer. L'app **détecte le jeu** de chaque serveur et adapte vues, console et outils en conséquence.
 
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
@@ -34,8 +34,13 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs Mi
 - `.dat` / `.nbt` / `.schem` → **arbre typé repliable** qui **préserve le type NBT** exact, **recherche** dans l'arbre, **hints parlants** (UUID, dates, coordonnées, booléens), **vue et copie en SNBT** (`/data`).
 - `.mca` → **carte 32×32 des chunks** (présence / taille / corruption en heatmap), **aller à une coordonnée**, ouverture de l'arbre NBT d'un chunk, **rapport de corruption** + réparation.
 
-### 📦 Contenu & sauvegardes
-- **Marketplace** mods & plugins : recherche Modrinth / CurseForge / SpigotMC, choix de version, installation en un clic.
+### 📦 Mods & sauvegardes
+- **Marketplace de mods multi-jeux**, adaptée automatiquement au jeu du serveur :
+  - **Minecraft** — Modrinth / CurseForge / SpigotMC : choix de version, installation en un clic.
+  - **Satisfactory** — ficsit.app (SMR), façon *SatisfactoryModManager* : résout SML + dépendances, dépose via SFTP, gère activer / désactiver / supprimer.
+  - **Factorio** — Mod Portal officiel : installation authentifiée (compte factorio.com), résolution des dépendances requises, mise à jour de `mod-list.json`, redémarrage.
+  - **Valheim / V Rising** (Thunderstore) & **Rust** (uMod) — parcours du catalogue + inspection des versions *(installation à venir)*.
+  - **Panier & file d'attente** : sélectionne plusieurs mods, installe en **un seul lot** (un seul redémarrage commun), avec **suivi global de la progression** dans le bandeau.
 - **Sauvegardes** : backups quotidiens automatiques (restaurables) + **snapshots** à la demande — le filet avant une intervention risquée.
 
 ### 🩺 Supervision & IA
@@ -48,6 +53,7 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs Mi
 - **Serveur MCP intégré** : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
 
 ### ⚙️ Confort & sécurité
+- **Adaptation par jeu** : détection du jeu (Minecraft Java/Bedrock, Satisfactory, Factorio, Valheim, Rust…) → vues, autocomplétion et coloration de la console, prompts/outils du Copilote ajustés. **Réglages par jeu** (ex. compte factorio.com, stocké au trousseau) et **mode debug** (données d'egg / capacités détectées).
 - Multi-onglets (dont **fenêtres détachées**), **tray** (fermer la fenêtre la masque, le superviseur reste actif), thème clair/sombre, **i18n fr/en**.
 - **Mise à jour automatique** signée : bandeau au démarrage, réglable (Réglages → Général).
 - **Confidentialité** : la clé API vit dans le trousseau natif ; anonymisation (mots de passe, IPv4, e-mails, secrets) avant tout envoi à une IA **ou** publication vers un paste ; serveur MCP en **deny-by-default** (les écritures se débloquent explicitement).

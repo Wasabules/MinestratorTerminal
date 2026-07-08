@@ -13,6 +13,7 @@
   import { redactLine } from '$lib/redact';
   import { t } from '$lib/i18n';
   import { isRunning } from '$lib/status';
+  import { serverCaps } from '$lib/games/capabilities.svelte';
   import PowerControl from '../PowerControl.svelte';
   import Icon from '../Icon.svelte';
   import type { ServerTab } from '$lib/tabs/tabs.svelte';
@@ -20,6 +21,13 @@
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
   const connId = $derived(tab.id);
+  // Autocomplétion de commandes seulement pour Minecraft (le catalogue MC n'a pas de sens ailleurs).
+  const mcAutocomplete = $derived(
+    serverCaps(serverId)?.console_autocomplete === 'minecraft_java' ||
+      serverCaps(serverId)?.console_autocomplete === 'minecraft_bedrock'
+  );
+  // Format des logs (détection des niveaux → filtres + couleurs), selon le jeu.
+  const logFormat = $derived(serverCaps(serverId)?.log_format ?? 'generic');
 
   let container: HTMLDivElement;
   let term: Terminal | undefined;
@@ -59,15 +67,16 @@
     const parts = command.split(' ');
     const frag = (parts[parts.length - 1] ?? '').toLowerCase();
     if (parts.length === 1) {
-      // 1er mot : nom de commande (catalogue MC + historique)
+      // 1er mot : nom de commande (catalogue MC si applicable + historique)
       if (!frag) return [];
       const hist = history.map((h) => h.split(' ')[0]);
-      return [...new Set([...MC_COMMANDS, ...hist])]
+      const catalog = mcAutocomplete ? MC_COMMANDS : [];
+      return [...new Set([...catalog, ...hist])]
         .filter((x) => x.toLowerCase().startsWith(frag) && x.toLowerCase() !== frag)
         .slice(0, 8);
     }
     // 1er argument d'une commande « joueur » : joueurs connectés (frag vide = tous)
-    if (parts.length === 2 && PLAYER_CMDS.has(parts[0].toLowerCase())) {
+    if (parts.length === 2 && mcAutocomplete && PLAYER_CMDS.has(parts[0].toLowerCase())) {
       return onlinePlayers
         .filter((p) => p.toLowerCase().startsWith(frag) && p.toLowerCase() !== frag)
         .slice(0, 8);
@@ -103,21 +112,42 @@
         : 'var(--state-pending)'
   );
 
+  // Détection du niveau selon le format de log du jeu (source : capacités).
   function levelOf(line: string): Level | 'other' {
-    if (/\b(ERROR|SEVERE|FATAL)\b/.test(line)) return 'error';
-    if (/\bWARN(?:ING)?\b/.test(line)) return 'warn';
-    if (/\bINFO\b/.test(line)) return 'info';
-    return 'other';
+    switch (logFormat) {
+      case 'unreal':
+        // Logs Unreal (Satisfactory) : « LogX: Error/Warning/Display: … », « Fatal error: ».
+        if (/\b(Error|Fatal)\b/.test(line)) return 'error';
+        if (/\bWarning\b/.test(line)) return 'warn';
+        if (/\bDisplay\b/.test(line)) return 'info';
+        return 'other';
+      case 'minecraft':
+        if (/\b(ERROR|SEVERE|FATAL)\b/.test(line)) return 'error';
+        if (/\bWARN(?:ING)?\b/.test(line)) return 'warn';
+        if (/\bINFO\b/.test(line)) return 'info';
+        return 'other';
+      default:
+        // Générique : insensible à la casse.
+        if (/\b(error|fatal|severe)\b/i.test(line)) return 'error';
+        if (/\bwarn(?:ing)?\b/i.test(line)) return 'warn';
+        if (/\binfo\b/i.test(line)) return 'info';
+        return 'other';
+    }
   }
-  function passes(line: string): boolean {
-    const l = levelOf(line);
-    return l === 'other' || filter[l];
+  // Colorie une ligne selon son niveau (rouge/jaune) — seulement si le serveur ne l'a pas déjà
+  // colorée (pas d'ANSI) : les erreurs/avertissements ressortent même dans des logs bruts.
+  function colorize(line: string, level: Level | 'other'): string {
+    if (line.includes('\u001b')) return line;
+    if (level === 'error') return `\u001b[91m${line}\u001b[0m`;
+    if (level === 'warn') return `\u001b[93m${line}\u001b[0m`;
+    return line;
   }
   function pushLine(line: string) {
     if (redactConsole) line = redactLine(line);
     buffer.push(line);
     if (buffer.length > MAX_BUFFER) buffer.shift();
-    if (passes(line)) term?.writeln(line);
+    const lvl = levelOf(line);
+    if (lvl === 'other' || filter[lvl]) term?.writeln(colorize(line, lvl));
   }
 
   // Joueurs connectés via l'API (server_details.players.list) — fiable, contrairement à un parse
@@ -142,12 +172,19 @@
   function rerender() {
     if (!term) return;
     term.clear();
-    for (const line of buffer) if (passes(line)) term.writeln(line);
+    for (const line of buffer) {
+      const lvl = levelOf(line);
+      if (lvl === 'other' || filter[lvl]) term.writeln(colorize(line, lvl));
+    }
   }
   function toggleLevel(l: Level) {
-    filter[l] = !filter[l];
-    rerender();
+    filter[l] = !filter[l]; // le re-rendu est piloté par l'effet réactif ci-dessous
   }
+  // Re-classe/re-colorie tout le tampon quand un filtre change OU quand le format de log (capacités)
+  // arrive après les premières lignes. Les lignes live, elles, sont écrites directement par pushLine.
+  $effect(() => {
+    rerender();
+  });
 
   let destroyed = false;
   onMount(() => {
