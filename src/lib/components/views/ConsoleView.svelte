@@ -333,6 +333,30 @@
     command = '';
   }
 
+  /**
+   * Coller multi-ligne = **liste de commandes** : chaque ligne non vide est envoyée séparément et
+   * **dans l'ordre** (on attend l'envoi de chacune pour préserver l'ordre côté serveur), au lieu
+   * d'être aplatie en une seule commande par l'input mono-ligne. Un collage d'une seule commande
+   * garde le comportement normal (remplit le champ, l'utilisateur valide).
+   */
+  async function onPaste(event: ClipboardEvent) {
+    const text = event.clipboardData?.getData('text') ?? '';
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length <= 1) return; // 0-1 commande effective → coller normal
+    event.preventDefault();
+    sugDismissed = true;
+    sugIndex = -1;
+    for (const line of lines) {
+      await api.sendCommand(serverId, line).catch(() => {});
+      history.push(line);
+    }
+    histIndex = history.length;
+    showToast(t('console.batchSent', { n: lines.length }), 3000);
+  }
+
   function onKey(event: KeyboardEvent) {
     // Dropdown de complétion ouvert : les flèches/Tab/Entrée le pilotent.
     if (showSug) {
@@ -417,6 +441,7 @@
       class="cmd"
       bind:value={command}
       onkeydown={onKey}
+      onpaste={onPaste}
       oninput={() => { sugDismissed = false; sugIndex = -1; maybeRefreshPlayers(); }}
       placeholder={t('console.placeholder')}
       spellcheck="false"

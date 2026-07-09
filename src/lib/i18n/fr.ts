@@ -493,8 +493,9 @@ export const fr = {
       'Les fichiers de config lus par l’IA ne sont pas anonymisés (pour rester utiles au diagnostic).',
   },
   console: {
-    placeholder: 'Tape une commande puis Entrée…',
+    placeholder: 'Tape une commande — ou colle une liste — puis Entrée…',
     send: 'Envoyer',
+    batchSent: '{n} commandes envoyées',
     connecting: 'Connexion…',
     open: 'Connecté',
     reconnecting: 'Reconnexion…',

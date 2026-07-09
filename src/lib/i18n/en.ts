@@ -494,8 +494,9 @@ export const en: Dict = {
       'Config files read by the AI are not anonymized (to stay useful for diagnosis).',
   },
   console: {
-    placeholder: 'Type a command then Enter…',
+    placeholder: 'Type a command — or paste a list — then Enter…',
     send: 'Send',
+    batchSent: '{n} commands sent',
     connecting: 'Connecting…',
     open: 'Connected',
     reconnecting: 'Reconnecting…',
