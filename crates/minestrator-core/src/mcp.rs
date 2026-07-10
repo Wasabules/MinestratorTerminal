@@ -109,6 +109,8 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "list_archive",
     "read_archive_entry",
     "search_files",
+    "download_file",
+    "file_stat",
     "read_startup",
     "list_installed_mods",
     "list_installed_plugins",
@@ -131,6 +133,8 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "send_command",
     "player_action",
     "write_file",
+    "upload_file",
+    "edit_file",
     "create_dir",
     "delete_path",
     "rename_path",
@@ -193,7 +197,11 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "list_archive",
     "read_archive_entry",
     "search_files",
+    "download_file",
+    "file_stat",
     "write_file",
+    "upload_file",
+    "edit_file",
     "create_dir",
     "delete_path",
     "rename_path",
@@ -540,6 +548,38 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             Ok(format!("« {from} » → « {to} »."))
         }
 
+        "upload_file" => {
+            let id = req_i64(&args, "server_id")?;
+            let local_path = req_str(&args, "local_path")?;
+            let remote_path = req_str(&args, "remote_path")?;
+            let n = core.sftp_put_local(id, &local_path, &remote_path).await.map_err(es)?;
+            Ok(format!("{n} octet(s) téléversé(s) vers « {remote_path} »."))
+        }
+
+        "download_file" => {
+            let id = req_i64(&args, "server_id")?;
+            let remote_path = req_str(&args, "remote_path")?;
+            let local_path = req_str(&args, "local_path")?;
+            let n = core.sftp_get_local(id, &remote_path, &local_path).await.map_err(es)?;
+            Ok(format!("{n} octet(s) téléchargé(s) vers « {local_path} »."))
+        }
+
+        "edit_file" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = req_str(&args, "path")?;
+            let find = req_str(&args, "find")?;
+            let replace = req_str(&args, "replace")?;
+            let n = core.sftp_edit_text(id, &path, &find, &replace).await.map_err(es)?;
+            Ok(format!("{n} remplacement(s) effectué(s) dans « {path} »."))
+        }
+
+        "file_stat" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = req_str(&args, "path")?;
+            let (is_dir, size, sha256) = core.sftp_stat_info(id, &path).await.map_err(es)?;
+            json_pretty(&json!({ "path": path, "is_dir": is_dir, "size": size, "sha256": sha256 }))
+        }
+
         "read_startup" => {
             let id = req_i64(&args, "server_id")?;
             json_pretty(&core.get_startup(id).await.map_err(es)?)
@@ -751,6 +791,10 @@ fn build_tool_list() -> Value {
         tool("create_dir", "Crée un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin du nouveau dossier"))], &["server_id", "path"])),
         tool("delete_path", "Supprime un fichier ou un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin à supprimer")), ("is_dir", prop_bool("true si c'est un dossier"))], &["server_id", "path"])),
         tool("rename_path", "Renomme ou déplace un fichier/dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("from", prop_str("Chemin source")), ("to", prop_str("Chemin destination"))], &["server_id", "from", "to"])),
+        tool("upload_file", "Téléverse un fichier LOCAL (BINAIRE, sans la limite 2 Mo de write_file) vers un chemin distant précis via SFTP — pour déployer un .jar, un resource pack, un monde, etc. `local_path` = chemin sur la machine qui exécute ce serveur MCP. Crée le dossier parent au besoin, écrase la cible. Vérifie ensuite avec file_stat. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("local_path", prop_str("Chemin du fichier LOCAL (machine hôte du MCP)")), ("remote_path", prop_str("Chemin distant complet, fichier inclus"))], &["server_id", "local_path", "remote_path"])),
+        tool("download_file", "Télécharge un fichier distant (BINAIRE) vers un chemin LOCAL via SFTP — pour récupérer le .jar/config actuel et le comparer avant de pousser, ou faire un backup ciblé. `local_path` = chemin sur la machine qui exécute ce serveur MCP. Crée le dossier parent local au besoin.", obj(&[("server_id", prop_int("ID du serveur")), ("remote_path", prop_str("Chemin distant du fichier")), ("local_path", prop_str("Chemin LOCAL de destination (machine hôte du MCP)"))], &["server_id", "remote_path", "local_path"])),
+        tool("edit_file", "Édition PARTIELLE d'un fichier texte distant : remplace toutes les occurrences EXACTES de `find` par `replace`. Ne renvoie jamais le contenu → SÛR même si le fichier contient des secrets (contrairement à read_file+write_file, qui réécrirait `[SECRET]` par-dessus le vrai secret). Erreur si `find` est absent (aucun remplacement). À préférer à write_file pour patcher une config sans la réécrire en entier. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("find", prop_str("Texte exact à trouver (respecte casse/espaces)")), ("replace", prop_str("Texte de remplacement"))], &["server_id", "path", "find", "replace"])),
+        tool("file_stat", "Métadonnées d'un fichier distant : taille (octets) + empreinte sha256 — pour vérifier qu'un upload_file a réussi / que le fichier distant correspond au local. Le sha256 est vide pour un dossier.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant"))], &["server_id", "path"])),
         tool("read_startup", "Lit la commande de démarrage (flags JVM : -Xmx, GC, Aikar…), le JAR, la mémoire et l'image.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("set_startup_params", "Modifie la commande de démarrage Java (optimiser les flags JVM). Garder `{{SERVER_JARFILE}}`. Effet au prochain démarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("parameters", prop_str("Commande Java COMPLÈTE"))], &["server_id", "parameters"])),
         tool("list_installed_mods", "Mods installés (nom + version, format compact ; loaders résumés en en-tête). Sur un gros modpack, utilise `query` pour filtrer par sous-chaîne de nom (ex. « est-ce que Sodium est installé ? ») plutôt que de tout lister.", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Filtre optionnel : sous-chaîne du nom (insensible à la casse)"))], &["server_id"])),
@@ -885,6 +929,30 @@ mod tests {
         // Un outil inconnu est traité comme modifiant (garde-fou default-deny).
         assert!(is_write_tool("outil_inconnu"));
         assert!(!is_write_tool("read_file"));
+    }
+
+    #[test]
+    fn sftp_bridge_tools_are_classified_and_exposed() {
+        // upload/edit modifient le serveur → soumis à allow_writes ; download/stat lisent → autorisés
+        // même en lecture seule. Tous doivent être exposés (READ ∪ WRITE) pour être atteignables.
+        for w in ["upload_file", "edit_file"] {
+            assert!(is_write_tool(w), "{w} doit être modifiant");
+            assert!(WRITE_TOOLS.contains(&w), "{w} doit être exposé");
+        }
+        for r in ["download_file", "file_stat"] {
+            assert!(!is_write_tool(r), "{r} doit être en lecture");
+            assert!(READ_TOOLS.contains(&r), "{r} doit être exposé");
+        }
+        // Présents dans le catalogue JSON exposé par tools/list.
+        let names: Vec<&str> = tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+            .collect();
+        for t in ["upload_file", "download_file", "edit_file", "file_stat"] {
+            assert!(names.contains(&t), "{t} absent du catalogue");
+        }
     }
 
     fn item(name: &str, version: &str, enabled: bool) -> InstalledItem {

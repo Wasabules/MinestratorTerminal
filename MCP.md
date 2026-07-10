@@ -43,7 +43,7 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (32)
+## 5. Capacités — catalogue d'outils (39)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
@@ -84,6 +84,10 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `delete_path` | ✎ | `server_id`, `path`, `is_dir?` | Supprime un fichier ou un dossier. |
 | `rename_path` | ✎ | `server_id`, `from`, `to` | Renomme ou déplace un fichier/dossier. |
 | `extract_archive` | ✎ | `server_id`, `path`, `dest_dir` | **Extrait** une archive `.zip`/`.tar`/`.tar.gz` sur le serveur (anti zip-slip, plafonné). |
+| `upload_file` | ✎ | `server_id`, `local_path`, `remote_path` | **Téléverse** un fichier **local** (BINAIRE, sans la limite 2 Mo de `write_file`) — déployer un `.jar`, un resource pack, un monde. `local_path` = machine hôte du MCP. Crée le parent, écrase la cible. |
+| `edit_file` | ✎ | `server_id`, `path`, `find`, `replace` | Édition **partielle** (remplace toutes les occurrences de `find`). Ne renvoie **jamais** le contenu → sûr même si le fichier contient un secret (contrairement à `read_file`+`write_file` qui réécrirait `[SECRET]`). Erreur si `find` absent. |
+| `download_file` | | `server_id`, `remote_path`, `local_path` | **Télécharge** un fichier distant (BINAIRE) vers un chemin local (comparer/backup ciblé avant de pousser). `local_path` = machine hôte du MCP. |
+| `file_stat` | | `server_id`, `path` | **Métadonnées** d'un fichier distant : taille + **sha256** — vérifier qu'un `upload_file` a réussi / correspond au local. |
 
 #### Démarrage & JVM
 
@@ -101,6 +105,14 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `market_search` | | `kind?`, `source?`, `query?`, `loader?`, `game_version?`, `page?` | Recherche Modrinth / CurseForge / SpigotMC (id/slug, nom, downloads, loaders, versions de jeu). |
 | `list_mod_versions` | | `source?`, `slug`, `loader?`, `game_version?` | Versions d'un projet → les `version_id` requis pour installer. |
 | `install_mod` | ✎ | `server_id`, `source?`, `kind?`, `slug`, `version_id`, `loader?` | Installe un mod/plugin. **Modrinth** = mods **et** plugins (`{slug, version_id}`) ; **Spigot** = plugins (`slug` = id numérique, `version_id` = id de version). Refuse le premium/external (403). |
+
+#### Mods Satisfactory (ficsit.app) — serveurs Satisfactory uniquement
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `ficsit_search` | | `query?`, `order_by?`, `page?` | Catalogue **ficsit.app** (SMR) : id, `mod_reference`, nom, downloads. |
+| `ficsit_versions` | | `mod_id` | Versions d'un mod (par `mod_id` ficsit) : `id` de version + contrainte SML + dépendances. |
+| `install_ficsit_mod` | ✎ | `server_id`, `reference`, `version_id` | Installe le mod + **SML** + dépendances (cible LinuxServer) via SFTP, avec **arrêt puis redémarrage** du serveur. |
 
 #### Sauvegardes (filet avant intervention)
 
@@ -126,13 +138,18 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
   `analyze_performance` (Spark : TPS/MSPT/GC/points chauds), `parse_spark_report`
 - **Contrôle** : `power_action`, `send_command`
 - **Modération** : `player_action`
-- **Fichiers / config** : `list_files`, `read_file`, `write_file`, `create_dir`, `delete_path`,
-  `rename_path` (lister, lire, écrire, créer un dossier, supprimer, renommer/déplacer)
+- **Fichiers / config** : `list_files`, `read_file`, `write_file`, `edit_file` (patch find/replace,
+  sûr avec secrets), `create_dir`, `delete_path`, `rename_path` (lister, lire, écrire, éditer, créer
+  un dossier, supprimer, renommer/déplacer)
+- **Transferts binaires** : `upload_file` (déployer un `.jar`/resource pack local → serveur, sans la
+  limite 2 Mo), `download_file` (tirer un fichier distant en local), `file_stat` (taille + sha256 pour
+  vérifier l'intégrité d'un upload)
 - **Logs & archives** : `read_gz` (logs gzippés tournés), `list_archive` + `read_archive_entry`
   (fouiller un `.zip`/`.tar.gz` sans extraire) — utile pour diagnostiquer sur des logs/backups archivés
 - **Démarrage / JVM** : `read_startup`, `set_startup_params` (mémoire, GC, Aikar…)
 - **Mods & plugins** : `market_search`, `list_mod_versions`, `install_mod`, `list_installed_mods`,
   `list_installed_plugins` (chercher → choisir une version → installer ; inventaire)
+- **Mods Satisfactory** : `ficsit_search`, `ficsit_versions`, `install_ficsit_mod` (ficsit.app / SMR)
 - **Sauvegardes / filet** : `list_backups`, `list_snapshots`, `create_snapshot`
 - **Diagnostic de panne** : `diagnose_startup` (crash-loop), `inspect_region` (maps corrompues),
   `read_console` (+ `server_metrics` pour corréler)
@@ -143,8 +160,9 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 
 - **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé.
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
-  (`power_action`, `send_command`, `player_action`, `write_file`, `create_dir`, `delete_path`,
-  `rename_path`, `set_startup_params`, `install_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
+  (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
+  `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `install_mod`,
+  `install_ficsit_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
   lecture/diagnostic restent disponibles. Idéal pour donner un accès *observation* sans risque.
 
 **Garde-fous by design :**

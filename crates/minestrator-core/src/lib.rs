@@ -1127,6 +1127,75 @@ impl Core {
         self.drop_on_err(id, sftp::rename(&conn, from, to).await)
     }
 
+    // --- SFTP « one-shot » local↔serveur (MCP) : binaire, sans event de progression --------------
+
+    /// Téléverse un fichier **local** (binaire, sans la limite texte de `write_file`) vers un chemin
+    /// distant précis. Crée le dossier parent au besoin. Renvoie la taille écrite. Pour le MCP local
+    /// (déploiement de jars/resource packs depuis la machine qui exécute l'agent).
+    pub async fn sftp_put_local(&self, id: i64, local_path: &str, remote_path: &str) -> Result<u64> {
+        let data = tokio::fs::read(local_path)
+            .await
+            .map_err(|e| Error::Unexpected(format!("lecture du fichier local « {local_path} » : {e}")))?;
+        if data.len() as u64 > MCP_TRANSFER_CAP {
+            return Err(Error::Unexpected("fichier trop volumineux (> 512 Mio).".into()));
+        }
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let parent = parent_dir(remote_path);
+        if !parent.is_empty() && parent != "/" {
+            sftp::ensure_dir(&conn, &parent).await;
+        }
+        self.drop_on_err(id, sftp::write_bytes(&conn, remote_path, &data).await)?;
+        Ok(data.len() as u64)
+    }
+
+    /// Télécharge un fichier distant (binaire) vers un chemin **local**. Crée le dossier parent local
+    /// au besoin. Renvoie la taille écrite.
+    pub async fn sftp_get_local(&self, id: i64, remote_path: &str, local_path: &str) -> Result<u64> {
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let data = self.drop_on_err(id, sftp::read_bytes(&conn, remote_path, MCP_TRANSFER_CAP).await)?;
+        if let Some(parent) = std::path::Path::new(local_path).parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+        tokio::fs::write(local_path, &data)
+            .await
+            .map_err(|e| Error::Unexpected(format!("écriture du fichier local « {local_path} » : {e}")))?;
+        Ok(data.len() as u64)
+    }
+
+    /// Remplace **toutes** les occurrences de `find` par `replace` dans un fichier texte distant,
+    /// SANS jamais exposer le contenu (donc sûr même si le fichier contient des secrets, contrairement
+    /// à read_file→write_file qui réécrirait `[SECRET]` par-dessus). Renvoie le nombre de remplacements.
+    pub async fn sftp_edit_text(&self, id: i64, path: &str, find: &str, replace: &str) -> Result<usize> {
+        if find.is_empty() {
+            return Err(Error::Unexpected("`find` ne peut pas être vide.".into()));
+        }
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let content = self.drop_on_err(id, sftp::read_text(&conn, path).await)?;
+        let count = content.matches(find).count();
+        if count == 0 {
+            return Err(Error::Unexpected(format!(
+                "`find` introuvable dans « {path} » — aucun remplacement (vérifie l'espacement exact)."
+            )));
+        }
+        let updated = content.replace(find, replace);
+        self.drop_on_err(id, sftp::write_text(&conn, path, &updated).await)?;
+        Ok(count)
+    }
+
+    /// Métadonnées d'un fichier distant : `(is_dir, taille, sha256)` — pour vérifier qu'un upload a
+    /// réussi / correspond (le hash est vide pour un dossier). Lit le fichier pour le hash.
+    pub async fn sftp_stat_info(&self, id: i64, path: &str) -> Result<(bool, u64, String)> {
+        use sha2::Digest;
+        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
+        let (is_dir, size) = self.drop_on_err(id, sftp::stat(&conn, path).await)?;
+        if is_dir {
+            return Ok((true, size, String::new()));
+        }
+        let data = self.drop_on_err(id, sftp::read_bytes(&conn, path, MCP_TRANSFER_CAP).await)?;
+        let hash = format!("{:x}", sha2::Sha256::digest(&data));
+        Ok((false, data.len() as u64, hash))
+    }
+
     // --- Transferts (upload / download / zip) : suivis via `CoreEvent::SftpProgress` --------------
 
     /// Téléverse un fichier local (transfert suivi). `tid` = id de transfert fourni par le front pour
@@ -1481,6 +1550,9 @@ const EXTRACT_MAX_TOTAL: u64 = 256 * 1024 * 1024;
 
 /// Dossier des mods Factorio (racine SFTP — confirmé sur MineStrator).
 const FACTORIO_MODS_DIR: &str = "/mods";
+
+/// Plafond des transferts binaires « one-shot » MCP (upload/download local↔serveur, hash).
+const MCP_TRANSFER_CAP: u64 = 512 * 1024 * 1024;
 
 /// Dernier segment d'un chemin distant (nom de fichier/dossier).
 fn base_name(p: &str) -> String {
