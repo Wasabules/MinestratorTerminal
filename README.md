@@ -15,7 +15,8 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
 ## ✨ Fonctionnalités
 
 ### 🎮 Pilotage & console
-- **Console temps réel** (xterm.js) via WebSocket (protocole Pterodactyl Wings) : logs live, **filtres par niveau** (ERROR/WARN/INFO), envoi de commandes avec historique, copie de la sélection.
+- **Console temps réel** (xterm.js) via WebSocket (protocole Pterodactyl Wings) : logs live, **filtres par niveau** (ERROR/WARN/INFO), **autocomplétion** des commandes, envoi avec historique, copie de la sélection.
+- **Envoi multi-ligne** : colle une liste de commandes → chaque ligne est envoyée comme **commande séparée**, dans l'ordre (au lieu d'être aplatie en une seule).
 - **Export du log** en un clic droit vers un service de paste : **mclo.gs**, l'instance **MineStrator**, ou **pastes.dev** (contenu anonymisé avant envoi).
 - **Alimentation** : démarrer · redémarrer · arrêter · kill.
 - **Joueurs** : kick, ban/unban, op, whitelist — y compris sur des pseudos hors-ligne.
@@ -50,7 +51,7 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
   - **Multi-fournisseur** : Anthropic (Claude) et tout service compatible OpenAI (GPT, Gemini, Mistral, Groq, DeepSeek, OpenRouter, Ollama / LM Studio locaux…).
   - **Agents CLI** : Claude Code, OpenCode, Gemini CLI (utilisent l'abonnement déjà configuré sur la machine, **sans clé API**), avec détection automatique de leur présence.
   - Outils de réparation : **docteur démarrage** (crash-loop), **maps corrompues** (`.mca`), **analyse de performance** (Spark).
-- **Serveur MCP intégré** : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
+- **Serveur MCP intégré** (**39 outils**) : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Console, fichiers/SFTP, **transfert binaire local ↔ serveur** (`upload_file`/`download_file` : déployer jars & configs sans passer par le panel), **édition find/replace sûre** (`edit_file` — n'expose jamais les secrets au modèle), `file_stat` (sha256), métriques, mods, sauvegardes, diagnostic. Gating **par jeu** + **deny-by-default** sur les écritures. Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
 
 ### ⚙️ Confort & sécurité
 - **Adaptation par jeu** : détection du jeu (Minecraft Java/Bedrock, Satisfactory, Factorio, Valheim, Rust…) → vues, autocomplétion et coloration de la console, prompts/outils du Copilote ajustés. **Réglages par jeu** (ex. compte factorio.com, stocké au trousseau) et **mode debug** (données d'egg / capacités détectées).
