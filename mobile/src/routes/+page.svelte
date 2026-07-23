@@ -1,14 +1,27 @@
 <script lang="ts">
   import { api } from "$lib/ipc";
   import { auth } from "$lib/stores/auth.svelte";
+  import { settings } from "$lib/stores/settings.svelte";
   import Onboarding from "$lib/components/Onboarding.svelte";
   import ServersList from "$lib/components/ServersList.svelte";
   import ServerView from "$lib/components/ServerView.svelte";
+  import SettingsView from "$lib/components/SettingsView.svelte";
   import type { ServerListItem } from "$lib/types";
 
   let selected = $state<ServerListItem | null>(null);
+  let showSettings = $state(false);
 
-  // Boot : une clé est-elle déjà stockée ? Si oui, on récupère le profil.
+  // Thème : applique au boot + suit le système quand le préréglage est "system".
+  $effect(() => {
+    settings.applyTheme();
+    if (typeof matchMedia === "undefined") return;
+    const mq = matchMedia("(prefers-color-scheme: light)");
+    const onChange = () => settings.theme === "system" && settings.applyTheme();
+    mq.addEventListener?.("change", onChange);
+    return () => mq.removeEventListener?.("change", onChange);
+  });
+
+  // Boot auth.
   $effect(() => {
     (async () => {
       try {
@@ -25,13 +38,15 @@
 </script>
 
 {#if !auth.booted}
-  <div class="splash"><div class="logo">⛏️</div></div>
+  <div class="splash"><div class="logo"></div></div>
 {:else if !auth.isAuthed}
   <Onboarding />
+{:else if showSettings}
+  <SettingsView onBack={() => (showSettings = false)} />
 {:else if selected}
   <ServerView server={selected} onBack={() => (selected = null)} />
 {:else}
-  <ServersList onOpen={(s) => (selected = s)} />
+  <ServersList onOpen={(s) => (selected = s)} onSettings={() => (showSettings = true)} />
 {/if}
 
 <style>
@@ -41,12 +56,9 @@
     place-items: center;
   }
   .logo {
-    width: 72px;
-    height: 72px;
-    display: grid;
-    place-items: center;
-    font-size: 34px;
-    border-radius: 20px;
+    width: 76px;
+    height: 76px;
+    border-radius: 22px;
     background: var(--brand-gradient);
   }
 </style>

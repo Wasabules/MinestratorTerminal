@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { api, humanizeError } from "../ipc";
+  import { api, humanizeError, openExternal } from "../ipc";
   import { auth } from "../stores/auth.svelte";
   import { t } from "../i18n";
+  import Icon from "./Icon.svelte";
 
   let key = $state("");
   let busy = $state(false);
@@ -21,11 +22,15 @@
       busy = false;
     }
   }
+
+  function openSite() {
+    openExternal("https://minestrator.com").catch(() => {});
+  }
 </script>
 
 <div class="wrap">
   <div class="hero">
-    <div class="logo">⛏️</div>
+    <div class="logo"><Icon name="pickaxe" size={38} stroke={2} /></div>
     <h1>{t("app.title")}</h1>
   </div>
 
@@ -49,8 +54,13 @@
       <p class="err selectable">{error}</p>
     {/if}
 
-    <button type="submit" disabled={busy || key.trim() === ""}>
+    <button type="submit" class="primary" disabled={busy || key.trim() === ""}>
       {busy ? t("onboarding.validating") : t("onboarding.submit")}
+    </button>
+
+    <button type="button" class="link" onclick={openSite}>
+      <Icon name="external" size={16} />
+      {t("onboarding.getKey")}
     </button>
   </form>
 </div>
@@ -68,14 +78,14 @@
     text-align: center;
   }
   .logo {
-    width: 72px;
-    height: 72px;
-    margin: 0 auto 12px;
+    width: 76px;
+    height: 76px;
+    margin: 0 auto 14px;
     display: grid;
     place-items: center;
-    font-size: 34px;
-    border-radius: 20px;
+    border-radius: 22px;
     background: var(--brand-gradient);
+    color: #fff;
   }
   h1 {
     margin: 0;
@@ -113,7 +123,7 @@
     color: var(--state-danger);
     font-size: 14px;
   }
-  button {
+  button.primary {
     background: var(--brand-primary);
     color: #fff;
     border: none;
@@ -122,7 +132,18 @@
     font-weight: 600;
     font-size: 16px;
   }
-  button:disabled {
+  button.primary:disabled {
     opacity: 0.5;
+  }
+  button.link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: transparent;
+    border: none;
+    color: var(--brand-primary);
+    font-size: 14px;
+    padding: 8px;
   }
 </style>

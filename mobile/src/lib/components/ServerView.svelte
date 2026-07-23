@@ -5,16 +5,25 @@
   import OverviewView from "./views/OverviewView.svelte";
   import ConsoleView from "./views/ConsoleView.svelte";
   import PlayersView from "./views/PlayersView.svelte";
+  import SftpView from "./views/SftpView.svelte";
 
   let { server, onBack }: { server: ServerListItem; onBack: () => void } = $props();
 
   let active = $state("overview");
+  // Masque la barre du bas quand la console a le focus → l'input se cale au-dessus du clavier.
+  let navHidden = $state(false);
 
   const tabs = [
-    { id: "overview", label: t("nav.overview"), icon: "📊" },
-    { id: "console", label: t("nav.console"), icon: "🖥️" },
-    { id: "players", label: t("nav.players"), icon: "👥" },
+    { id: "overview", label: t("nav.overview"), icon: "overview" },
+    { id: "console", label: t("nav.console"), icon: "console" },
+    { id: "players", label: t("nav.players"), icon: "players" },
+    { id: "files", label: t("nav.files"), icon: "files" },
   ];
+
+  function select(id: string) {
+    if (id !== "console") navHidden = false;
+    active = id;
+  }
 </script>
 
 <div class="shell">
@@ -23,17 +32,21 @@
     <span class="title selectable">{server.name}</span>
   </header>
 
-  <main>
+  <main class:nav-hidden={navHidden}>
     {#if active === "overview"}
       <OverviewView serverId={server.id} />
     {:else if active === "console"}
-      <ConsoleView serverId={server.id} />
+      <ConsoleView serverId={server.id} onFocusChange={(f) => (navHidden = f)} />
     {:else if active === "players"}
       <PlayersView serverId={server.id} />
+    {:else if active === "files"}
+      <SftpView serverId={server.id} />
     {/if}
   </main>
 
-  <BottomNav {tabs} {active} onSelect={(id) => (active = id)} />
+  {#if !navHidden}
+    <BottomNav {tabs} {active} onSelect={select} />
+  {/if}
 </div>
 
 <style>
@@ -71,7 +84,9 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    /* laisse la place à la BottomNav fixe */
     padding-bottom: calc(var(--nav-height) + var(--safe-bottom));
+  }
+  main.nav-hidden {
+    padding-bottom: 0;
   }
 </style>

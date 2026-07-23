@@ -81,6 +81,14 @@ export interface MetricSample {
   state: string;
 }
 
+export interface SftpEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+  size: number;
+  modified: number | null;
+}
+
 export type PowerAction = "start" | "restart" | "stop" | "kill";
 export type PlayerAction =
   | "kick"

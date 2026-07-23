@@ -2,9 +2,13 @@
   import { api, humanizeError } from "../ipc";
   import { auth } from "../stores/auth.svelte";
   import { t } from "../i18n";
+  import Icon from "./Icon.svelte";
   import type { ServerListItem } from "../types";
 
-  let { onOpen }: { onOpen: (server: ServerListItem) => void } = $props();
+  let {
+    onOpen,
+    onSettings,
+  }: { onOpen: (server: ServerListItem) => void; onSettings: () => void } = $props();
 
   let servers = $state<ServerListItem[]>([]);
   let loading = $state(true);
@@ -51,11 +55,18 @@
 </script>
 
 <header class="top">
-  <div>
+  <div class="titles">
     <h1>{t("servers.title")}</h1>
     {#if auth.user}<span class="who selectable">{auth.user.pseudo}</span>{/if}
   </div>
-  <button class="ghost" onclick={doLogout}>{t("logout")}</button>
+  <div class="actions">
+    <button class="ic" onclick={onSettings} aria-label={t("settings.title")}>
+      <Icon name="settings" size={20} />
+    </button>
+    <button class="ic" onclick={doLogout} aria-label={t("logout")}>
+      <Icon name="logout" size={20} />
+    </button>
+  </div>
 </header>
 
 <div class="body">
@@ -63,7 +74,7 @@
     <p class="dim">…</p>
   {:else if error}
     <p class="err selectable">{error}</p>
-    <button class="ghost" onclick={load}>{t("servers.refresh")}</button>
+    <button class="ghost" onclick={load}><Icon name="refresh" size={16} /> {t("servers.refresh")}</button>
   {:else if servers.length === 0}
     <p class="dim">{t("servers.empty")}</p>
   {:else}
@@ -76,7 +87,7 @@
               <strong>{s.name}</strong>
               <small class="dim selectable">{s.egg_name} · {s.address}</small>
             </span>
-            <span class="chev">›</span>
+            <Icon name="chevronRight" size={18} />
           </button>
         </li>
       {/each}
@@ -92,6 +103,10 @@
     padding: calc(var(--safe-top) + 16px) 16px 12px;
     gap: 12px;
   }
+  .titles {
+    display: flex;
+    flex-direction: column;
+  }
   h1 {
     margin: 0;
     font-size: 22px;
@@ -101,13 +116,19 @@
     color: var(--text-dim);
     font-size: 13px;
   }
-  .ghost {
-    background: transparent;
+  .actions {
+    display: flex;
+    gap: 8px;
+  }
+  .ic {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text-muted);
-    padding: 8px 12px;
-    font-size: 13px;
   }
   .body {
     padding: 4px 12px;
@@ -130,6 +151,7 @@
     border-radius: var(--radius);
     padding: 14px;
     text-align: left;
+    color: var(--text);
   }
   .dot {
     width: 10px;
@@ -153,9 +175,16 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .chev {
-    color: var(--text-dim);
-    font-size: 22px;
+  .ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    padding: 8px 12px;
+    font-size: 13px;
   }
   .dim {
     color: var(--text-dim);

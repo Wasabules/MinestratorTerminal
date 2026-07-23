@@ -17,8 +17,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # Pas de feature `tray-icon` (desktop-only) ici.
-tauri = { version = "2" }
+tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
+# Ouverture d'URL externe (lien vers le site MineStrator).
+tauri-plugin-opener = "2"
 
 # Toute la logique métier vit dans le core, partagé avec le desktop et le futur daemon.
 minestrator-core = { path = "../../crates/minestrator-core" }

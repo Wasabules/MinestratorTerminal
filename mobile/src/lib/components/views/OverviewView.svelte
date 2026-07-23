@@ -1,20 +1,29 @@
 <script lang="ts">
   import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
-  import type { LiveLight, PowerAction } from "../../types";
+  import Icon from "../Icon.svelte";
+  import type { ConsoleStats, LiveLight, PowerAction } from "../../types";
 
   let { serverId }: { serverId: number } = $props();
 
   let live = $state<LiveLight | null>(null);
+  let stats = $state<ConsoleStats | null>(null);
   let error = $state<string | null>(null);
   let busy = $state<PowerAction | null>(null);
 
-  async function refresh() {
+  async function refreshLive() {
     try {
       live = await api.liveLight(serverId);
       error = null;
     } catch (err) {
       error = humanizeError(err);
+    }
+  }
+  async function refreshStats() {
+    try {
+      stats = await api.sampleStats(serverId);
+    } catch {
+      stats = null;
     }
   }
 
@@ -23,8 +32,10 @@
     busy = action;
     try {
       await api.powerAction(serverId, action);
-      // Laisse le serveur changer d'état, puis rafraîchit.
-      setTimeout(refresh, 1500);
+      setTimeout(() => {
+        refreshLive();
+        refreshStats();
+      }, 1500);
     } catch (err) {
       error = humanizeError(err);
     } finally {
@@ -32,77 +43,143 @@
     }
   }
 
-  function statusColor(status: string | null): string {
-    switch (status) {
+  // --- Helpers d'affichage ---
+  function statusColor(s: string | null): string {
+    switch (s) {
       case "running":
         return "var(--state-running)";
       case "starting":
       case "stopping":
         return "var(--state-pending)";
-      case "offline":
-        return "var(--state-offline)";
       default:
         return "var(--state-offline)";
     }
   }
+  function statusLabel(s: string | null): string {
+    return t(`status.${s ?? "unknown"}`) !== `status.${s ?? "unknown"}`
+      ? t(`status.${s ?? "unknown"}`)
+      : t("status.unknown");
+  }
+  function gaugeColor(pct: number): string {
+    if (pct >= 90) return "var(--state-danger)";
+    if (pct >= 70) return "var(--state-pending)";
+    return "var(--state-running)";
+  }
+  function fmtBytes(n: number): string {
+    if (n <= 0) return "0";
+    const gb = n / 1024 ** 3;
+    if (gb >= 1) return `${gb.toFixed(1)} Go`;
+    return `${Math.round(n / 1024 ** 2)} Mo`;
+  }
+  function clampPct(n: number): number {
+    return Math.max(0, Math.min(100, n));
+  }
+
+  // Valeurs dérivées (0 si hors ligne).
+  const cpuLimit = $derived(live ? Math.max(live.cpu.dedicated + live.cpu.flexcore, 100) : 100);
+  const cpuVal = $derived(stats?.cpu_absolute ?? 0);
+  const cpuPct = $derived(clampPct((cpuVal / cpuLimit) * 100));
+
+  const memUsed = $derived(stats?.memory_bytes ?? 0);
+  const memLimit = $derived(
+    stats?.memory_limit_bytes && stats.memory_limit_bytes > 0
+      ? stats.memory_limit_bytes
+      : (live?.memory.limit ?? 0) * 1024 ** 2,
+  );
+  const memPct = $derived(memLimit > 0 ? clampPct((memUsed / memLimit) * 100) : 0);
+
+  const diskUsed = $derived(stats?.disk_bytes ?? 0);
+  const diskLimit = $derived((live?.disk.limit ?? 0) * 1024 ** 2);
+  const diskPct = $derived(diskLimit > 0 ? clampPct((diskUsed / diskLimit) * 100) : 0);
 
   $effect(() => {
-    refresh();
-    const id = setInterval(refresh, 5000);
-    return () => clearInterval(id);
+    refreshLive();
+    refreshStats();
+    const a = setInterval(refreshLive, 8000);
+    const b = setInterval(refreshStats, 4000);
+    return () => {
+      clearInterval(a);
+      clearInterval(b);
+    };
   });
 
-  const powerButtons: { action: PowerAction; key: string; kind: string }[] = [
-    { action: "start", key: "power.start", kind: "ok" },
-    { action: "restart", key: "power.restart", kind: "warn" },
-    { action: "stop", key: "power.stop", kind: "warn" },
-    { action: "kill", key: "power.kill", kind: "danger" },
+  const gauges = $derived([
+    {
+      key: "overview.cpu",
+      pct: cpuPct,
+      value: `${cpuVal.toFixed(0)}%`,
+    },
+    {
+      key: "overview.ram",
+      pct: memPct,
+      value: memLimit > 0 ? `${fmtBytes(memUsed)} / ${fmtBytes(memLimit)}` : "—",
+    },
+    {
+      key: "overview.disk",
+      pct: diskPct,
+      value: diskLimit > 0 ? `${fmtBytes(diskUsed)} / ${fmtBytes(diskLimit)}` : "—",
+    },
+  ]);
+
+  const powerButtons: { action: PowerAction; key: string; icon: string; kind: string }[] = [
+    { action: "start", key: "power.start", icon: "play", kind: "ok" },
+    { action: "restart", key: "power.restart", icon: "restart", kind: "warn" },
+    { action: "stop", key: "power.stop", icon: "stop", kind: "warn" },
+    { action: "kill", key: "power.kill", icon: "kill", kind: "danger" },
   ];
 </script>
 
 <div class="view">
-  {#if error}
-    <p class="err selectable">{error}</p>
-  {/if}
+  {#if error}<p class="err selectable">{error}</p>{/if}
 
-  {#if live}
-    <div class="status">
-      <span class="dot" style="background:{statusColor(live.status)}"></span>
-      <span class="selectable">{live.status ?? "—"}</span>
-    </div>
-
-    <div class="grid">
-      <div class="tile">
-        <small>{t("overview.players")}</small>
-        <strong class="selectable">
-          {live.players ? `${live.players.current}/${live.players.limit}` : "—"}
-        </strong>
-      </div>
-      <div class="tile">
-        <small>{t("overview.version")}</small>
-        <strong class="selectable">{live.version ?? "—"}</strong>
-      </div>
-      <div class="tile">
-        <small>{t("overview.ram")}</small>
-        <strong class="selectable">{live.memory.limit} MB</strong>
-      </div>
-      <div class="tile">
-        <small>{t("overview.disk")}</small>
-        <strong class="selectable">{live.disk.limit} MB</strong>
-      </div>
-    </div>
-
-    {#if live.motd}
-      <p class="motd selectable">{live.motd}</p>
+  <!-- Statut -->
+  <div class="status">
+    <span class="dot" style="background:{statusColor(live?.status ?? null)}"></span>
+    <span class="slabel">{statusLabel(live?.status ?? null)}</span>
+    {#if live?.players}
+      <span class="pill selectable">{live.players.current}/{live.players.limit} joueurs</span>
     {/if}
-  {:else if !error}
-    <p class="dim">…</p>
+  </div>
+
+  <!-- Jauges live -->
+  <div class="gauges">
+    {#each gauges as g (g.key)}
+      <div class="gauge">
+        <div class="grow">
+          <span class="gname">{t(g.key)}</span>
+          <span class="gval selectable">{g.value}</span>
+        </div>
+        <div class="track">
+          <div class="fill" style="width:{g.pct}%; background:{gaugeColor(g.pct)}"></div>
+        </div>
+      </div>
+    {/each}
+  </div>
+
+  <!-- Infos -->
+  <div class="tiles">
+    <div class="tile">
+      <small>{t("overview.version")}</small>
+      <strong class="selectable">{live?.version ?? "—"}</strong>
+    </div>
+    <div class="tile">
+      <small>{t("overview.players")}</small>
+      <strong class="selectable">
+        {live?.players ? `${live.players.current}/${live.players.limit}` : "—"}
+      </strong>
+    </div>
+  </div>
+
+  {#if live?.motd}
+    <p class="motd selectable">{live.motd}</p>
   {/if}
 
+  <!-- Alimentation -->
   <div class="power">
     {#each powerButtons as b (b.action)}
       <button class={b.kind} disabled={busy !== null} onclick={() => power(b.action)}>
-        {busy === b.action ? "…" : t(b.key)}
+        <Icon name={b.icon} size={18} />
+        <span>{busy === b.action ? "…" : t(b.key)}</span>
       </button>
     {/each}
   </div>
@@ -113,21 +190,74 @@
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
   }
   .status {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 15px;
-    text-transform: capitalize;
   }
   .dot {
     width: 12px;
     height: 12px;
     border-radius: 50%;
+    flex: none;
   }
-  .grid {
+  .slabel {
+    font-size: 16px;
+    font-weight: 600;
+  }
+  .pill {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 10px;
+  }
+  .gauges {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .gauge {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .grow {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .gname {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .gval {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .track {
+    height: 8px;
+    border-radius: 999px;
+    background: var(--elevated);
+    overflow: hidden;
+  }
+  .fill {
+    height: 100%;
+    border-radius: 999px;
+    transition:
+      width 0.5s ease,
+      background 0.3s;
+  }
+  .tiles {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
@@ -146,7 +276,7 @@
     font-size: 12px;
   }
   .tile strong {
-    font-size: 20px;
+    font-size: 18px;
   }
   .motd {
     margin: 0;
@@ -158,12 +288,15 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
-    margin-top: 4px;
   }
   .power button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 14px;
+    padding: 13px;
     font-weight: 600;
     background: var(--surface);
     color: var(--text);
@@ -185,8 +318,5 @@
   .err {
     margin: 0;
     color: var(--state-danger);
-  }
-  .dim {
-    color: var(--text-dim);
   }
 </style>

@@ -3,7 +3,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    Core, Error, LiveLight, MetricSample, ServerDetails, ServersOverview, UserProfile,
+    ConsoleStats, Core, Error, LiveLight, MetricSample, ServerDetails, ServersOverview, SftpEntry,
+    UserProfile,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -109,4 +110,72 @@ pub async fn console_connect(
 #[tauri::command]
 pub fn console_disconnect(core: State<'_, Arc<Core>>, conn_id: String) {
     core.console_disconnect(&conn_id);
+}
+
+/// Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère.
+#[tauri::command]
+pub async fn sample_stats(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<Option<ConsoleStats>, Error> {
+    core.sample_stats(server_id).await
+}
+
+// --- SFTP (gestionnaire de fichiers tactile) ------------------------------
+
+#[tauri::command]
+pub async fn sftp_list(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<Vec<SftpEntry>, Error> {
+    core.sftp_list(server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_read_text(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_read_text(server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_write_text(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    content: String,
+) -> Result<(), Error> {
+    core.sftp_write_text(server_id, &path, &content).await
+}
+
+#[tauri::command]
+pub async fn sftp_mkdir(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<(), Error> {
+    core.sftp_mkdir(server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_delete(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    is_dir: bool,
+) -> Result<(), Error> {
+    core.sftp_delete(server_id, &path, is_dir).await
+}
+
+#[tauri::command]
+pub async fn sftp_rename(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    from: String,
+    to: String,
+) -> Result<(), Error> {
+    core.sftp_rename(server_id, &from, &to).await
 }

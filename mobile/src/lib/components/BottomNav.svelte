@@ -1,8 +1,9 @@
 <script lang="ts">
+  import Icon from "./Icon.svelte";
   interface Tab {
     id: string;
     label: string;
-    icon: string;
+    icon: string; // nom d'icône (voir icons.ts)
   }
   let {
     tabs,
@@ -13,12 +14,8 @@
 
 <nav>
   {#each tabs as tab (tab.id)}
-    <button
-      class:active={tab.id === active}
-      onclick={() => onSelect(tab.id)}
-      aria-label={tab.label}
-    >
-      <span class="ico">{tab.icon}</span>
+    <button class:active={tab.id === active} onclick={() => onSelect(tab.id)} aria-label={tab.label}>
+      <Icon name={tab.icon} size={22} stroke={tab.id === active ? 2.4 : 2} />
       <span class="lbl">{tab.label}</span>
     </button>
   {/each}
@@ -51,10 +48,6 @@
   }
   button.active {
     color: var(--brand-primary);
-  }
-  .ico {
-    font-size: 20px;
-    line-height: 1;
   }
   .lbl {
     font-size: 11px;

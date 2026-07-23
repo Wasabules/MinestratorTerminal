@@ -1,19 +1,21 @@
 /**
  * Couche IPC typée : unique point de contact frontend ↔ commandes Rust.
  * Aucun composant n'appelle `invoke` directement — tout passe par `api`.
- * (Sous-ensemble de départ ; on étoffe au fil des vues, en miroir du desktop.)
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type {
   AppError,
+  ConsoleStats,
   LiveLight,
   MetricSample,
   PlayerAction,
   PowerAction,
   ServerDetails,
   ServersOverview,
+  SftpEntry,
   UserProfile,
 } from "./types";
 
@@ -30,18 +32,37 @@ export const api = {
   liveLight: (id: number) => invoke<LiveLight>("live_light", { id }),
   metricsHistory: (serverId: number, sinceSecs: number) =>
     invoke<MetricSample[]>("metrics_history", { serverId, sinceSecs }),
+  /** Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère. */
+  sampleStats: (serverId: number) => invoke<ConsoleStats | null>("sample_stats", { serverId }),
 
   // --- Console / power / joueurs ---
   consoleLogs: (id: number) => invoke<string[]>("console_logs", { id }),
-  powerAction: (id: number, action: PowerAction) =>
-    invoke<void>("power_action", { id, action }),
+  powerAction: (id: number, action: PowerAction) => invoke<void>("power_action", { id, action }),
   sendCommand: (id: number, command: string) => invoke<void>("send_command", { id, command }),
   playerAction: (id: number, action: PlayerAction, player: string) =>
     invoke<void>("player_action", { id, action, player }),
   consoleConnect: (connId: string, serverId: number) =>
     invoke<void>("console_connect", { connId, serverId }),
   consoleDisconnect: (connId: string) => invoke<void>("console_disconnect", { connId }),
+
+  // --- SFTP ---
+  sftpList: (serverId: number, path: string) =>
+    invoke<SftpEntry[]>("sftp_list", { serverId, path }),
+  sftpReadText: (serverId: number, path: string) =>
+    invoke<string>("sftp_read_text", { serverId, path }),
+  sftpWriteText: (serverId: number, path: string, content: string) =>
+    invoke<void>("sftp_write_text", { serverId, path, content }),
+  sftpMkdir: (serverId: number, path: string) => invoke<void>("sftp_mkdir", { serverId, path }),
+  sftpDelete: (serverId: number, path: string, isDir: boolean) =>
+    invoke<void>("sftp_delete", { serverId, path, isDir }),
+  sftpRename: (serverId: number, from: string, to: string) =>
+    invoke<void>("sftp_rename", { serverId, from, to }),
 };
+
+/** Ouvre une URL dans le navigateur externe (plugin opener). */
+export function openExternal(url: string): Promise<void> {
+  return openUrl(url);
+}
 
 /** Transforme une erreur du core (`{ kind, message }`) en message lisible/i18n. */
 export function humanizeError(e: unknown): string {
