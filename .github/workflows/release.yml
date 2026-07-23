@@ -81,11 +81,86 @@ jobs:
             - Windows : `.msi` et `.exe` (NSIS)
             - macOS : `.dmg` (universel Intel + Apple Silicon)
             - Linux : `.AppImage` et `.deb`
+            - Android : `.apk` (signé) — à sideloader
 
-            Mise à jour automatique intégrée : les versions installées proposeront cette release.
+            Mise à jour automatique intégrée (desktop) : les versions installées proposeront cette release.
 
             > Non signés au niveau OS : Windows SmartScreen / macOS Gatekeeper peuvent afficher un
             > avertissement au premier lancement (les artefacts de mise à jour, eux, sont signés et vérifiés).
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  # --- App mobile Android : APK signé, attaché à la même release ---
+  android:
+    needs: release
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Setup Java (JDK 17)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Android NDK
+        id: ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27
+
+      - name: Install Rust (stable) + cibles Android
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ./mobile
+
+      - name: Keystore + config de signature (depuis les secrets)
+        working-directory: ./mobile/src-tauri/gen/android
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cat > keystore.properties <<EOF
+          storeFile=$RUNNER_TEMP/release.jks
+          storePassword=$KS_PASS
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASS
+          EOF
+
+      - name: Build APK signé (release)
+        working-directory: ./mobile
+        env:
+          NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: npx tauri android build --apk
+
+      - name: Attacher l'APK à la release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find mobile/src-tauri/gen/android/app/build/outputs/apk -name 'app-universal-release.apk' | head -1)
+          if [ -z "$APK" ]; then echo "APK release introuvable" >&2; exit 1; fi
+          OUT="Minestrator-Terminal_${GITHUB_REF_NAME}_android.apk"
+          cp "$APK" "$OUT"
+          gh release upload "$GITHUB_REF_NAME" "$OUT" --clobber

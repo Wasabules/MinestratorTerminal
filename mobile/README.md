@@ -42,27 +42,57 @@ Le crate `mobile/src-tauri` est membre du workspace racine (`Cargo.toml`).
 **Vérifié** : `npm run check` (180 fichiers, 0 erreur) · `npm run build` (adapter-static) ·
 `cargo check -p minestrator-terminal-mobile` (host, OK).
 
-## Personnalisations de `gen/android` (à re-appliquer après un `tauri android init`)
+## `gen/android` est **versionné**
 
-`gen/android` est **généré** (gitignoré). Après un `init` (re)génération, ré-appliquer :
+Le projet `src-tauri/gen/android` est **commité** (ses sorties de build, `keystore.properties` et
+`*.jks` restent ignorés). Les personnalisations y vivent donc durablement :
 
-- **Clavier** : `android:windowSoftInputMode="adjustResize"` sur l'activité `.MainActivity`
-  (`app/src/main/AndroidManifest.xml`) — pour que la zone de saisie de la console remonte
-  au-dessus du clavier.
+- **Clavier** : `android:windowSoftInputMode="adjustResize"` sur `.MainActivity`
+  (`app/src/main/AndroidManifest.xml`).
+- **Signature de release** : `app/build.gradle.kts` lit `keystore.properties` (écrit par la CI).
 - **Push FCM** (à venir) : `google-services.json` + `FirebaseMessagingService`, cf. [`../docs/PUSH.md`](../docs/PUSH.md).
+
+> Ne PAS relancer `tauri android init` (il écraserait ces personnalisations). Le build les régénère
+> déjà ce qu'il faut (`tauri.properties`, `tauri.build.gradle.kts`, assets…).
 
 ## Lancer (Android)
 
-Prérequis : **Android SDK + NDK**, un `ANDROID_HOME`/`NDK_HOME` configurés, et un
-émulateur ou un appareil en débogage USB. (Détails : <https://v2.tauri.app/start/prerequisites/#android>.)
+Prérequis : **Android SDK + NDK**, `ANDROID_HOME`/`NDK_HOME` configurés, un émulateur ou un appareil
+en débogage USB. (Détails : <https://v2.tauri.app/start/prerequisites/#android>.)
 
 ```bash
 cd mobile
 npm install
-npx tauri android init      # génère src-tauri/gen/android (projet Gradle) — une fois
 npx tauri android dev       # build + déploie sur l'émulateur/appareil
-# npx tauri android build   # APK/AAB de release
+npx tauri android build --apk --debug   # APK debug local
 ```
+
+## Release APK (CI) — signature
+
+Le workflow [`release.yml`](../.github/workflows/release.yml) construit un **APK signé** et l'attache
+à la release GitHub (job `android`). Il faut **4 secrets** de dépôt (une seule fois) — génération :
+
+```bash
+# 1. Générer un keystore de release (garde-le PRÉCIEUSEMENT : sans lui, plus de MAJ en place)
+keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias minestrator
+
+# 2. L'encoder en base64 (pour le secret)
+base64 -w0 release.jks > release.jks.b64      # Linux
+#   PowerShell : [Convert]::ToBase64String([IO.File]::ReadAllBytes("release.jks")) > release.jks.b64
+```
+
+Puis dans **Settings → Secrets and variables → Actions**, créer :
+
+| Secret | Valeur |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | contenu de `release.jks.b64` |
+| `ANDROID_KEYSTORE_PASSWORD` | mot de passe du keystore |
+| `ANDROID_KEY_ALIAS` | `minestrator` (l'alias choisi) |
+| `ANDROID_KEY_PASSWORD` | mot de passe de la clé |
+
+> **Version** : bumper aussi `mobile/src-tauri/tauri.conf.json` (`version`) avant de taguer — c'est
+> lui qui donne le `versionName`/`versionCode` de l'APK (le `versionCode` doit croître pour permettre
+> les mises à jour en place).
 
 ## Périmètre & suite
 

@@ -13,9 +13,16 @@ vite.config.ts.timestamp-*
 /target
 # Cibles Tauri générées, quelle que soit l'app (desktop/ ou mobile/)
 **/src-tauri/target
-# Projets mobiles générés par Tauri (android/apple) + schémas de capabilities.
-# Personnalisations à re-appliquer après un `tauri android init` : voir mobile/README.md.
-**/src-tauri/gen/
+# Schémas de capabilities générés
+**/src-tauri/gen/schemas
+# Projet iOS généré (à re-init sur macOS le moment venu)
+**/src-tauri/gen/apple/
+# --- Signature Android : NE JAMAIS committer les secrets ---
+**/gen/android/keystore.properties
+**/gen/android/**/*.jks
+**/gen/android/**/*.keystore
+# (Le projet gen/android est versionné ; ses sorties de build sont ignorées via
+#  les .gitignore imbriqués générés par Tauri.)
 
 # --- Environnement / secrets ---
 .env

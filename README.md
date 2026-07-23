@@ -131,7 +131,7 @@ cargo build -p minestrator-mcp --release  # binaire serveur MCP autonome
 ```
 
 ### Publier une release
-Incrémente la version dans les **3 fichiers** (`desktop/src-tauri/tauri.conf.json`, `desktop/package.json`, `Cargo.toml`), puis pousse un tag :
+Incrémente la version (desktop : `desktop/src-tauri/tauri.conf.json`, `desktop/package.json`, `Cargo.toml` ; mobile : `mobile/src-tauri/tauri.conf.json`, `mobile/package.json`), puis pousse un tag :
 ```bash
 git tag v0.3.0 && git push origin v0.3.0
 ```
