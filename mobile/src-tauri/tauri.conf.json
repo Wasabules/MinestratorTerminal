@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Minestrator Terminal",
+  "version": "0.3.2",
+  "identifier": "com.geoffreylecoq.minestratorterminal",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1430",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Minestrator Terminal"
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: asset: http://asset.localhost https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; frame-src 'none'; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Geoffrey Lecoq",
+    "copyright": "© 2026 Geoffrey Lecoq",
+    "category": "Utility",
+    "homepage": "https://minestrator.com",
+    "shortDescription": "Piloter ses serveurs MineStrator depuis Android/iOS",
+    "longDescription": "App mobile pour piloter ses serveurs Minecraft via l'API MineStrator : console temps réel, actions d'alimentation, gestion des joueurs, jauges live.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

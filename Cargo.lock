@@ -2663,6 +2663,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "minestrator-terminal-mobile"
+version = "0.3.2"
+dependencies = [
+ "minestrator-core",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-notification",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "minisign-verify"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

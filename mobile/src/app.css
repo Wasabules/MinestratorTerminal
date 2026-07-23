@@ -1,0 +1,104 @@
+/* Charte MineStrator (extraite de DESIGN.md) — dark-first, idéal pour une app console.
+   Tokens partagés avec le desktop ; on les factorisera dans un package commun plus tard. */
+:root {
+  /* Marque */
+  --brand-primary: #009b72;
+  --brand-primary-700: #005d44;
+  --brand-accent: #ff715b;
+  --brand-strator: #ffb4a8;
+  --brand-secondary: #cc5740;
+  --brand-tertiary: #7828c8;
+  --brand-pro: #394666;
+  --brand-discord: #5865f2;
+  --brand-gradient: linear-gradient(135deg, #009b72 0%, #ff715b 100%);
+
+  /* États serveur */
+  --state-running: #009b72;
+  --state-pending: #f59e0b;
+  --state-offline: #859398;
+  --state-danger: #ff5f57;
+  --state-hibernate: #7828c8;
+
+  /* Rayons / typo */
+  --radius: 10px;
+  --radius-sm: 6px;
+  --font-ui: -apple-system, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* Encoches / barres système (Android/iOS) */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --nav-height: 60px;
+}
+
+/* Dark (défaut) */
+:root,
+:root[data-theme="dark"] {
+  --bg: #12171a;
+  --surface: #181d22;
+  --elevated: #2c3038;
+  --border: #2c3038;
+  --text: #f1f5f9;
+  --text-muted: #cbd5e1;
+  --text-dim: #859398;
+}
+
+/* Light */
+:root[data-theme="light"] {
+  --bg: #f9fafb;
+  --surface: #ffffff;
+  --elevated: #ffffff;
+  --border: #e5e7eb;
+  --text: #1a1a1a;
+  --text-muted: #4b5563;
+  --text-dim: #9ca3af;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.4;
+  /* Pas de sélection/长-press bleus intempestifs façon web sur mobile. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* Le texte utile (console, valeurs) reste sélectionnable. */
+.selectable,
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* Cibles tactiles confortables. */
+button,
+[role="button"] {
+  min-height: 44px;
+}
+
+a {
+  color: var(--brand-primary);
+}

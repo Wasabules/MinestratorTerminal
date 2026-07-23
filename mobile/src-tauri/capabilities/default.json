@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "default",
+  "description": "Permissions de l'app mobile (webview principale)",
+  "windows": ["main"],
+  "permissions": ["core:default", "notification:default"]
+}

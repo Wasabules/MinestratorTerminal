@@ -1,55 +1,70 @@
-# Minestrator Terminal — Mobile (Android / iOS)
+# Minestrator Terminal — Mobile (Android, iOS à venir)
 
 App **Tauri 2 mobile** partageant le même `crates/minestrator-core` que le desktop.
 Même nom, même identité : **Minestrator Terminal** (`com.geoffreylecoq.minestratorterminal`).
 
-> État : **à scaffolder**. Ce dossier ne contient encore que ce plan.
+> État : **scaffold en place et vérifié** (frontend + crate Rust compilent). Reste à lancer
+> `tauri android init` avec ton SDK Android pour générer le projet Gradle et builder l'APK.
+> **iOS** : cross-platform dans le code, mais l'`init`/build iOS nécessite macOS + Xcode (plus tard).
 
 ## Pourquoi Tauri mobile
 
-Le cœur (`minestrator-core`) fait **tout le réseau** en Rust. C'est indispensable ici : le
-handshake WebSocket Wings exige l'en-tête `Origin: https://minestrator.com`, **impossible à
-forger depuis un webview/navigateur** (cf. `ARCHITECTURE.md` §4). Rust tourne nativement sur
-Android/iOS → le WS et le SFTP (russh) fonctionnent à l'identique du desktop, sans réécriture.
+Le cœur (`minestrator-core`) fait **tout le réseau** en Rust. Indispensable ici : le handshake
+WebSocket Wings exige l'en-tête `Origin: https://minestrator.com`, **impossible à forger depuis
+un webview/navigateur** (cf. `ARCHITECTURE.md` §4). Rust tourne nativement sur Android → le WS
+et le SFTP (russh) fonctionnent à l'identique du desktop, sans réécriture.
 
-## Structure cible
+## Ce qui est déjà là
 
 ```
 mobile/
-  package.json            projet npm propre (frontend Svelte mobile)
-  src/                    UI tactile : shell bottom-tabs (pas d'onglets keep-alive)
-                          réutilise ipc.ts / events.ts / i18n / tokens du desktop
-  src-tauri/              app Tauri mobile (thin layer sur le core)
-    tauri.conf.json       productName "Minestrator Terminal", même identifier
-    gen/android/          généré par `tauri android init` (projet Gradle)
-    gen/apple/            généré par `tauri ios init`     (projet Xcode)
+  package.json            projet npm (frontend Svelte mobile, port dev 1430)
+  src/
+    app.css               tokens de la charte (DESIGN.md), dark-first + safe-areas
+    routes/+page.svelte    shell : boot auth → onboarding / liste / serveur
+    lib/
+      ipc.ts               couche IPC typée (sous-ensemble de départ)
+      events.ts            events console (conn_id)
+      types.ts, i18n.ts    modèles + fr/en
+      stores/auth.svelte.ts
+      components/          Onboarding, ServersList, ServerView, BottomNav
+        views/            OverviewView (jauges + power), ConsoleView (WS live), PlayersView (stub)
+  src-tauri/
+    src/lib.rs             entrée mobile (mobile_entry_point), pont CoreEvent → webview
+    src/commands.rs        commandes de départ (auth, serveurs, console, power, joueurs)
+    tauri.conf.json        productName "Minestrator Terminal", devUrl :1430
+    capabilities/          core + notification
+    icons/                 (copiées du desktop, variantes Android incluses)
 ```
 
-Le crate `mobile/src-tauri` s'ajoutera au workspace racine (`Cargo.toml` → `members`).
+Le crate `mobile/src-tauri` est membre du workspace racine (`Cargo.toml`).
 
-## Scaffold (étapes)
+**Vérifié** : `npm run check` (180 fichiers, 0 erreur) · `npm run build` (adapter-static) ·
+`cargo check -p minestrator-terminal-mobile` (host, OK).
+
+## Lancer (Android)
+
+Prérequis : **Android SDK + NDK**, un `ANDROID_HOME`/`NDK_HOME` configurés, et un
+émulateur ou un appareil en débogage USB. (Détails : <https://v2.tauri.app/start/prerequisites/#android>.)
 
 ```bash
-# 1. Frontend mobile (depuis mobile/)
-#    npm create + SvelteKit adapter-static, puis brancher @tauri-apps/api + cli
-
-# 2. Init Tauri mobile (nécessite les toolchains)
 cd mobile
 npm install
-npx tauri android init      # Android SDK/NDK requis
-npx tauri ios init          # macOS + Xcode requis (iOS)
-
-# 3. Lancer
-npx tauri android dev
-npx tauri ios dev
+npx tauri android init      # génère src-tauri/gen/android (projet Gradle) — une fois
+npx tauri android dev       # build + déploie sur l'émulateur/appareil
+# npx tauri android build   # APK/AAB de release
 ```
 
-## Adaptations spécifiques mobile (vs desktop)
+## Périmètre & suite
 
-- **Secrets** : `keyring` ne couvre pas iOS/Android → backend Keychain/Keystore derrière le
-  trait `secrets` du core (une seule impl à ajouter).
-- **Pas de superviseur de fond** (l'OS tue les tâches persistantes) → alertes via un
-  **daemon Linux + push FCM/APNs** (le daemon réutilise `minestrator-core`).
-- **Périmètre tactile** : console, power actions, joueurs, backups, éditeurs de config en
-  formulaire, Copilote en chat. On laisse au desktop l'inspecteur NBT / la carte `.mca` / le SFTP lourd.
-- **Plus natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
+Slice de départ livré : **onboarding (clé API) → liste serveurs → Overview (jauges + power) →
+Console live**. À étoffer ensuite :
+
+- **Joueurs** : liste en ligne + swipe kick/ban/op/whitelist (`api.playerAction`).
+- **Secrets** : `keyring` ne couvre pas Android → backend Keystore derrière le trait `secrets`
+  du core (une seule impl à ajouter).
+- **Alertes app fermée** : pas de superviseur de fond sur mobile → **daemon + push FCM**
+  (le daemon réutilise `minestrator-core`).
+- **Éditeurs de config en formulaire** (`server.properties`, `ops.json`…), Copilote en chat.
+- **Natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
+- **Factorisation** : extraire `ipc.ts`/`events.ts`/i18n/tokens dans un package partagé avec le desktop.
