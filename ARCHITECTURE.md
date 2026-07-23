@@ -63,7 +63,13 @@
 `Cargo.toml` racine (`resolver = "2"`, version `0.2.1` partagée) :
 
 ```
-members = ["desktop/src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
+members = [
+  "desktop/src-tauri",           # app desktop (Windows/macOS/Linux)
+  "mobile/src-tauri",            # app mobile (Android ; iOS à venir)
+  "crates/minestrator-core",     # cœur métier partagé
+  "crates/minestrator-mcp",      # serveur MCP headless
+  "crates/minestrator-daemon",   # daemon Linux : surveillance + push FCM (alertes app fermée)
+]
 ```
 
 | Crate | Rôle | Nature |

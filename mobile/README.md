@@ -60,11 +60,12 @@ npx tauri android dev       # build + déploie sur l'émulateur/appareil
 Slice de départ livré : **onboarding (clé API) → liste serveurs → Overview (jauges + power) →
 Console live**. À étoffer ensuite :
 
-- **Joueurs** : liste en ligne + swipe kick/ban/op/whitelist (`api.playerAction`).
-- **Secrets** : `keyring` ne couvre pas Android → backend Keystore derrière le trait `secrets`
-  du core (une seule impl à ajouter).
-- **Alertes app fermée** : pas de superviseur de fond sur mobile → **daemon + push FCM**
-  (le daemon réutilise `minestrator-core`).
+- ✅ **Joueurs** : liste en ligne + actions kick/ban/op et par pseudo (`api.playerAction`).
+- ✅ **Secrets Android** : backend **fichier** dans le dossier privé de l'app (chiffré au repos par
+  Android FBE) — le core aiguille automatiquement (`keyring` sur desktop). Durcissement Keystore
+  matériel = amélioration future.
+- ✅ **Alertes app fermée** : daemon `crates/minestrator-daemon` (surveillance + push FCM). Reste à
+  câbler la **réception** côté Android après `tauri android init` → voir [`docs/PUSH.md`](../docs/PUSH.md).
 - **Éditeurs de config en formulaire** (`server.properties`, `ops.json`…), Copilote en chat.
 - **Natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
 - **Factorisation** : extraire `ipc.ts`/`events.ts`/i18n/tokens dans un package partagé avec le desktop.

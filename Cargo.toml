@@ -3,7 +3,13 @@
 # À venir aussi : daemon Linux, CLI/TUI — tous dépendront du même `minestrator-core`.
 [workspace]
 resolver = "2"
-members = ["desktop/src-tauri", "mobile/src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
+members = [
+    "desktop/src-tauri",
+    "mobile/src-tauri",
+    "crates/minestrator-core",
+    "crates/minestrator-mcp",
+    "crates/minestrator-daemon",
+]
 
 [workspace.package]
 version = "0.3.2"

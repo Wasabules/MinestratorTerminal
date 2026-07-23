@@ -88,6 +88,7 @@ crates/
   minestrator-core/   Logique métier UI-agnostique : client API, WebSocket, SFTP,
                       NBT/.mca, superviseur, Copilote (LLM + agents CLI), serveur MCP.
   minestrator-mcp/    Serveur MCP autonome (headless), bâti sur le core.
+  minestrator-daemon/ Daemon Linux : surveillance + push FCM (alertes mobile app fermée).
 desktop/              App desktop Tauri (Windows/macOS/Linux) :
   src-tauri/          couche d'adaptation : commandes IPC, tray, pont d'events, notifications.
   src/                Frontend SvelteKit / Svelte 5 (runes) + TypeScript.

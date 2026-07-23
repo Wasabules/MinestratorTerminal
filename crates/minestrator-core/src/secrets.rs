@@ -3,14 +3,16 @@
 //! - **Desktop** (Windows/macOS/Linux) : trousseau natif de l'OS via `keyring`.
 //! - **Android** : `keyring` n'a pas de backend Android → stockage **fichier** dans le dossier
 //!   privé de l'app (sandbox par-app, chiffré au repos par le File-Based Encryption d'Android).
-//!   Le dossier vient de `MINESTRATOR_DATA_DIR`, posé par `mobile/src-tauri` avant `Core::new()`.
+//! - **Opt-in fichier (headless)** : sur les autres OS, définir `MINESTRATOR_SECRETS_FILE` force
+//!   le backend fichier — utile pour le **daemon Linux** sans Secret Service/D-Bus.
 //!
-//! Les identifiants de compte (`KEYRING_ACCOUNT*`) sont partagés par les deux backends.
+//! Dans les deux modes fichier, le dossier vient de `MINESTRATOR_DATA_DIR`.
+//! Les identifiants de compte (`KEYRING_ACCOUNT*`) sont partagés par les backends.
 
 use crate::config::{KEYRING_ACCOUNT, KEYRING_ACCOUNT_GAME_PREFIX, KEYRING_ACCOUNT_LLM_PREFIX};
 use crate::error::Result;
 
-// Toujours compilé (donc vérifiable sur host) ; effectivement utilisé sur Android.
+// Toujours compilé (donc vérifiable sur host) ; utilisé sur Android et en mode fichier opt-in.
 mod file_store;
 
 /// Backend trousseau natif (desktop). Absent de la cible Android (pas de `keyring`).
@@ -41,27 +43,67 @@ mod keyring_store {
     }
 }
 
-// Aiguillage du backend selon la plateforme.
+// --- Aiguillage du backend (deux définitions cfg-gated, sans ambiguïté) -----
+
 #[cfg(not(target_os = "android"))]
-use keyring_store as backend;
+fn prefer_file_backend() -> bool {
+    std::env::var_os("MINESTRATOR_SECRETS_FILE").is_some()
+}
+
 #[cfg(target_os = "android")]
-use file_store as backend;
+fn read_account(account: &str) -> Result<Option<String>> {
+    file_store::read(account)
+}
+#[cfg(not(target_os = "android"))]
+fn read_account(account: &str) -> Result<Option<String>> {
+    if prefer_file_backend() {
+        file_store::read(account)
+    } else {
+        keyring_store::read(account)
+    }
+}
+
+#[cfg(target_os = "android")]
+fn write_account(account: &str, value: &str) -> Result<()> {
+    file_store::write(account, value)
+}
+#[cfg(not(target_os = "android"))]
+fn write_account(account: &str, value: &str) -> Result<()> {
+    if prefer_file_backend() {
+        file_store::write(account, value)
+    } else {
+        keyring_store::write(account, value)
+    }
+}
+
+#[cfg(target_os = "android")]
+fn delete_account(account: &str) -> Result<()> {
+    file_store::delete(account)
+}
+#[cfg(not(target_os = "android"))]
+fn delete_account(account: &str) -> Result<()> {
+    if prefer_file_backend() {
+        file_store::delete(account)
+    } else {
+        keyring_store::delete(account)
+    }
+}
 
 // --- Token API MineStrator -------------------------------------------------
 
 /// Enregistre (ou remplace) le token API MineStrator prêt à l'emploi.
 pub fn store_key(key: &str) -> Result<()> {
-    backend::write(KEYRING_ACCOUNT, key)
+    write_account(KEYRING_ACCOUNT, key)
 }
 
 /// Lit le token API MineStrator. `Ok(None)` si aucun n'est enregistré.
 pub fn read_key() -> Result<Option<String>> {
-    backend::read(KEYRING_ACCOUNT)
+    read_account(KEYRING_ACCOUNT)
 }
 
 /// Supprime le token MineStrator. Ne renvoie pas d'erreur s'il n'existait pas.
 pub fn delete_key() -> Result<()> {
-    backend::delete(KEYRING_ACCOUNT)
+    delete_account(KEYRING_ACCOUNT)
 }
 
 // --- Clés LLM du Copilote (une par fournisseur) ----------------------------
@@ -72,17 +114,17 @@ fn llm_account(provider: &str) -> String {
 
 /// Enregistre (ou remplace) la clé API LLM d'un fournisseur (`anthropic`, `openai`, …).
 pub fn store_llm_key(provider: &str, key: &str) -> Result<()> {
-    backend::write(&llm_account(provider), key)
+    write_account(&llm_account(provider), key)
 }
 
 /// Lit la clé API LLM d'un fournisseur. `Ok(None)` si aucune n'est enregistrée.
 pub fn read_llm_key(provider: &str) -> Result<Option<String>> {
-    backend::read(&llm_account(provider))
+    read_account(&llm_account(provider))
 }
 
 /// Supprime la clé API LLM d'un fournisseur. Ne renvoie pas d'erreur si absente.
 pub fn delete_llm_key(provider: &str) -> Result<()> {
-    backend::delete(&llm_account(provider))
+    delete_account(&llm_account(provider))
 }
 
 // --- Secrets par jeu (ex. token factorio.com) ------------------------------
@@ -93,15 +135,15 @@ fn game_account(game: &str) -> String {
 
 /// Enregistre (ou remplace) un secret propre à un jeu (ex. `factorio` → token de download).
 pub fn store_game_secret(game: &str, value: &str) -> Result<()> {
-    backend::write(&game_account(game), value)
+    write_account(&game_account(game), value)
 }
 
 /// Lit le secret d'un jeu. `Ok(None)` si aucun n'est enregistré.
 pub fn read_game_secret(game: &str) -> Result<Option<String>> {
-    backend::read(&game_account(game))
+    read_account(&game_account(game))
 }
 
 /// Supprime le secret d'un jeu. Ne renvoie pas d'erreur s'il n'existait pas.
 pub fn delete_game_secret(game: &str) -> Result<()> {
-    backend::delete(&game_account(game))
+    delete_account(&game_account(game))
 }
