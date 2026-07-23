@@ -59,7 +59,7 @@
 <div class="shell">
   <header class="bar">
     <button class="back" onclick={onBack} aria-label="Retour">‹</button>
-    <GameIcon src={server.egg_icon} size={26} />
+    <GameIcon src={server.egg_icon} name={server.egg_name} size={26} />
     <span class="title selectable">{server.name}</span>
   </header>
 

@@ -127,7 +127,7 @@
             <li>
               <button class="row" onclick={() => onOpen(s, g.box)}>
                 <span class="ico">
-                  <GameIcon src={s.egg_icon} size={38} />
+                  <GameIcon src={s.egg_icon} name={s.egg_name} size={38} />
                   <span class="dot" style="background:{statusColor(s.status)}"></span>
                 </span>
                 <span class="name">
