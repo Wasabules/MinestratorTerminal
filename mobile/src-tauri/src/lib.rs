@@ -4,15 +4,18 @@
 //! (l'OS mobile ne les fournit pas). On garde l'essentiel : exposer le `Core` au webview
 //! via des commandes, et relayer les `CoreEvent` (broadcast) → events Tauri + notifications.
 //!
-//! Ce qui change vs desktop (à venir) :
-//! - `secrets` : Keychain/Keystore au lieu du trousseau desktop ;
-//! - alertes hors-app : **daemon + push FCM/APNs** (le superviseur de fond n'existe pas ici).
+//! Spécificités mobile :
+//! - **secrets** : sur Android, le `Core` stocke ses secrets dans un fichier du dossier privé
+//!   de l'app (le `keyring` desktop n'a pas de backend Android). On pose donc
+//!   `MINESTRATOR_DATA_DIR` = dossier de données de l'app **avant** de créer le `Core`.
+//! - **alertes app fermée** : le superviseur de fond n'existe pas sur mobile → daemon + push
+//!   FCM (cf. `crates/minestrator-daemon` et `docs/PUSH.md`).
 
 mod commands;
 
 use minestrator_core::{Core, CoreEvent};
 use std::sync::Arc;
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::broadcast::error::RecvError;
 
@@ -20,18 +23,24 @@ use tokio::sync::broadcast::error::RecvError;
 pub fn run() {
     init_tracing();
 
-    let core = Arc::new(Core::new());
-    let events = core.subscribe();
-    let supervisor = core.supervisor();
-
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .manage(core)
-        .setup(move |app| {
-            let handle = app.handle().clone();
+        .setup(|app| {
+            // 1. Dossier de données privé de l'app → env, AVANT de créer le Core.
+            //    C'est là que le Core écrit ses secrets (Android) et son SQLite de métriques.
+            if let Ok(dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(&dir);
+                std::env::set_var("MINESTRATOR_DATA_DIR", &dir);
+            }
+
+            // 2. Core + abonnement aux events + superviseur.
+            let core = Arc::new(Core::new());
+            let mut events = core.subscribe();
+            let supervisor = core.supervisor();
+            app.manage(core);
 
             // Pont : CoreEvent (broadcast) → events Tauri + notifications locales.
-            let mut events = events;
+            let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 loop {
                     match events.recv().await {
@@ -45,7 +54,7 @@ pub fn run() {
             });
 
             // Superviseur : actif tant que l'app est au premier plan. Les alertes « app fermée »
-            // viendront d'un daemon + push (cf. mobile/README.md), pas d'ici.
+            // viendront d'un daemon + push (cf. docs/PUSH.md), pas d'ici.
             tauri::async_runtime::spawn(async move {
                 supervisor.start();
             });

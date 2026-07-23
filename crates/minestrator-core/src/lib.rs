@@ -116,8 +116,14 @@ impl Core {
         let api = ApiClient::new();
         let console = Arc::new(ConsoleManager::new(events.clone()));
 
-        let dir = directories::ProjectDirs::from("com", "geoffreylecoq", "MinestratorTerminal")
-            .map(|d| d.data_dir().to_path_buf())
+        // Un frontend peut imposer le dossier de données via MINESTRATOR_DATA_DIR (mobile : dossier
+        // privé de l'app). Sinon, dossier de données standard de l'OS ; repli temporaire.
+        let dir = std::env::var_os("MINESTRATOR_DATA_DIR")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                directories::ProjectDirs::from("com", "geoffreylecoq", "MinestratorTerminal")
+                    .map(|d| d.data_dir().to_path_buf())
+            })
             .unwrap_or_else(|| std::env::temp_dir().join("minestrator"));
         let _ = std::fs::create_dir_all(&dir);
         let store = Arc::new(MetricsStore::open(&dir));
