@@ -13,9 +13,10 @@ val tauriProperties = Properties().apply {
     }
 }
 
-// Signature de release : écrite par la CI depuis les secrets GitHub (keystore.properties + .jks).
+// Signature de release : écrite par la CI depuis les secrets GitHub (keystore.properties + .jks)
+// À LA RACINE du projet Android (gen/android/), pas dans app/ → `rootProject.file`.
 // Absente en local → les builds `--debug` restent possibles (voir buildTypes.release ci-dessous).
-val keystorePropertiesFile = file("keystore.properties")
+val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
         keystorePropertiesFile.inputStream().use { load(it) }

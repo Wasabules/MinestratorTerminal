@@ -159,8 +159,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          APK=$(find mobile/src-tauri/gen/android/app/build/outputs/apk -name 'app-universal-release.apk' | head -1)
-          if [ -z "$APK" ]; then echo "APK release introuvable" >&2; exit 1; fi
+          echo "APK produits :"
+          find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -printf '  %s\t%p\n' || true
+          # APK signé (release) — `*-release.apk` exclut le `*-release-unsigned.apk`.
+          APK=$(find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' ! -name '*unsigned*' | head -1)
+          if [ -z "$APK" ]; then echo "APK release signé introuvable" >&2; exit 1; fi
           OUT="Minestrator-Terminal_${GITHUB_REF_NAME}_android.apk"
           cp "$APK" "$OUT"
           gh release upload "$GITHUB_REF_NAME" "$OUT" --clobber
+          echo "APK attaché : $OUT ($(stat -c%s "$OUT") octets) depuis $APK"
