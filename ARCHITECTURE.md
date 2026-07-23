@@ -63,14 +63,14 @@
 `Cargo.toml` racine (`resolver = "2"`, version `0.2.1` partagée) :
 
 ```
-members = ["src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
+members = ["desktop/src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
 ```
 
 | Crate | Rôle | Nature |
 |---|---|---|
 | **`minestrator-core`** | Toute la logique métier, **indépendante de l'UI**. Expose une façade [`Core`] : chaque frontend en instancie une, appelle ses méthodes, s'abonne à ses `CoreEvent` via `Core::subscribe`. Le token API est géré en interne (trousseau OS) ; les appelants ne le manipulent jamais. Réutilisable → **futur daemon Linux, CLI/TUI**. | `lib` |
 | **`minestrator-mcp`** | Binaire **serveur MCP headless** (stdio). Lit du JSON-RPC ligne à ligne sur stdin, délègue à `core::mcp`, écrit sur stdout. **stdout = protocole, logs sur stderr.** | `bin` |
-| **`src-tauri`** | **App desktop**. Couche mince au-dessus du `Core` : commandes IPC, pont d'events → webview, notifications natives, tray, updater, démarrage du superviseur et du Copilote. | `lib`+`bin` |
+| **`desktop/src-tauri`** | **App desktop** (Windows/macOS/Linux). Couche mince au-dessus du `Core` : commandes IPC, pont d'events → webview, notifications natives, tray, updater, démarrage du superviseur et du Copilote. Une app **`mobile/src-tauri`** (Android/iOS) rejoindra le workspace sur le même `Core`. | `lib`+`bin` |
 
 ### Diagramme des dépendances
 
@@ -87,7 +87,7 @@ members = ["src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
 └───────────────┘                          └────────────────────┘
 ```
 
-> **Double point d'entrée du desktop.** `src-tauri/src/main.rs` : si l'argument `--mcp` est présent,
+> **Double point d'entrée du desktop.** `desktop/src-tauri/src/main.rs` : si l'argument `--mcp` est présent,
 > l'app lance `run_mcp()` (boucle stdio MCP) **au lieu** d'ouvrir la GUI. Le mode GUI et le binaire
 > `minestrator-mcp` appellent tous deux la même `core::mcp::serve_stdio` — zéro duplication.
 
@@ -190,7 +190,7 @@ Le WS ne sert qu'à **recevoir** output + stats + status.
 
 ## 5. IPC (front ↔ Rust)
 
-### 5.1 Commandes (`src-tauri/src/commands.rs`, enregistrées dans `lib.rs`)
+### 5.1 Commandes (`desktop/src-tauri/src/commands.rs`, enregistrées dans `lib.rs`)
 
 ~70 commandes `#[tauri::command]`, appelées **uniquement** via la couche typée `src/lib/ipc.ts`
 (aucun composant n'appelle `invoke` en direct). Groupées par domaine :
@@ -215,7 +215,7 @@ Le WS ne sert qu'à **recevoir** output + stats + status.
 
 ### 5.2 Events (Rust → webview)
 
-Le cœur publie des `CoreEvent` sur un canal `broadcast`. Le pont de `src-tauri/src/lib.rs` (`forward`) les
+Le cœur publie des `CoreEvent` sur un canal `broadcast`. Le pont de `desktop/src-tauri/src/lib.rs` (`forward`) les
 relaie en events Tauri, et transforme les **alertes** + **diagnostics** en **notifications natives**. Les
 events console sont **taggés par `conn_id`** (pas par `server_id`) : plusieurs onglets/fenêtres peuvent
 observer le même serveur indépendamment.

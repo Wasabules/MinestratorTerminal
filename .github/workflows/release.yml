@@ -60,6 +60,7 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+        working-directory: ./desktop
 
       - name: Build & release Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -69,6 +70,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
+          # L'app desktop vit désormais dans desktop/ (workspace : desktop/src-tauri).
+          projectPath: ./desktop
           tagName: ${{ github.ref_name }}
           releaseName: 'Minestrator Terminal ${{ github.ref_name }}'
           releaseBody: |

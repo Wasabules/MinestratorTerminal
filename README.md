@@ -88,13 +88,16 @@ crates/
   minestrator-core/   Logique métier UI-agnostique : client API, WebSocket, SFTP,
                       NBT/.mca, superviseur, Copilote (LLM + agents CLI), serveur MCP.
   minestrator-mcp/    Serveur MCP autonome (headless), bâti sur le core.
-src-tauri/            App desktop Tauri : commandes IPC, tray, pont d'events, notifications.
-src/                  Frontend SvelteKit / Svelte 5 (runes) + TypeScript.
+desktop/              App desktop Tauri (Windows/macOS/Linux) :
+  src-tauri/          couche d'adaptation : commandes IPC, tray, pont d'events, notifications.
+  src/                Frontend SvelteKit / Svelte 5 (runes) + TypeScript.
+mobile/               App mobile Tauri (Android/iOS) — même core, UI tactile (à venir).
 docs/                 Documentation additionnelle.
 ```
 
 - **Stack** : Tauri 2 · Rust · SvelteKit · Svelte 5 · TypeScript.
-- **Tout le réseau** (HTTP, WebSocket, SFTP, uploads paste) vit **côté Rust** ; le front ne parle qu'à une couche IPC typée (`src/lib/ipc.ts`).
+- **Desktop et mobile partagent `crates/minestrator-core`** : chaque frontend n'est qu'une mince couche par-dessus le même cœur (le réseau vit en Rust, cf. contrainte `Origin` du WebSocket).
+- **Tout le réseau** (HTTP, WebSocket, SFTP, uploads paste) vit **côté Rust** ; le front ne parle qu'à une couche IPC typée (`desktop/src/lib/ipc.ts`).
 
 ---
 
@@ -105,23 +108,29 @@ docs/                 Documentation additionnelle.
 - [Node.js](https://nodejs.org) 20+ et npm.
 
 ### Lancer en développement
+Les commandes **frontend** se lancent depuis `desktop/` (le projet npm y vit désormais) ;
+les commandes **Cargo** depuis la racine (le workspace couvre tout le monorepo).
 ```bash
+cd desktop
 npm install          # dépendances frontend
 npm run tauri dev    # app desktop en dev (hot-reload du front)
 ```
 
 ### Autres commandes
 ```bash
+# Depuis desktop/ :
 npm run check                             # typecheck (svelte-check)
-npm run build                             # build du frontend seul → build/
+npm run build                             # build du frontend seul → desktop/build/
 npm run tauri build                       # app packagée (installeurs)
+
+# Depuis la racine (workspace) :
 cargo test -p minestrator-core            # tests du cœur métier
 cargo clippy --workspace --all-targets    # lint
 cargo build -p minestrator-mcp --release  # binaire serveur MCP autonome
 ```
 
 ### Publier une release
-Incrémente la version dans les **3 fichiers** (`src-tauri/tauri.conf.json`, `package.json`, `Cargo.toml`), puis pousse un tag :
+Incrémente la version dans les **3 fichiers** (`desktop/src-tauri/tauri.conf.json`, `desktop/package.json`, `Cargo.toml`), puis pousse un tag :
 ```bash
 git tag v0.3.0 && git push origin v0.3.0
 ```

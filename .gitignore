@@ -1,9 +1,9 @@
 # --- Dépendances ---
 node_modules
 
-# --- Build front (SvelteKit / Vite) ---
-/build
-/.svelte-kit
+# --- Build front (SvelteKit / Vite) — desktop/ et mobile/ ---
+build/
+.svelte-kit/
 /package
 dist
 vite.config.js.timestamp-*
@@ -11,8 +11,9 @@ vite.config.ts.timestamp-*
 
 # --- Build Rust / Tauri ---
 /target
-/src-tauri/target
-/src-tauri/gen/schemas
+# Cibles et schémas Tauri générés, quelle que soit l'app (desktop/ ou mobile/)
+**/src-tauri/target
+**/src-tauri/gen/schemas
 
 # --- Environnement / secrets ---
 .env

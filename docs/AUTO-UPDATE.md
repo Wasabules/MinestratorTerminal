@@ -8,11 +8,11 @@ vérifie la **signature** de l'artefact, puis installe et relance.
 
 | Élément | Fichier |
 |---|---|
-| Vérification au démarrage + bandeau | `src/lib/components/UpdateBanner.svelte` (monté dans `+layout.svelte`) |
-| Helpers `checkForUpdate()` / `applyUpdate()` | `src/lib/updater.ts` |
-| Plugin updater + process (relance) | `src-tauri/src/lib.rs`, `src-tauri/Cargo.toml`, `package.json` |
-| Permissions `updater` + `process` | `src-tauri/capabilities/default.json` |
-| Endpoint + clé publique | `src-tauri/tauri.conf.json` → `plugins.updater` |
+| Vérification au démarrage + bandeau | `desktop/src/lib/components/UpdateBanner.svelte` (monté dans `+layout.svelte`) |
+| Helpers `checkForUpdate()` / `applyUpdate()` | `desktop/src/lib/updater.ts` |
+| Plugin updater + process (relance) | `desktop/src-tauri/src/lib.rs`, `desktop/src-tauri/Cargo.toml`, `desktop/package.json` |
+| Permissions `updater` + `process` | `desktop/src-tauri/capabilities/default.json` |
+| Endpoint + clé publique | `desktop/src-tauri/tauri.conf.json` → `plugins.updater` |
 | Artefacts signés | `bundle.createUpdaterArtifacts: true` |
 | Signature en CI | `.github/workflows/release.yml` (secret `TAURI_SIGNING_PRIVATE_KEY`) |
 
@@ -31,8 +31,8 @@ dans les fenêtres détachées. En cas d'échec (hors-ligne, endpoint injoignabl
 ## Publier une mise à jour
 
 1. **Bumper la version** dans les 3 fichiers (garder les 3 identiques) :
-   - `src-tauri/tauri.conf.json` → `"version"`
-   - `package.json` → `"version"`
+   - `desktop/src-tauri/tauri.conf.json` → `"version"`
+   - `desktop/package.json` → `"version"`
    - `Cargo.toml` (racine) → `[workspace.package] version`
 2. Committer, puis **taguer et pousser** :
    ```

@@ -1,9 +1,9 @@
 # Workspace racine : sépare la logique métier (minestrator-core) de ses frontends.
-# Frontends actuels : src-tauri (desktop). À venir : daemon Linux, CLI/TUI — ils
-# dépendront tous du même `minestrator-core`.
+# Frontends : desktop/src-tauri (app desktop) et mobile/src-tauri (app Android/iOS, à venir).
+# À venir aussi : daemon Linux, CLI/TUI — tous dépendront du même `minestrator-core`.
 [workspace]
 resolver = "2"
-members = ["src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
+members = ["desktop/src-tauri", "crates/minestrator-core", "crates/minestrator-mcp"]
 
 [workspace.package]
 version = "0.3.2"
