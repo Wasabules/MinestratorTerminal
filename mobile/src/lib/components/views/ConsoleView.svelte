@@ -6,8 +6,11 @@
   import Icon from "../Icon.svelte";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
-  let { serverId, onFocusChange }: { serverId: number; onFocusChange?: (f: boolean) => void } =
-    $props();
+  let {
+    serverId,
+    active,
+    onFocusChange,
+  }: { serverId: number; active: boolean; onFocusChange?: (f: boolean) => void } = $props();
 
   const MAX_LINES = 800;
   let lines = $state<string[]>([]);
@@ -96,6 +99,8 @@
   );
 
   $effect(() => {
+    if (!active) return;
+    lines = [];
     const connId = `mobile-${serverId}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
     let unlisteners: UnlistenFn[] = [];
     let disposed = false;

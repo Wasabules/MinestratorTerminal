@@ -1,17 +1,22 @@
 <script lang="ts">
   import { t } from "../i18n";
-  import type { ServerListItem } from "../types";
+  import type { MyBoxSummary, ServerListItem } from "../types";
   import BottomNav from "./BottomNav.svelte";
   import OverviewView from "./views/OverviewView.svelte";
   import ConsoleView from "./views/ConsoleView.svelte";
   import PlayersView from "./views/PlayersView.svelte";
   import SftpView from "./views/SftpView.svelte";
 
-  let { server, onBack }: { server: ServerListItem; onBack: () => void } = $props();
+  let {
+    server,
+    mybox,
+    onBack,
+  }: { server: ServerListItem; mybox: MyBoxSummary | null; onBack: () => void } = $props();
 
+  const order = ["overview", "console", "players", "files"];
   let active = $state("overview");
-  // Masque la barre du bas quand la console a le focus → l'input se cale au-dessus du clavier.
   let navHidden = $state(false);
+  const idx = $derived(order.indexOf(active));
 
   const tabs = [
     { id: "overview", label: t("nav.overview"), icon: "overview" },
@@ -20,9 +25,31 @@
     { id: "files", label: t("nav.files"), icon: "files" },
   ];
 
-  function select(id: string) {
+  function goto(id: string) {
     if (id !== "console") navHidden = false;
     active = id;
+  }
+
+  // --- Swipe horizontal pour changer d'onglet ---
+  let startX = 0;
+  let startY = 0;
+  let blocked = false;
+
+  function onTouchStart(e: TouchEvent) {
+    const target = e.target as HTMLElement;
+    // Ne pas capturer le swipe sur zones interactives/scroll horizontal.
+    blocked = !!target.closest(".cm-editor, input, textarea, .suggest, .editor, .sheet, .dialog");
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }
+  function onTouchEnd(e: TouchEvent) {
+    if (blocked) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0 && idx < order.length - 1) goto(order[idx + 1]);
+      else if (dx > 0 && idx > 0) goto(order[idx - 1]);
+    }
   }
 </script>
 
@@ -32,20 +59,35 @@
     <span class="title selectable">{server.name}</span>
   </header>
 
-  <main class:nav-hidden={navHidden}>
-    {#if active === "overview"}
-      <OverviewView serverId={server.id} />
-    {:else if active === "console"}
-      <ConsoleView serverId={server.id} onFocusChange={(f) => (navHidden = f)} />
-    {:else if active === "players"}
-      <PlayersView serverId={server.id} />
-    {:else if active === "files"}
-      <SftpView serverId={server.id} />
-    {/if}
-  </main>
+  <div
+    class="pages"
+    class:nav-hidden={navHidden}
+    role="group"
+    ontouchstart={onTouchStart}
+    ontouchend={onTouchEnd}
+  >
+    <div class="track" style="transform: translateX(-{idx * 100}%)">
+      <section class="page">
+        <OverviewView {server} {mybox} active={active === "overview"} />
+      </section>
+      <section class="page">
+        <ConsoleView
+          serverId={server.id}
+          active={active === "console"}
+          onFocusChange={(f) => (navHidden = f)}
+        />
+      </section>
+      <section class="page">
+        <PlayersView serverId={server.id} active={active === "players"} />
+      </section>
+      <section class="page">
+        <SftpView serverId={server.id} active={active === "files"} />
+      </section>
+    </div>
+  </div>
 
   {#if !navHidden}
-    <BottomNav {tabs} {active} onSelect={select} />
+    <BottomNav {tabs} {active} onSelect={goto} />
   {/if}
 </div>
 
@@ -54,6 +96,7 @@
     display: flex;
     flex-direction: column;
     height: 100dvh;
+    overflow: hidden;
   }
   .bar {
     display: flex;
@@ -80,13 +123,27 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  main {
+  .pages {
     flex: 1;
     min-height: 0;
+    overflow: hidden;
+    position: relative;
+  }
+  .track {
+    display: flex;
+    height: 100%;
+    width: 100%;
+    transition: transform 0.25s ease;
+  }
+  .page {
+    flex: 0 0 100%;
+    width: 100%;
+    height: 100%;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding-bottom: calc(var(--nav-height) + var(--safe-bottom));
   }
-  main.nav-hidden {
+  .pages.nav-hidden .page {
     padding-bottom: 0;
   }
 </style>

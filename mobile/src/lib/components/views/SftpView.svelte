@@ -2,9 +2,11 @@
   import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
   import Icon from "../Icon.svelte";
+  import CodeEditor from "../CodeEditor.svelte";
   import type { SftpEntry } from "../../types";
 
-  let { serverId }: { serverId: number } = $props();
+  let { serverId, active }: { serverId: number; active: boolean } = $props();
+  let loaded = $state(false);
 
   let cwd = $state("/");
   let entries = $state<SftpEntry[]>([]);
@@ -102,7 +104,10 @@
   }
 
   $effect(() => {
-    load();
+    if (active && !loaded) {
+      loaded = true;
+      load();
+    }
   });
 </script>
 
@@ -218,13 +223,18 @@
         <Icon name="save" size={16} /> {t("files.save")}
       </button>
     </header>
-    <textarea
-      class="selectable"
-      spellcheck="false"
-      autocapitalize="off"
-      bind:value={opened.content}
-      oninput={() => opened && (opened.dirty = true)}
-    ></textarea>
+    <div class="edwrap">
+      <CodeEditor
+        value={opened.content}
+        filename={opened.name}
+        onChange={(v) => {
+          if (opened) {
+            opened.content = v;
+            opened.dirty = true;
+          }
+        }}
+      />
+    </div>
   </div>
 {/if}
 
@@ -467,17 +477,9 @@
   .save:disabled {
     opacity: 0.5;
   }
-  textarea {
+  .edwrap {
     flex: 1;
-    width: 100%;
-    resize: none;
-    border: none;
-    outline: none;
-    background: #0d1114;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: 13px;
-    line-height: 1.5;
-    padding: 12px;
+    min-height: 0;
+    overflow: hidden;
   }
 </style>

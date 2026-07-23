@@ -3,7 +3,7 @@
   import { t } from "../../i18n";
   import type { LiveLight, PlayerAction } from "../../types";
 
-  let { serverId }: { serverId: number } = $props();
+  let { serverId, active }: { serverId: number; active: boolean } = $props();
 
   let live = $state<LiveLight | null>(null);
   let error = $state<string | null>(null);
@@ -47,6 +47,7 @@
   ];
 
   $effect(() => {
+    if (!active) return;
     refresh();
     const id = setInterval(refresh, 10000);
     return () => clearInterval(id);

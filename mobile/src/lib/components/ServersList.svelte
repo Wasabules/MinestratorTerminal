@@ -3,13 +3,17 @@
   import { auth } from "../stores/auth.svelte";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
-  import type { ServerListItem } from "../types";
+  import type { MyBoxSummary, ServerListItem } from "../types";
 
   let {
     onOpen,
     onSettings,
-  }: { onOpen: (server: ServerListItem) => void; onSettings: () => void } = $props();
+  }: {
+    onOpen: (server: ServerListItem, box: MyBoxSummary | null) => void;
+    onSettings: () => void;
+  } = $props();
 
+  let myboxes = $state<MyBoxSummary[]>([]);
   let servers = $state<ServerListItem[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
@@ -19,6 +23,7 @@
     error = null;
     try {
       const overview = await api.listServers();
+      myboxes = overview.myboxes;
       servers = overview.servers;
     } catch (err) {
       error = humanizeError(err);
@@ -47,6 +52,32 @@
       default:
         return "var(--state-offline)";
     }
+  }
+
+  // Groupes MyBox (ordre des myboxes ; serveurs orphelins en fin).
+  const groups = $derived.by(() => {
+    const byBox = new Map<number, ServerListItem[]>();
+    for (const s of servers) {
+      if (!byBox.has(s.mybox_id)) byBox.set(s.mybox_id, []);
+      byBox.get(s.mybox_id)!.push(s);
+    }
+    const out: { box: MyBoxSummary | null; servers: ServerListItem[] }[] = [];
+    for (const b of myboxes) {
+      const list = byBox.get(b.id) ?? [];
+      if (list.length) out.push({ box: b, servers: list });
+      byBox.delete(b.id);
+    }
+    const leftover: ServerListItem[] = [];
+    for (const list of byBox.values()) leftover.push(...list);
+    if (leftover.length) out.push({ box: null, servers: leftover });
+    return out;
+  });
+
+  function boxBadge(b: MyBoxSummary): { text: string; cls: string } | null {
+    if (b.expired) return { text: "Expiré", cls: "danger" };
+    if (b.suspended) return { text: "Suspendu", cls: "warn" };
+    if (b.days_left <= 7) return { text: `${b.days_left} j`, cls: "warn" };
+    return { text: `${b.days_left} j`, cls: "dim" };
   }
 
   $effect(() => {
@@ -78,20 +109,34 @@
   {:else if servers.length === 0}
     <p class="dim">{t("servers.empty")}</p>
   {:else}
-    <ul>
-      {#each servers as s (s.id)}
-        <li>
-          <button class="row" onclick={() => onOpen(s)}>
-            <span class="dot" style="background:{statusColor(s.status)}"></span>
-            <span class="name">
-              <strong>{s.name}</strong>
-              <small class="dim selectable">{s.egg_name} · {s.address}</small>
-            </span>
-            <Icon name="chevronRight" size={18} />
-          </button>
-        </li>
-      {/each}
-    </ul>
+    {#each groups as g (g.box?.id ?? "other")}
+      <section class="group">
+        {#if g.box}
+          {@const badge = boxBadge(g.box)}
+          <div class="ghead">
+            <span class="gname">{g.box.name}</span>
+            <span class="goffer dim">{g.box.offer}</span>
+            {#if badge}<span class="gbadge {badge.cls}">{badge.text}</span>{/if}
+          </div>
+        {:else}
+          <div class="ghead"><span class="gname">Autres</span></div>
+        {/if}
+        <ul>
+          {#each g.servers as s (s.id)}
+            <li>
+              <button class="row" onclick={() => onOpen(s, g.box)}>
+                <span class="dot" style="background:{statusColor(s.status)}"></span>
+                <span class="name">
+                  <strong>{s.name}</strong>
+                  <small class="dim selectable">{s.egg_name} · {s.address}</small>
+                </span>
+                <Icon name="chevronRight" size={18} />
+              </button>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/each}
   {/if}
 </div>
 
@@ -100,7 +145,7 @@
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    padding: calc(var(--safe-top) + 16px) 16px 12px;
+    padding: calc(var(--safe-top) + 16px) 16px 10px;
     gap: 12px;
   }
   .titles {
@@ -131,7 +176,43 @@
     color: var(--text-muted);
   }
   .body {
-    padding: 4px 12px;
+    padding: 4px 12px 20px;
+  }
+  .group {
+    margin-bottom: 18px;
+  }
+  .ghead {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 4px 8px;
+  }
+  .gname {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .goffer {
+    font-size: 12px;
+  }
+  .gbadge {
+    margin-left: auto;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+  }
+  .gbadge.dim {
+    color: var(--text-dim);
+  }
+  .gbadge.warn {
+    color: var(--state-pending);
+    border-color: var(--state-pending);
+  }
+  .gbadge.danger {
+    color: var(--state-danger);
+    border-color: var(--state-danger);
   }
   ul {
     list-style: none;

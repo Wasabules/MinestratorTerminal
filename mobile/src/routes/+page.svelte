@@ -6,9 +6,9 @@
   import ServersList from "$lib/components/ServersList.svelte";
   import ServerView from "$lib/components/ServerView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
-  import type { ServerListItem } from "$lib/types";
+  import type { MyBoxSummary, ServerListItem } from "$lib/types";
 
-  let selected = $state<ServerListItem | null>(null);
+  let selected = $state<{ server: ServerListItem; box: MyBoxSummary | null } | null>(null);
   let showSettings = $state(false);
 
   // Thème : applique au boot + suit le système quand le préréglage est "system".
@@ -44,9 +44,12 @@
 {:else if showSettings}
   <SettingsView onBack={() => (showSettings = false)} />
 {:else if selected}
-  <ServerView server={selected} onBack={() => (selected = null)} />
+  <ServerView server={selected.server} mybox={selected.box} onBack={() => (selected = null)} />
 {:else}
-  <ServersList onOpen={(s) => (selected = s)} onSettings={() => (showSettings = true)} />
+  <ServersList
+    onOpen={(s, box) => (selected = { server: s, box })}
+    onSettings={() => (showSettings = true)}
+  />
 {/if}
 
 <style>

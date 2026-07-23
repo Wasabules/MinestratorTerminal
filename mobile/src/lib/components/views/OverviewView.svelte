@@ -2,9 +2,15 @@
   import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
   import Icon from "../Icon.svelte";
-  import type { ConsoleStats, LiveLight, PowerAction } from "../../types";
+  import type { ConsoleStats, LiveLight, MyBoxSummary, PowerAction, ServerListItem } from "../../types";
 
-  let { serverId }: { serverId: number } = $props();
+  let {
+    server,
+    mybox,
+    active,
+  }: { server: ServerListItem; mybox: MyBoxSummary | null; active: boolean } = $props();
+
+  const serverId = $derived(server.id);
 
   let live = $state<LiveLight | null>(null);
   let stats = $state<ConsoleStats | null>(null);
@@ -43,7 +49,6 @@
     }
   }
 
-  // --- Helpers d'affichage ---
   function statusColor(s: string | null): string {
     switch (s) {
       case "running":
@@ -56,9 +61,8 @@
     }
   }
   function statusLabel(s: string | null): string {
-    return t(`status.${s ?? "unknown"}`) !== `status.${s ?? "unknown"}`
-      ? t(`status.${s ?? "unknown"}`)
-      : t("status.unknown");
+    const k = `status.${s ?? "unknown"}`;
+    return t(k) !== k ? t(k) : t("status.unknown");
   }
   function gaugeColor(pct: number): string {
     if (pct >= 90) return "var(--state-danger)";
@@ -68,55 +72,41 @@
   function fmtBytes(n: number): string {
     if (n <= 0) return "0";
     const gb = n / 1024 ** 3;
-    if (gb >= 1) return `${gb.toFixed(1)} Go`;
-    return `${Math.round(n / 1024 ** 2)} Mo`;
+    return gb >= 1 ? `${gb.toFixed(1)} Go` : `${Math.round(n / 1024 ** 2)} Mo`;
   }
-  function clampPct(n: number): number {
-    return Math.max(0, Math.min(100, n));
+  function fmtUptime(ms: number | undefined): string {
+    if (!ms || ms <= 0) return "—";
+    const s = Math.floor(ms / 1000);
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d) return `${d}j ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m}m`;
   }
+  const clamp = (n: number) => Math.max(0, Math.min(100, n));
 
-  // Valeurs dérivées (0 si hors ligne).
   const cpuLimit = $derived(live ? Math.max(live.cpu.dedicated + live.cpu.flexcore, 100) : 100);
   const cpuVal = $derived(stats?.cpu_absolute ?? 0);
-  const cpuPct = $derived(clampPct((cpuVal / cpuLimit) * 100));
-
   const memUsed = $derived(stats?.memory_bytes ?? 0);
   const memLimit = $derived(
     stats?.memory_limit_bytes && stats.memory_limit_bytes > 0
       ? stats.memory_limit_bytes
       : (live?.memory.limit ?? 0) * 1024 ** 2,
   );
-  const memPct = $derived(memLimit > 0 ? clampPct((memUsed / memLimit) * 100) : 0);
-
   const diskUsed = $derived(stats?.disk_bytes ?? 0);
   const diskLimit = $derived((live?.disk.limit ?? 0) * 1024 ** 2);
-  const diskPct = $derived(diskLimit > 0 ? clampPct((diskUsed / diskLimit) * 100) : 0);
-
-  $effect(() => {
-    refreshLive();
-    refreshStats();
-    const a = setInterval(refreshLive, 8000);
-    const b = setInterval(refreshStats, 4000);
-    return () => {
-      clearInterval(a);
-      clearInterval(b);
-    };
-  });
 
   const gauges = $derived([
-    {
-      key: "overview.cpu",
-      pct: cpuPct,
-      value: `${cpuVal.toFixed(0)}%`,
-    },
+    { key: "overview.cpu", pct: clamp((cpuVal / cpuLimit) * 100), value: `${cpuVal.toFixed(0)}%` },
     {
       key: "overview.ram",
-      pct: memPct,
+      pct: memLimit > 0 ? clamp((memUsed / memLimit) * 100) : 0,
       value: memLimit > 0 ? `${fmtBytes(memUsed)} / ${fmtBytes(memLimit)}` : "—",
     },
     {
       key: "overview.disk",
-      pct: diskPct,
+      pct: diskLimit > 0 ? clamp((diskUsed / diskLimit) * 100) : 0,
       value: diskLimit > 0 ? `${fmtBytes(diskUsed)} / ${fmtBytes(diskLimit)}` : "—",
     },
   ]);
@@ -127,17 +117,30 @@
     { action: "stop", key: "power.stop", icon: "stop", kind: "warn" },
     { action: "kill", key: "power.kill", icon: "kill", kind: "danger" },
   ];
+
+  // Poll seulement quand l'onglet est actif (pager).
+  $effect(() => {
+    if (!active) return;
+    refreshLive();
+    refreshStats();
+    const a = setInterval(refreshLive, 8000);
+    const b = setInterval(refreshStats, 4000);
+    return () => {
+      clearInterval(a);
+      clearInterval(b);
+    };
+  });
 </script>
 
 <div class="view">
   {#if error}<p class="err selectable">{error}</p>{/if}
 
-  <!-- Statut -->
+  <!-- Statut + MyBox -->
   <div class="status">
     <span class="dot" style="background:{statusColor(live?.status ?? null)}"></span>
     <span class="slabel">{statusLabel(live?.status ?? null)}</span>
-    {#if live?.players}
-      <span class="pill selectable">{live.players.current}/{live.players.limit} joueurs</span>
+    {#if mybox}
+      <span class="pill selectable">{mybox.offer} · {mybox.days_left} j</span>
     {/if}
   </div>
 
@@ -149,14 +152,12 @@
           <span class="gname">{t(g.key)}</span>
           <span class="gval selectable">{g.value}</span>
         </div>
-        <div class="track">
-          <div class="fill" style="width:{g.pct}%; background:{gaugeColor(g.pct)}"></div>
-        </div>
+        <div class="track"><div class="fill" style="width:{g.pct}%; background:{gaugeColor(g.pct)}"></div></div>
       </div>
     {/each}
   </div>
 
-  <!-- Infos -->
+  <!-- Infos serveur -->
   <div class="tiles">
     <div class="tile">
       <small>{t("overview.version")}</small>
@@ -164,11 +165,34 @@
     </div>
     <div class="tile">
       <small>{t("overview.players")}</small>
-      <strong class="selectable">
-        {live?.players ? `${live.players.current}/${live.players.limit}` : "—"}
-      </strong>
+      <strong class="selectable">{live?.players ? `${live.players.current}/${live.players.limit}` : "—"}</strong>
+    </div>
+    <div class="tile">
+      <small>{t("overview.uptime")}</small>
+      <strong class="selectable">{fmtUptime(stats?.uptime)}</strong>
+    </div>
+    <div class="tile">
+      <small>Jeu</small>
+      <strong class="selectable">{server.egg_name}</strong>
     </div>
   </div>
+
+  <!-- Connexion -->
+  <div class="conn">
+    <small>Connexion</small>
+    <span class="addr selectable">{live?.hostname || server.address}</span>
+  </div>
+
+  {#if live?.players && live.players.list.length > 0}
+    <div class="online">
+      <small>{t("players.online")}</small>
+      <div class="chips">
+        {#each live.players.list.slice(0, 12) as p (p)}
+          <span class="chip selectable">{p}</span>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if live?.motd}
     <p class="motd selectable">{live.motd}</p>
@@ -190,7 +214,7 @@
     padding: 16px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 16px;
   }
   .status {
     display: flex;
@@ -276,7 +300,49 @@
     font-size: 12px;
   }
   .tile strong {
-    font-size: 18px;
+    font-size: 17px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .conn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .conn small {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .addr {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    word-break: break-all;
+  }
+  .online {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .online small {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .chip {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 12px;
   }
   .motd {
     margin: 0;
