@@ -42,6 +42,15 @@ Le crate `mobile/src-tauri` est membre du workspace racine (`Cargo.toml`).
 **Vérifié** : `npm run check` (180 fichiers, 0 erreur) · `npm run build` (adapter-static) ·
 `cargo check -p minestrator-terminal-mobile` (host, OK).
 
+## Personnalisations de `gen/android` (à re-appliquer après un `tauri android init`)
+
+`gen/android` est **généré** (gitignoré). Après un `init` (re)génération, ré-appliquer :
+
+- **Clavier** : `android:windowSoftInputMode="adjustResize"` sur l'activité `.MainActivity`
+  (`app/src/main/AndroidManifest.xml`) — pour que la zone de saisie de la console remonte
+  au-dessus du clavier.
+- **Push FCM** (à venir) : `google-services.json` + `FirebaseMessagingService`, cf. [`../docs/PUSH.md`](../docs/PUSH.md).
+
 ## Lancer (Android)
 
 Prérequis : **Android SDK + NDK**, un `ANDROID_HOME`/`NDK_HOME` configurés, et un

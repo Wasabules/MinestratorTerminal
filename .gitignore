@@ -11,9 +11,11 @@ vite.config.ts.timestamp-*
 
 # --- Build Rust / Tauri ---
 /target
-# Cibles et schémas Tauri générés, quelle que soit l'app (desktop/ ou mobile/)
+# Cibles Tauri générées, quelle que soit l'app (desktop/ ou mobile/)
 **/src-tauri/target
-**/src-tauri/gen/schemas
+# Projets mobiles générés par Tauri (android/apple) + schémas de capabilities.
+# Personnalisations à re-appliquer après un `tauri android init` : voir mobile/README.md.
+**/src-tauri/gen/
 
 # --- Environnement / secrets ---
 .env
