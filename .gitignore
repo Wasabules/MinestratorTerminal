@@ -36,9 +36,12 @@ vite.config.ts.timestamp-*
 MCP_MINESTRATOR.txt
 message(1).txt
 
-# --- Clés de signature de l'updater (JAMAIS dans le dépôt) ---
+# --- Clés de signature (JAMAIS dans le dépôt) : updater + keystore Android ---
 *.key
 *.pem
+*.jks
+*.keystore
+*.b64
 
 # --- OS / éditeurs / divers ---
 .DS_Store
