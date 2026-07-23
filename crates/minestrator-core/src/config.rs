@@ -12,6 +12,8 @@ pub const WS_ORIGIN: &str = "https://minestrator.com";
 
 pub const USER_AGENT: &str = concat!("MinestratorCore/", env!("CARGO_PKG_VERSION"));
 
+// Sur Android, le backend secrets est fichier (pas de `keyring`) → cette constante n'y sert pas.
+#[cfg_attr(target_os = "android", allow(dead_code))]
 pub const KEYRING_SERVICE: &str = "MinestratorTerminal";
 pub const KEYRING_ACCOUNT: &str = "api-key";
 /// Préfixe de compte trousseau pour les clés LLM du Copilote (une par fournisseur :
