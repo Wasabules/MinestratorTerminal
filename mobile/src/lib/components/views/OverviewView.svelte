@@ -16,6 +16,17 @@
   let stats = $state<ConsoleStats | null>(null);
   let error = $state<string | null>(null);
   let busy = $state<PowerAction | null>(null);
+  let copied = $state(false);
+
+  async function copyAddr() {
+    try {
+      await navigator.clipboard.writeText(server.address);
+      copied = true;
+      setTimeout(() => (copied = false), 1200);
+    } catch {
+      /* presse-papiers indispo : le texte reste sélectionnable */
+    }
+  }
 
   async function refreshLive() {
     try {
@@ -179,8 +190,13 @@
 
   <!-- Connexion -->
   <div class="conn">
-    <small>Connexion</small>
-    <span class="addr selectable">{live?.hostname || server.address}</span>
+    <div class="conncol">
+      <small>Connexion</small>
+      <span class="addr selectable">{server.address}</span>
+    </div>
+    <button class="copybtn" onclick={copyAddr} aria-label="Copier">
+      <Icon name={copied ? "check" : "copy"} size={18} />
+    </button>
   </div>
 
   {#if live?.players && live.players.list.length > 0}
@@ -311,12 +327,31 @@
     border-radius: var(--radius);
     padding: 14px;
     display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+  .conncol {
+    flex: 1;
+    display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
   }
   .conn small {
     color: var(--text-dim);
     font-size: 12px;
+  }
+  .copybtn {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    flex: none;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
   }
   .addr {
     font-family: var(--font-mono);

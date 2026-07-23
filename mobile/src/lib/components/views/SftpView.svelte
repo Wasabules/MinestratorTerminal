@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
+  import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
   import CodeEditor from "../CodeEditor.svelte";
   import type { SftpEntry } from "../../types";
@@ -15,7 +16,15 @@
   let notice = $state<string | null>(null);
 
   // Éditeur de fichier (overlay).
-  let opened = $state<{ path: string; name: string; content: string; dirty: boolean; saving: boolean } | null>(null);
+  let opened = $state<{
+    path: string;
+    name: string;
+    content: string;
+    dirty: boolean;
+    saving: boolean;
+    readonly: boolean;
+  } | null>(null);
+  let editor: CodeEditor | undefined = $state();
   // Feuille d'actions pour une entrée.
   let actionFor = $state<SftpEntry | null>(null);
   // Modale de saisie / confirmation.
@@ -62,9 +71,12 @@
       cd(entry.path);
       return;
     }
+    const isGz = entry.name.toLowerCase().endsWith(".gz");
     try {
-      const content = await api.sftpReadText(serverId, entry.path);
-      opened = { path: entry.path, name: entry.name, content, dirty: false, saving: false };
+      const content = isGz
+        ? await api.sftpGzText(serverId, entry.path)
+        : await api.sftpReadText(serverId, entry.path);
+      opened = { path: entry.path, name: entry.name, content, dirty: false, saving: false, readonly: isGz };
     } catch {
       error = t("files.binary");
     }
@@ -156,12 +168,13 @@
 {#if actionFor}
   <div
     class="scrim"
+    use:portal
     role="button"
     tabindex="-1"
     onclick={() => (actionFor = null)}
     onkeydown={(e) => e.key === "Escape" && (actionFor = null)}
   ></div>
-  <div class="sheet">
+  <div class="sheet" use:portal>
     <div class="sheet-title selectable">{actionFor.name}</div>
     <button
       onclick={() => {
@@ -185,8 +198,8 @@
 
 <!-- Modale saisie / confirmation -->
 {#if modal}
-  <div class="scrim" role="button" tabindex="-1" onclick={() => (modal = null)} onkeydown={() => {}}></div>
-  <div class="dialog">
+  <div class="scrim" use:portal role="button" tabindex="-1" onclick={() => (modal = null)} onkeydown={() => {}}></div>
+  <div class="dialog" use:portal>
     {#if modal.kind === "delete"}
       <p class="dlg-title">{t("files.confirmDelete")} « {modal.target?.name} » ?</p>
       <div class="dlg-actions">
@@ -215,18 +228,26 @@
 
 <!-- Éditeur de fichier -->
 {#if opened}
-  <div class="editor">
+  <div class="editor" use:portal>
     <header>
       <button class="ic" onclick={() => (opened = null)} aria-label="Fermer"><Icon name="back" size={20} /></button>
       <span class="ename selectable">{opened.name}{opened.dirty ? " •" : ""}</span>
-      <button class="save" disabled={opened.saving} onclick={save}>
-        <Icon name="save" size={16} /> {t("files.save")}
+      {#if opened.readonly}<span class="ro">lecture seule</span>{/if}
+      <button class="ic" onclick={() => editor?.openSearch()} aria-label="Rechercher">
+        <Icon name="search" size={18} />
       </button>
+      {#if opened.dirty && !opened.readonly}
+        <button class="ic save" disabled={opened.saving} onclick={save} aria-label={t("files.save")}>
+          <Icon name="save" size={18} />
+        </button>
+      {/if}
     </header>
     <div class="edwrap">
       <CodeEditor
+        bind:this={editor}
         value={opened.content}
         filename={opened.name}
+        readOnly={opened.readonly}
         onChange={(v) => {
           if (opened) {
             opened.content = v;
@@ -463,16 +484,18 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .ro {
+    flex: none;
+    font-size: 11px;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
   .save {
-    display: flex;
-    align-items: center;
-    gap: 6px;
     background: var(--brand-primary);
     color: #fff;
-    border: none;
-    border-radius: var(--radius-sm);
-    padding: 9px 14px;
-    font-weight: 600;
+    border-color: transparent;
   }
   .save:disabled {
     opacity: 0.5;

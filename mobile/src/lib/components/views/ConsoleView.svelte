@@ -2,7 +2,7 @@
   import { api, humanizeError } from "../../ipc";
   import { consoleEvents } from "../../events";
   import { t } from "../../i18n";
-  import { suggest } from "../../mcCommands";
+  import { suggest, recordUsage } from "../../mcCommands";
   import Icon from "../Icon.svelte";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -19,6 +19,17 @@
   let error = $state<string | null>(null);
   let logEl: HTMLDivElement | null = $state(null);
   let inputEl: HTMLInputElement | null = $state(null);
+  let atBottom = $state(true);
+
+  function onScroll() {
+    if (logEl) atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 40;
+  }
+  function scrollToBottom() {
+    if (logEl) {
+      logEl.scrollTop = logEl.scrollHeight;
+      atBottom = true;
+    }
+  }
 
   let fontSize = $state(clampFont(Number(readLS("console.font")) || 12));
   let filter = $state<"all" | "warn" | "error">("all");
@@ -77,6 +88,7 @@
     const cmd = input.trim();
     if (cmd === "") return;
     input = "";
+    recordUsage(cmd);
     try {
       await api.sendCommand(serverId, cmd);
     } catch (err) {
@@ -138,10 +150,11 @@
     };
   });
 
-  // Auto-scroll en bas à chaque nouvelle ligne (si non filtré activement).
+  // Auto-scroll en bas à chaque nouvelle ligne — SEULEMENT si on est déjà en bas
+  // (ne pas arracher l'utilisateur qui a scrollé vers le haut pour lire).
   $effect(() => {
     void filtered.length;
-    if (logEl) logEl.scrollTop = logEl.scrollHeight;
+    if (logEl && atBottom) logEl.scrollTop = logEl.scrollHeight;
   });
 </script>
 
@@ -183,12 +196,19 @@
     </div>
   </header>
 
-  <div class="log selectable" bind:this={logEl} style="font-size:{fontSize}px">
-    {#each filtered as line, i (i)}
-      <div class="line {level(line)}">{line}</div>
-    {/each}
-    {#if filtered.length === 0}
-      <div class="dim">{phase === "open" ? "—" : t("console.connecting")}</div>
+  <div class="logwrap">
+    <div class="log selectable" bind:this={logEl} onscroll={onScroll} style="font-size:{fontSize}px">
+      {#each filtered as line, i (i)}
+        <div class="line {level(line)}">{line}</div>
+      {/each}
+      {#if filtered.length === 0}
+        <div class="dim">{phase === "open" ? "—" : t("console.connecting")}</div>
+      {/if}
+    </div>
+    {#if !atBottom}
+      <button class="tobottom" onclick={scrollToBottom} aria-label="Revenir en bas">
+        <Icon name="chevronDown" size={22} />
+      </button>
     {/if}
   </div>
 
@@ -300,6 +320,13 @@
     color: var(--brand-primary);
     font-weight: 600;
   }
+  .logwrap {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
   .log {
     flex: 1;
     overflow-y: auto;
@@ -308,6 +335,21 @@
     line-height: 1.5;
     background: #0d1114;
     -webkit-overflow-scrolling: touch;
+  }
+  .tobottom {
+    position: absolute;
+    right: 12px;
+    bottom: 12px;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--brand-primary);
+    color: #fff;
+    border: none;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    z-index: 5;
   }
   .line {
     white-space: pre-wrap;

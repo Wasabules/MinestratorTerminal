@@ -84,6 +84,13 @@ pub fn run() {
             commands::sftp_mkdir,
             commands::sftp_delete,
             commands::sftp_rename,
+            commands::sftp_gz_text,
+            commands::list_backups,
+            commands::restore_backup,
+            commands::list_snapshots,
+            commands::create_snapshot,
+            commands::restore_snapshot,
+            commands::delete_snapshot,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri (mobile)");

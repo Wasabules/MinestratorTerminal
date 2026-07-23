@@ -3,8 +3,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    ConsoleStats, Core, Error, LiveLight, MetricSample, ServerDetails, ServersOverview, SftpEntry,
-    UserProfile,
+    Backup, ConsoleStats, Core, Error, LiveLight, MetricSample, ServerDetails, ServersOverview,
+    SftpEntry, Snapshot, UserProfile,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -178,4 +178,58 @@ pub async fn sftp_rename(
     to: String,
 ) -> Result<(), Error> {
     core.sftp_rename(server_id, &from, &to).await
+}
+
+/// Lecture d'un fichier `.gz` (log) décompressé en texte — lecture seule côté UI.
+#[tauri::command]
+pub async fn sftp_gz_text(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_gz_text(server_id, &path).await
+}
+
+// --- Sauvegardes : backups quotidiens & snapshots à la demande -------------
+
+#[tauri::command]
+pub async fn list_backups(core: State<'_, Arc<Core>>, id: i64) -> Result<Vec<Backup>, Error> {
+    core.list_backups(id).await
+}
+
+#[tauri::command]
+pub async fn restore_backup(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    backup_id: i64,
+) -> Result<(), Error> {
+    core.restore_backup(server_id, backup_id).await
+}
+
+#[tauri::command]
+pub async fn list_snapshots(core: State<'_, Arc<Core>>) -> Result<Vec<Snapshot>, Error> {
+    core.list_snapshots().await
+}
+
+#[tauri::command]
+pub async fn create_snapshot(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    name: String,
+) -> Result<i64, Error> {
+    core.create_snapshot(server_id, &name).await
+}
+
+#[tauri::command]
+pub async fn restore_snapshot(
+    core: State<'_, Arc<Core>>,
+    snapshot_id: i64,
+    server_id: i64,
+) -> Result<i64, Error> {
+    core.restore_snapshot(snapshot_id, server_id).await
+}
+
+#[tauri::command]
+pub async fn delete_snapshot(core: State<'_, Arc<Core>>, snapshot_id: i64) -> Result<i64, Error> {
+    core.delete_snapshot(snapshot_id).await
 }

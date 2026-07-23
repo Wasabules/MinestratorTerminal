@@ -8,6 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type {
   AppError,
+  Backup,
   ConsoleStats,
   LiveLight,
   MetricSample,
@@ -16,6 +17,7 @@ import type {
   ServerDetails,
   ServersOverview,
   SftpEntry,
+  Snapshot,
   UserProfile,
 } from "./types";
 
@@ -57,6 +59,18 @@ export const api = {
     invoke<void>("sftp_delete", { serverId, path, isDir }),
   sftpRename: (serverId: number, from: string, to: string) =>
     invoke<void>("sftp_rename", { serverId, from, to }),
+  sftpGzText: (serverId: number, path: string) => invoke<string>("sftp_gz_text", { serverId, path }),
+
+  // --- Sauvegardes ---
+  listBackups: (id: number) => invoke<Backup[]>("list_backups", { id }),
+  restoreBackup: (serverId: number, backupId: number) =>
+    invoke<void>("restore_backup", { serverId, backupId }),
+  listSnapshots: () => invoke<Snapshot[]>("list_snapshots"),
+  createSnapshot: (serverId: number, name: string) =>
+    invoke<number>("create_snapshot", { serverId, name }),
+  restoreSnapshot: (snapshotId: number, serverId: number) =>
+    invoke<number>("restore_snapshot", { snapshotId, serverId }),
+  deleteSnapshot: (snapshotId: number) => invoke<number>("delete_snapshot", { snapshotId }),
 };
 
 /** Ouvre une URL dans le navigateur externe (plugin opener). */

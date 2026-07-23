@@ -3,6 +3,7 @@
   import { auth } from "../stores/auth.svelte";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
+  import GameIcon from "./GameIcon.svelte";
   import type { MyBoxSummary, ServerListItem } from "../types";
 
   let {
@@ -125,7 +126,10 @@
           {#each g.servers as s (s.id)}
             <li>
               <button class="row" onclick={() => onOpen(s, g.box)}>
-                <span class="dot" style="background:{statusColor(s.status)}"></span>
+                <span class="ico">
+                  <GameIcon src={s.egg_icon} size={38} />
+                  <span class="dot" style="background:{statusColor(s.status)}"></span>
+                </span>
                 <span class="name">
                   <strong>{s.name}</strong>
                   <small class="dim selectable">{s.egg_name} · {s.address}</small>
@@ -234,11 +238,18 @@
     text-align: left;
     color: var(--text);
   }
-  .dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
+  .ico {
+    position: relative;
     flex: none;
+  }
+  .dot {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
   }
   .name {
     display: flex;

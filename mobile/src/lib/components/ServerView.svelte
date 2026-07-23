@@ -2,10 +2,12 @@
   import { t } from "../i18n";
   import type { MyBoxSummary, ServerListItem } from "../types";
   import BottomNav from "./BottomNav.svelte";
+  import GameIcon from "./GameIcon.svelte";
   import OverviewView from "./views/OverviewView.svelte";
   import ConsoleView from "./views/ConsoleView.svelte";
   import PlayersView from "./views/PlayersView.svelte";
   import SftpView from "./views/SftpView.svelte";
+  import BackupsView from "./views/BackupsView.svelte";
 
   let {
     server,
@@ -13,7 +15,7 @@
     onBack,
   }: { server: ServerListItem; mybox: MyBoxSummary | null; onBack: () => void } = $props();
 
-  const order = ["overview", "console", "players", "files"];
+  const order = ["overview", "console", "players", "files", "backups"];
   let active = $state("overview");
   let navHidden = $state(false);
   const idx = $derived(order.indexOf(active));
@@ -23,6 +25,7 @@
     { id: "console", label: t("nav.console"), icon: "console" },
     { id: "players", label: t("nav.players"), icon: "players" },
     { id: "files", label: t("nav.files"), icon: "files" },
+    { id: "backups", label: t("nav.backups"), icon: "archive" },
   ];
 
   function goto(id: string) {
@@ -56,6 +59,7 @@
 <div class="shell">
   <header class="bar">
     <button class="back" onclick={onBack} aria-label="Retour">‹</button>
+    <GameIcon src={server.egg_icon} size={26} />
     <span class="title selectable">{server.name}</span>
   </header>
 
@@ -82,6 +86,9 @@
       </section>
       <section class="page">
         <SftpView serverId={server.id} active={active === "files"} />
+      </section>
+      <section class="page">
+        <BackupsView serverId={server.id} active={active === "backups"} />
       </section>
     </div>
   </div>

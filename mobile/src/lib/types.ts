@@ -89,6 +89,19 @@ export interface SftpEntry {
   modified: number | null;
 }
 
+export interface Backup {
+  id: number;
+  size: number;
+  date: string;
+}
+export interface Snapshot {
+  id: number;
+  name: string;
+  kind: string;
+  size: number;
+  date: string;
+}
+
 export type PowerAction = "start" | "restart" | "stop" | "kill";
 export type PlayerAction =
   | "kick"
