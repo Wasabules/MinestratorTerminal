@@ -7,6 +7,7 @@
   let info = $state<UpdateInfo | null>(null);
   let phase = $state<"idle" | "downloading" | "error">("idle");
   let dismissed = $state(false);
+  let errMsg = $state(""); // diagnostic temporaire : quelle étape + message
 
   async function check() {
     try {
@@ -19,11 +20,20 @@
   async function update() {
     if (!info || phase === "downloading") return;
     phase = "downloading";
+    errMsg = "";
+    let path = "";
     try {
-      const path = await api.downloadUpdate(info.apk_url);
+      path = await api.downloadUpdate(info.apk_url);
+    } catch (e) {
+      errMsg = "DL: " + String((e as { message?: string })?.message ?? e);
+      phase = "error";
+      return;
+    }
+    try {
       await api.installApk(path); // installeur système Android
       phase = "idle";
-    } catch {
+    } catch (e) {
+      errMsg = "INSTALL: " + String((e as { message?: string })?.message ?? e);
       phase = "error";
     }
   }
@@ -37,7 +47,7 @@
   <div class="banner">
     <div class="txt">
       <strong>{t("update.available")} {info.version}</strong>
-      {#if phase === "error"}<small class="err">{t("update.error")}</small>{/if}
+      {#if phase === "error"}<small class="err selectable">{errMsg || t("update.error")}</small>{/if}
     </div>
     <button class="go" onclick={update} disabled={phase === "downloading"}>
       {#if phase === "downloading"}

@@ -11,6 +11,7 @@
 //! - **alertes app fermée** : le superviseur de fond n'existe pas sur mobile → daemon + push
 //!   FCM (cf. `crates/minestrator-daemon` et `docs/PUSH.md`).
 
+mod apk_installer;
 mod commands;
 mod update;
 
@@ -27,6 +28,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(apk_installer::init())
         .setup(|app| {
             // 1. Dossier de données privé de l'app → env, AVANT de créer le Core.
             //    C'est là que le Core écrit ses secrets (Android) et son SQLite de métriques.
@@ -94,6 +96,7 @@ pub fn run() {
             commands::delete_snapshot,
             update::check_update,
             update::download_update,
+            apk_installer::install_apk,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri (mobile)");

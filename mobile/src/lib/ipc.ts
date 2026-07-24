@@ -4,7 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl, openPath } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type {
   AppError,
@@ -76,8 +76,8 @@ export const api = {
   // --- Auto-update (mobile) ---
   checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
   downloadUpdate: (url: string) => invoke<string>("download_update", { url }),
-  /** Lance l'installeur système Android sur l'APK téléchargé. */
-  installApk: (path: string) => openPath(path),
+  /** Lance l'installeur système Android sur l'APK téléchargé (commande JNI native). */
+  installApk: (path: string) => invoke<void>("install_apk", { path }),
 };
 
 /** Ouvre une URL dans le navigateur externe (plugin opener). */
