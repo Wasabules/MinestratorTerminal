@@ -92,8 +92,11 @@ jobs:
           args: ${{ matrix.args }}
 
   # --- App mobile Android : APK signé, attaché à la même release ---
+  # `if: always()` → l'APK est produit même si un build desktop échoue (ex. course sur
+  # latest.json de tauri-action) ; `needs` ne sert qu'à l'ordre (la release existe déjà).
   android:
     needs: release
+    if: ${{ always() }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -159,6 +162,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # La release draft est normalement créée par le job desktop ; sinon on la crée.
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --draft --title "Minestrator Terminal $GITHUB_REF_NAME" --notes "Release."
           echo "APK produits :"
           find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -printf '  %s\t%p\n' || true
           # APK signé (release) — `*-release.apk` exclut le `*-release-unsigned.apk`.
