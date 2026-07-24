@@ -89,6 +89,12 @@ export interface SftpEntry {
   modified: number | null;
 }
 
+export interface UpdateInfo {
+  version: string;
+  notes: string;
+  apk_url: string;
+}
+
 export interface Backup {
   id: number;
   size: number;

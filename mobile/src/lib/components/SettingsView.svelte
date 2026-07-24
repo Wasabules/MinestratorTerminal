@@ -1,18 +1,45 @@
 <script lang="ts">
   import { getVersion } from "@tauri-apps/api/app";
   import { settings, type ThemePref, type LangPref } from "../stores/settings.svelte";
-  import { openExternal } from "../ipc";
+  import { api, openExternal } from "../ipc";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
+  import type { UpdateInfo } from "../types";
 
   let { onBack }: { onBack: () => void } = $props();
 
-  let version = $state("0.3.2");
+  let version = $state("0.4.0");
   $effect(() => {
     getVersion()
       .then((v) => (version = v))
       .catch(() => {});
   });
+
+  // Recherche manuelle de MAJ.
+  let upd = $state<"idle" | "checking" | "uptodate" | "downloading">("idle");
+  let updInfo = $state<UpdateInfo | null>(null);
+
+  async function checkUpdate() {
+    upd = "checking";
+    updInfo = null;
+    try {
+      updInfo = await api.checkUpdate();
+      upd = updInfo ? "idle" : "uptodate";
+    } catch {
+      upd = "uptodate";
+    }
+  }
+  async function doUpdate() {
+    if (!updInfo) return;
+    upd = "downloading";
+    try {
+      const path = await api.downloadUpdate(updInfo.apk_url);
+      await api.installApk(path);
+      upd = "idle";
+    } catch {
+      upd = "idle";
+    }
+  }
 
   const themeOpts: { val: ThemePref; key: string }[] = [
     { val: "system", key: "settings.system" },
@@ -63,6 +90,24 @@
         <span>{t("settings.version")}</span>
         <span class="dim selectable">v{version}</span>
       </div>
+      <button
+        class="link"
+        onclick={checkUpdate}
+        disabled={upd === "checking" || upd === "downloading"}
+      >
+        <Icon name="refresh" size={16} />
+        {upd === "checking"
+          ? t("settings.checking")
+          : upd === "uptodate"
+            ? t("settings.upToDate")
+            : t("settings.checkUpdate")}
+      </button>
+      {#if updInfo}
+        <button class="update" onclick={doUpdate} disabled={upd === "downloading"}>
+          <Icon name="chevronDown" size={16} />
+          {upd === "downloading" ? t("update.downloading") : `${t("update.now")} → ${updInfo.version}`}
+        </button>
+      {/if}
       <button class="link" onclick={() => openExternal("https://minestrator.com").catch(() => {})}>
         <Icon name="external" size={16} /> {t("settings.website")}
       </button>
@@ -156,6 +201,25 @@
     color: var(--brand-primary);
     padding: 8px 2px;
     font-size: 15px;
+  }
+  .link:disabled {
+    opacity: 0.6;
+  }
+  .update {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: var(--brand-primary);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .update:disabled {
+    opacity: 0.6;
   }
   .about {
     margin: 4px 2px 0;

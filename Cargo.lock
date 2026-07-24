@@ -2680,6 +2680,8 @@ name = "minestrator-terminal-mobile"
 version = "0.4.0"
 dependencies = [
  "minestrator-core",
+ "reqwest 0.12.28",
+ "serde",
  "serde_json",
  "tauri",
  "tauri-build",

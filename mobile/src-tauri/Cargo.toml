@@ -27,7 +27,11 @@ minestrator-core = { path = "../../crates/minestrator-core" }
 
 # Relais des CoreEvent (broadcast) vers le webview.
 tokio = { version = "1", features = ["sync", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Auto-update mobile : check via l'API GitHub Releases + téléchargement de l'APK (rustls).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

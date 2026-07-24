@@ -6,6 +6,7 @@
   import ServersList from "$lib/components/ServersList.svelte";
   import ServerView from "$lib/components/ServerView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
+  import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import type { MyBoxSummary, ServerListItem } from "$lib/types";
 
   let selected = $state<{ server: ServerListItem; box: MyBoxSummary | null } | null>(null);
@@ -36,6 +37,10 @@
     })();
   });
 </script>
+
+{#if auth.isAuthed}
+  <UpdateBanner />
+{/if}
 
 {#if !auth.booted}
   <div class="splash"><div class="logo"></div></div>

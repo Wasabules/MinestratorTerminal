@@ -104,6 +104,15 @@ const fr: Dict = {
   "settings.english": "English",
   "settings.about": "Client tiers de l'API MineStrator.",
   "settings.website": "Site MineStrator",
+  "settings.checkUpdate": "Rechercher des mises à jour",
+  "settings.checking": "Recherche…",
+  "settings.upToDate": "À jour.",
+
+  "update.available": "Nouvelle version",
+  "update.now": "Mettre à jour",
+  "update.downloading": "Téléchargement…",
+  "update.error": "Échec — réessaie plus tard.",
+  "update.later": "Plus tard",
 
   "error.generic": "Une erreur est survenue.",
   "error.unauthorized": "Clé API invalide ou expirée.",

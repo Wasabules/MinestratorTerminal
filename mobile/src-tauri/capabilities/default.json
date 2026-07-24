@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Permissions de l'app mobile (webview principale)",
   "windows": ["main"],
-  "permissions": ["core:default", "core:app:default", "notification:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "core:app:default",
+    "notification:default",
+    "opener:default",
+    "opener:allow-open-path"
+  ]
 }

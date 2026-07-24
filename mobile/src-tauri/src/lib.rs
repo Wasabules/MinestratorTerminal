@@ -12,6 +12,7 @@
 //!   FCM (cf. `crates/minestrator-daemon` et `docs/PUSH.md`).
 
 mod commands;
+mod update;
 
 use minestrator_core::{Core, CoreEvent};
 use std::sync::Arc;
@@ -91,6 +92,8 @@ pub fn run() {
             commands::create_snapshot,
             commands::restore_snapshot,
             commands::delete_snapshot,
+            update::check_update,
+            update::download_update,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri (mobile)");

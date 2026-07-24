@@ -4,7 +4,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl, openPath } from "@tauri-apps/plugin-opener";
 import { t } from "./i18n";
 import type {
   AppError,
@@ -18,6 +18,7 @@ import type {
   ServersOverview,
   SftpEntry,
   Snapshot,
+  UpdateInfo,
   UserProfile,
 } from "./types";
 
@@ -71,6 +72,12 @@ export const api = {
   restoreSnapshot: (snapshotId: number, serverId: number) =>
     invoke<number>("restore_snapshot", { snapshotId, serverId }),
   deleteSnapshot: (snapshotId: number) => invoke<number>("delete_snapshot", { snapshotId }),
+
+  // --- Auto-update (mobile) ---
+  checkUpdate: () => invoke<UpdateInfo | null>("check_update"),
+  downloadUpdate: (url: string) => invoke<string>("download_update", { url }),
+  /** Lance l'installeur système Android sur l'APK téléchargé. */
+  installApk: (path: string) => openPath(path),
 };
 
 /** Ouvre une URL dans le navigateur externe (plugin opener). */
