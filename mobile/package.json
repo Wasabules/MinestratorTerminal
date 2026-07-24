@@ -1,6 +1,6 @@
 {
   "name": "minestrator-terminal-mobile",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "App mobile (Android/iOS) pour piloter ses serveurs Minecraft via l'API MineStrator",
   "type": "module",
   "scripts": {
