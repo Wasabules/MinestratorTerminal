@@ -5,10 +5,41 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
 ![Tauri](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Svelte](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-stable-000000?logo=rust&logoColor=white)
-![Platforms](https://img.shields.io/badge/platforms-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
+![Platforms](https://img.shields.io/badge/desktop-Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-555)
+![Mobile](https://img.shields.io/badge/mobile-Android-3DDC84?logo=android&logoColor=white)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 
-> Windows · macOS · Linux — la clé API est stockée dans le **trousseau natif** de l'OS, aucun secret en clair. **Mise à jour automatique** signée intégrée.
+> **Desktop** (Windows · macOS · Linux) **+ app mobile Android**, sur le même cœur Rust. La clé API vit dans le stockage sécurisé de l'OS ; mise à jour automatique intégrée (desktop signée, mobile via l'API GitHub Releases).
+
+---
+
+## 📸 Aperçu
+
+### 🖥️ Desktop — Windows · macOS · Linux
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/desktop-overview.png" alt="Vue d'ensemble" /><br/><sub>Vue d'ensemble — jauges & graphes</sub></td>
+    <td width="50%"><img src="docs/screenshots/desktop-console.png" alt="Console" /><br/><sub>Console temps réel</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/desktop-sftp.png" alt="SFTP" /><br/><sub>SFTP & éditeur</sub></td>
+    <td width="50%"><img src="docs/screenshots/desktop-marketplace.png" alt="Marketplace" /><br/><sub>Marketplace de mods</sub></td>
+  </tr>
+</table>
+
+### 📱 Mobile — Android
+
+<p align="center">
+  <img src="docs/screenshots/mobile-onboarding.png" width="190" alt="Connexion" />&nbsp;
+  <img src="docs/screenshots/mobile-servers.png" width="190" alt="Serveurs (groupés par MyBox)" />&nbsp;
+  <img src="docs/screenshots/mobile-overview.png" width="190" alt="Aperçu — jauges live" />&nbsp;
+  <img src="docs/screenshots/mobile-console.png" width="190" alt="Console" />&nbsp;
+  <img src="docs/screenshots/mobile-files.png" width="190" alt="Fichiers & éditeur" />&nbsp;
+  <img src="docs/screenshots/mobile-settings.png" width="190" alt="Réglages" />
+</p>
+
+> Les cases grises sont des **placeholders** — dépose tes captures dans [`docs/screenshots/`](docs/screenshots/) (garde les mêmes noms). Guide : [`docs/screenshots/README.md`](docs/screenshots/README.md).
 
 ---
 
