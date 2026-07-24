@@ -66,8 +66,8 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-// `keyring` n'existe pas sur Android (backend fichier) → pas de conversion à fournir là-bas.
-#[cfg(not(target_os = "android"))]
+// `keyring` n'existe pas sur mobile (Android/iOS → backend fichier) → pas de conversion là-bas.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl From<keyring::Error> for Error {
     fn from(e: keyring::Error) -> Self {
         Error::Keyring(e.to_string())

@@ -5,6 +5,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { t } from "./i18n";
 import type {
   AppError,
@@ -78,11 +79,39 @@ export const api = {
   downloadUpdate: (url: string) => invoke<string>("download_update", { url }),
   /** Lance l'installeur système Android sur l'APK téléchargé (commande JNI native). */
   installApk: (path: string) => invoke<void>("install_apk", { path }),
+
+  // --- Surveillance en arrière-plan (alertes app fermée) ---
+  /** Démarre/arrête le service au premier plan qui garde la surveillance active app fermée. */
+  setBackgroundMonitoring: (enabled: boolean) =>
+    invoke<void>("set_background_monitoring", { enabled }),
+  /** `true` si l'app est exemptée d'optimisation batterie (peut tourner en arrière-plan). */
+  isBatteryUnrestricted: () => invoke<boolean>("is_battery_unrestricted"),
+  /** Ouvre la boîte de dialogue système pour exempter l'app de l'optimisation batterie. */
+  requestBatteryUnrestricted: () => invoke<void>("request_battery_unrestricted"),
+  /** Ouvre la fiche « infos de l'app » (batterie, autostart selon l'OEM, notifications). */
+  openAppSettings: () => invoke<void>("open_app_settings"),
 };
 
 /** Ouvre une URL dans le navigateur externe (plugin opener). */
 export function openExternal(url: string): Promise<void> {
   return openUrl(url);
+}
+
+/**
+ * S'assure que la permission de notifications est accordée (obligatoire sur Android 13+ :
+ * `POST_NOTIFICATIONS` doit être demandée à l'exécution, sinon les alertes sont bloquées
+ * silencieusement). Ne redemande pas si déjà accordée. Renvoie `true` si autorisé.
+ */
+export async function ensureNotificationPermission(): Promise<boolean> {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      granted = (await requestPermission()) === "granted";
+    }
+    return granted;
+  } catch {
+    return false;
+  }
 }
 
 /** Transforme une erreur du core (`{ kind, message }`) en message lisible/i18n. */

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getVersion } from "@tauri-apps/api/app";
   import { settings, type ThemePref, type LangPref } from "../stores/settings.svelte";
-  import { api, openExternal } from "../ipc";
+  import { api, openExternal, ensureNotificationPermission } from "../ipc";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
   import type { UpdateInfo } from "../types";
@@ -40,6 +40,63 @@
       upd = "idle";
     }
   }
+
+  // Surveillance en arrière-plan (service au premier plan + notif permanente).
+  let bgBusy = $state(false);
+  // Fiabilité anti-kill : `true` si l'app est exemptée d'optimisation batterie, `null` si inconnu.
+  let batteryOk = $state<boolean | null>(null);
+
+  async function checkBattery() {
+    try {
+      batteryOk = await api.isBatteryUnrestricted();
+    } catch {
+      batteryOk = null;
+    }
+  }
+
+  async function allowBattery() {
+    // La boîte de dialogue système ouvre une autre activité ; l'état est revérifié au retour.
+    await api.requestBatteryUnrestricted().catch(() => {});
+  }
+
+  async function toggleBg(on: boolean) {
+    if (bgBusy) return;
+    bgBusy = true;
+    try {
+      if (on) {
+        // 1. Notifications (Android 13+) : sans quoi aucune alerte ne s'affiche.
+        if (!(await ensureNotificationPermission())) {
+          bgBusy = false;
+          return; // permission refusée : on n'active pas
+        }
+        await api.setBackgroundMonitoring(true);
+        settings.setBgMonitoring(true);
+        // 2. Fiabilité : proposer l'exemption batterie si pas déjà accordée.
+        await checkBattery();
+        if (batteryOk === false) await api.requestBatteryUnrestricted().catch(() => {});
+      } else {
+        await api.setBackgroundMonitoring(false);
+        settings.setBgMonitoring(false);
+      }
+    } catch {
+      /* échec natif (ex. desktop) : on garde l'état précédent */
+    } finally {
+      bgBusy = false;
+    }
+  }
+
+  // Vérifie l'état batterie à l'ouverture des réglages + au retour dans l'app (après la boîte de
+  // dialogue système, la valeur a pu changer).
+  $effect(() => {
+    if (!settings.bgMonitoring) return;
+    checkBattery();
+    if (typeof document === "undefined") return;
+    const onVis = () => {
+      if (document.visibilityState === "visible") checkBattery();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  });
 
   const themeOpts: { val: ThemePref; key: string }[] = [
     { val: "system", key: "settings.system" },
@@ -82,6 +139,45 @@
           </button>
         {/each}
       </div>
+    </section>
+
+    <!-- Surveillance en arrière-plan -->
+    <section>
+      <h3>{t("settings.notifications")}</h3>
+      <button
+        class="switchrow"
+        role="switch"
+        aria-checked={settings.bgMonitoring}
+        disabled={bgBusy}
+        onclick={() => toggleBg(!settings.bgMonitoring)}
+      >
+        <span class="switchtxt">
+          <span class="switchlabel">{t("settings.bgMonitoring")}</span>
+          <span class="switchhint">{t("settings.bgMonitoringHint")}</span>
+        </span>
+        <span class="switch" class:on={settings.bgMonitoring}><span class="knob"></span></span>
+      </button>
+
+      {#if settings.bgMonitoring}
+        <!-- Fiabilité anti-kill : exemption batterie + accès aux réglages de l'app. -->
+        <div class="reliability">
+          {#if batteryOk === false}
+            <button class="warnrow" onclick={allowBattery} disabled={bgBusy}>
+              <Icon name="alert" size={18} />
+              <span class="warntxt">
+                <strong>{t("settings.batteryRestricted")}</strong>
+                <small>{t("settings.batteryAllow")}</small>
+              </span>
+              <Icon name="chevronRight" size={16} />
+            </button>
+          {:else if batteryOk === true}
+            <div class="okrow"><Icon name="check" size={16} /> {t("settings.batteryOk")}</div>
+          {/if}
+          <button class="link" onclick={() => api.openAppSettings().catch(() => {})}>
+            <Icon name="settings" size={16} /> {t("settings.appSettings")}
+          </button>
+        </div>
+      {/if}
     </section>
 
     <!-- Version + liens -->
@@ -225,5 +321,105 @@
     margin: 4px 2px 0;
     color: var(--text-dim);
     font-size: 13px;
+  }
+  .switchrow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    color: var(--text);
+  }
+  .switchrow:disabled {
+    opacity: 0.6;
+  }
+  .switchtxt {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+  .switchlabel {
+    font-size: 15px;
+    font-weight: 600;
+  }
+  .switchhint {
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.35;
+  }
+  .switch {
+    flex: none;
+    width: 46px;
+    height: 28px;
+    border-radius: 999px;
+    background: var(--border);
+    position: relative;
+    transition: background 0.18s;
+  }
+  .switch.on {
+    background: var(--brand-primary);
+  }
+  .knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 0.18s;
+  }
+  .switch.on .knob {
+    transform: translateX(18px);
+  }
+  .reliability {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .warnrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    background: color-mix(in srgb, var(--brand-accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--brand-accent) 45%, transparent);
+    border-radius: var(--radius);
+    padding: 11px 12px;
+    color: var(--text);
+  }
+  .warnrow :global(svg:first-child) {
+    color: var(--brand-accent);
+    flex: none;
+  }
+  .warntxt {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .warntxt strong {
+    font-size: 14px;
+  }
+  .warntxt small {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .okrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--brand-primary);
+    font-size: 14px;
+    padding: 4px 2px;
   }
 </style>

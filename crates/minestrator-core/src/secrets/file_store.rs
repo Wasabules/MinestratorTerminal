@@ -1,7 +1,8 @@
-//! Backend de secrets **fichier** (Android) : `keyring` n'a pas de backend Android.
+//! Backend de secrets **fichier** (mobile : Android/iOS) : `keyring` n'a pas de backend mobile.
 //!
 //! Stocke un JSON `{ compte: valeur }` dans le dossier privé de l'app — sandbox par-app,
-//! chiffré au repos par le File-Based Encryption d'Android (lié au verrouillage de l'appareil).
+//! chiffrée au repos (File-Based Encryption sur Android, Data Protection sur iOS ; liée au
+//! verrouillage de l'appareil).
 //! Le dossier vient de `MINESTRATOR_DATA_DIR` (posé par `mobile/src-tauri`) ; repli temporaire.
 //!
 //! Non chargé sur desktop (backend `keyring`), mais compilé partout pour vérification.

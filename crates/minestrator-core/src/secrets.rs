@@ -1,8 +1,9 @@
 //! Stockage des secrets (clé API MineStrator, clés LLM du Copilote, secrets par jeu).
 //!
 //! - **Desktop** (Windows/macOS/Linux) : trousseau natif de l'OS via `keyring`.
-//! - **Android** : `keyring` n'a pas de backend Android → stockage **fichier** dans le dossier
-//!   privé de l'app (sandbox par-app, chiffré au repos par le File-Based Encryption d'Android).
+//! - **Mobile** (Android/iOS) : `keyring` n'a pas de backend mobile → stockage **fichier** dans le
+//!   dossier privé de l'app (sandbox par-app, chiffrée au repos : File-Based Encryption sur Android,
+//!   Data Protection sur iOS).
 //! - **Opt-in fichier (headless)** : sur les autres OS, définir `MINESTRATOR_SECRETS_FILE` force
 //!   le backend fichier — utile pour le **daemon Linux** sans Secret Service/D-Bus.
 //!
@@ -15,8 +16,8 @@ use crate::error::Result;
 // Toujours compilé (donc vérifiable sur host) ; utilisé sur Android et en mode fichier opt-in.
 mod file_store;
 
-/// Backend trousseau natif (desktop). Absent de la cible Android (pas de `keyring`).
-#[cfg(not(target_os = "android"))]
+/// Backend trousseau natif (desktop). Absent des cibles mobiles (pas de `keyring`).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod keyring_store {
     use crate::config::KEYRING_SERVICE;
     use crate::error::{Error, Result};
@@ -45,16 +46,16 @@ mod keyring_store {
 
 // --- Aiguillage du backend (deux définitions cfg-gated, sans ambiguïté) -----
 
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn prefer_file_backend() -> bool {
     std::env::var_os("MINESTRATOR_SECRETS_FILE").is_some()
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn read_account(account: &str) -> Result<Option<String>> {
     file_store::read(account)
 }
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn read_account(account: &str) -> Result<Option<String>> {
     if prefer_file_backend() {
         file_store::read(account)
@@ -63,11 +64,11 @@ fn read_account(account: &str) -> Result<Option<String>> {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn write_account(account: &str, value: &str) -> Result<()> {
     file_store::write(account, value)
 }
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn write_account(account: &str, value: &str) -> Result<()> {
     if prefer_file_backend() {
         file_store::write(account, value)
@@ -76,11 +77,11 @@ fn write_account(account: &str, value: &str) -> Result<()> {
     }
 }
 
-#[cfg(target_os = "android")]
+#[cfg(any(target_os = "android", target_os = "ios"))]
 fn delete_account(account: &str) -> Result<()> {
     file_store::delete(account)
 }
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn delete_account(account: &str) -> Result<()> {
     if prefer_file_backend() {
         file_store::delete(account)

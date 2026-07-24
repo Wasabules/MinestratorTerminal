@@ -1,6 +1,6 @@
 //! Auto-update mobile : compare la version installée à la **dernière release publiée**
 //! (API GitHub Releases) et, si une plus récente porte un APK, permet de la télécharger.
-//! L'installation est ensuite lancée côté JS via le plugin `opener` (installeur système Android).
+//! L'installation est ensuite lancée via `apk_installer::install_apk` (installeur système Android).
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -50,8 +50,14 @@ fn client() -> Result<reqwest::Client, String> {
 }
 
 /// Renvoie les infos de MAJ si une release **plus récente** avec un APK existe, sinon `None`.
+/// Sur iOS, les MAJ passent par l'App Store (pas d'installation d'APK) → toujours `None`,
+/// donc ni bandeau ni bouton « Mettre à jour » côté UI.
 #[tauri::command]
 pub async fn check_update() -> Result<Option<UpdateInfo>, String> {
+    if cfg!(target_os = "ios") {
+        return Ok(None);
+    }
+
     let rel: GhRelease = client()?
         .get(RELEASES_LATEST)
         .header("Accept", "application/vnd.github+json")
@@ -84,7 +90,7 @@ pub async fn check_update() -> Result<Option<UpdateInfo>, String> {
 }
 
 /// Télécharge l'APK dans le cache de l'app (exposé par le FileProvider) et renvoie son chemin.
-/// L'appelant JS l'ouvre ensuite via `openPath` → installeur système Android.
+/// L'appelant JS le passe ensuite à `install_apk` → installeur système Android.
 #[tauri::command]
 pub async fn download_update(app: tauri::AppHandle, url: String) -> Result<String, String> {
     let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;

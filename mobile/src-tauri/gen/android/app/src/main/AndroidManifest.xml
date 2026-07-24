@@ -3,6 +3,13 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Auto-update in-app : installer l'APK téléchargé via l'installeur système. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Notifications d'alerte (Android 13+ : demandée aussi à l'exécution). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Surveillance app fermée : service au premier plan qui garde le process vivant. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <!-- Fiabilité : demander à être exempté de l'optimisation batterie (sinon l'OS tue le process). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -36,5 +43,15 @@
             android:name="android.support.FILE_PROVIDER_PATHS"
             android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Service au premier plan : garde le process vivant pour les alertes app fermée. -->
+        <service
+          android:name=".MonitorService"
+          android:exported="false"
+          android:foregroundServiceType="specialUse">
+          <property
+            android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+            android:value="game_server_monitoring" />
+        </service>
     </application>
 </manifest>

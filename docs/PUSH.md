@@ -1,8 +1,17 @@
 # Notifications push (mobile) — architecture & mise en place
 
 Objectif : être prévenu sur le téléphone **quand un serveur crashe / sature / expire, même app
-fermée**. Sur mobile c'est impossible en local (l'OS tue les tâches de fond) → un **daemon** hébergé
-surveille en continu (via `minestrator-core`) et envoie un **push FCM** à l'appareil.
+fermée**. Deux paliers complémentaires :
+
+- **Palier 1 — on-device (livré).** Le réglage *Surveillance en arrière-plan* démarre un **service
+  Android au premier plan** (`MonitorService`) dont le seul rôle est de **garder le process de l'app
+  vivant**. Le superviseur Rust (démarré dans `setup()`) et `forward()` continuent alors de sonder
+  et de poster les alertes — même app en arrière-plan (Home, changement d'app). **Aucun serveur ni
+  Firebase.** Limite : si le système **tue complètement le process** (mémoire basse, balayage des
+  récents sur certains OEM, veille prolongée), la surveillance s'arrête jusqu'à réouverture. Pour la
+  fiabilité, exclure l'app de l'optimisation batterie (Réglages Android → Batterie → sans restriction).
+- **Palier 2 — FCM (ci-dessous, non câblé).** Pour une garantie **même process tué / tél en veille**,
+  un **daemon** hébergé surveille en continu (via `minestrator-core`) et envoie un **push FCM**.
 
 ```
 ┌───────────────┐   surveille    ┌──────────────────────┐   FCM v1    ┌──────────────┐

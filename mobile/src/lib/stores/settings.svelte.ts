@@ -21,6 +21,8 @@ function writeLS(key: string, val: string) {
 class Settings {
   theme = $state<ThemePref>((readLS("theme") as ThemePref) || "system");
   lang = $state<LangPref>((readLS("lang") as LangPref) || "system");
+  /** Surveillance en arrière-plan (service au premier plan). Off par défaut (batterie + notif permanente). */
+  bgMonitoring = $state<boolean>(readLS("bgMonitoring") === "1");
 
   /** Locale effective (résout "system" via navigator.language). */
   get locale(): "fr" | "en" {
@@ -39,6 +41,11 @@ class Settings {
   setLang(l: LangPref) {
     this.lang = l;
     writeLS("lang", l);
+  }
+
+  setBgMonitoring(on: boolean) {
+    this.bgMonitoring = on;
+    writeLS("bgMonitoring", on ? "1" : "0");
   }
 
   /** Applique le thème effectif sur <html data-theme>. */

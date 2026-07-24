@@ -12,6 +12,7 @@
 //!   FCM (cf. `crates/minestrator-daemon` et `docs/PUSH.md`).
 
 mod apk_installer;
+mod background;
 mod commands;
 mod update;
 
@@ -29,6 +30,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(apk_installer::init())
+        .plugin(background::init())
         .setup(|app| {
             // 1. Dossier de données privé de l'app → env, AVANT de créer le Core.
             //    C'est là que le Core écrit ses secrets (Android) et son SQLite de métriques.
@@ -97,6 +99,10 @@ pub fn run() {
             update::check_update,
             update::download_update,
             apk_installer::install_apk,
+            background::set_background_monitoring,
+            background::is_battery_unrestricted,
+            background::request_battery_unrestricted,
+            background::open_app_settings,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri (mobile)");

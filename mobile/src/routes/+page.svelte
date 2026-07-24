@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from "$lib/ipc";
+  import { api, ensureNotificationPermission } from "$lib/ipc";
   import { auth } from "$lib/stores/auth.svelte";
   import { settings } from "$lib/stores/settings.svelte";
   import Onboarding from "$lib/components/Onboarding.svelte";
@@ -35,6 +35,16 @@
         auth.booted = true;
       }
     })();
+  });
+
+  // Notifications : demande la permission une fois connecté (Android 13+ l'exige à l'exécution,
+  // sinon les alertes du superviseur sont bloquées silencieusement). No-op si déjà accordée.
+  // Ré-arme aussi le service de surveillance si l'utilisateur l'avait activé (le process a pu
+  // être tué depuis la dernière session).
+  $effect(() => {
+    if (!auth.isAuthed) return;
+    ensureNotificationPermission();
+    if (settings.bgMonitoring) api.setBackgroundMonitoring(true).catch(() => {});
   });
 </script>
 

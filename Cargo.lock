@@ -2606,7 +2606,7 @@ checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
 name = "minestrator-core"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2635,7 +2635,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-daemon"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "minestrator-core",
  "reqwest 0.12.28",
@@ -2648,7 +2648,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-mcp"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "minestrator-core",
  "tokio",
@@ -2658,7 +2658,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-terminal"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "minestrator-core",
  "serde_json",
@@ -2677,7 +2677,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-terminal-mobile"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "minestrator-core",
  "reqwest 0.12.28",

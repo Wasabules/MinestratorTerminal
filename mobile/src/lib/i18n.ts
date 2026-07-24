@@ -107,6 +107,14 @@ const fr: Dict = {
   "settings.checkUpdate": "Rechercher des mises à jour",
   "settings.checking": "Recherche…",
   "settings.upToDate": "À jour.",
+  "settings.notifications": "Notifications",
+  "settings.bgMonitoring": "Surveillance en arrière-plan",
+  "settings.bgMonitoringHint":
+    "Reçois les alertes (crash, seuils CPU/RAM/disque, expiration) même app fermée. Garde une notification permanente et consomme un peu de batterie.",
+  "settings.batteryRestricted": "Optimisation batterie active",
+  "settings.batteryAllow": "Toucher pour autoriser l'exécution en arrière-plan",
+  "settings.batteryOk": "Exécution en arrière-plan autorisée",
+  "settings.appSettings": "Réglages de l'app (batterie, autostart)",
 
   "update.available": "Nouvelle version",
   "update.now": "Mettre à jour",
@@ -191,6 +199,14 @@ const en: Dict = {
   "settings.light": "Light",
   "settings.about": "Third-party client for the MineStrator API.",
   "settings.website": "MineStrator website",
+  "settings.notifications": "Notifications",
+  "settings.bgMonitoring": "Background monitoring",
+  "settings.bgMonitoringHint":
+    "Receive alerts (crash, CPU/RAM/disk thresholds, expiry) even when the app is closed. Keeps a persistent notification and uses some battery.",
+  "settings.batteryRestricted": "Battery optimization is on",
+  "settings.batteryAllow": "Tap to allow background execution",
+  "settings.batteryOk": "Background execution allowed",
+  "settings.appSettings": "App settings (battery, autostart)",
 
   "error.generic": "Something went wrong.",
   "error.unauthorized": "Invalid or expired API key.",

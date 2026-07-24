@@ -103,8 +103,15 @@ Console live**. À étoffer ensuite :
 - ✅ **Secrets Android** : backend **fichier** dans le dossier privé de l'app (chiffré au repos par
   Android FBE) — le core aiguille automatiquement (`keyring` sur desktop). Durcissement Keystore
   matériel = amélioration future.
-- ✅ **Alertes app fermée** : daemon `crates/minestrator-daemon` (surveillance + push FCM). Reste à
-  câbler la **réception** côté Android après `tauri android init` → voir [`docs/PUSH.md`](../docs/PUSH.md).
+- ✅ **Alertes app fermée (on-device)** : réglage *Surveillance en arrière-plan* → un **service
+  Android au premier plan** (`MonitorService`) garde le process vivant, donc le superviseur Rust +
+  `forward()` continuent de poster les alertes app fermée (Home / changement d'app). Aucun serveur
+  ni Firebase. Limite : un kill total du process (mémoire, balayage sur OEM agressif) suspend la
+  surveillance jusqu'à réouverture — pour une garantie « même tél éteint », voir le palier FCM.
+- ✅ **Notifications** : permission `POST_NOTIFICATIONS` demandée à l'exécution (Android 13+).
+- ⏳ **Palier FCM (garanti)** : daemon `crates/minestrator-daemon` (surveillance + push FCM), pour
+  être prévenu même process tué / tél en veille. Reste à câbler la **réception** côté Android →
+  voir [`docs/PUSH.md`](../docs/PUSH.md).
 - **Éditeurs de config en formulaire** (`server.properties`, `ops.json`…), Copilote en chat.
 - **Natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
 - **Factorisation** : extraire `ipc.ts`/`events.ts`/i18n/tokens dans un package partagé avec le desktop.
