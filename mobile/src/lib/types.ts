@@ -78,6 +78,21 @@ export interface LivePlayers {
   limit: number;
 }
 
+/**
+ * Notification de l'hébergeur, livrée avec le profil (`GET /user`) : il n'existe pas d'endpoint
+ * dédié accessible avec une clé du panel, ni de marquage « lu ».
+ */
+export interface UserNotification {
+  id: string;
+  /** Catégorie de l'hébergeur : `Information`, `Erreur`, `StratorAI`… */
+  kind: string;
+  /** Sévérité au vocabulaire du panel : `error` | `warning` | `success` | `primary`. */
+  color: string;
+  message: string;
+  date: string;
+  read: boolean;
+}
+
 /** Entrée du catalogue d'eggs de l'hébergeur (`/site/eggs`). */
 export interface Egg {
   id: number;

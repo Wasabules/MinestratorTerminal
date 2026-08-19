@@ -6,11 +6,13 @@
   import ServersList from "$lib/components/ServersList.svelte";
   import ServerView from "$lib/components/ServerView.svelte";
   import SettingsView from "$lib/components/SettingsView.svelte";
+  import NotificationsView from "$lib/components/NotificationsView.svelte";
   import UpdateBanner from "$lib/components/UpdateBanner.svelte";
   import type { MyBoxSummary, ServerListItem } from "$lib/types";
 
   let selected = $state<{ server: ServerListItem; box: MyBoxSummary | null } | null>(null);
   let showSettings = $state(false);
+  let showNotifications = $state(false);
 
   // Thème : applique au boot + suit le système quand le préréglage est "system".
   $effect(() => {
@@ -58,12 +60,15 @@
   <Onboarding />
 {:else if showSettings}
   <SettingsView onBack={() => (showSettings = false)} />
+{:else if showNotifications}
+  <NotificationsView onBack={() => (showNotifications = false)} />
 {:else if selected}
   <ServerView server={selected.server} mybox={selected.box} onBack={() => (selected = null)} />
 {:else}
   <ServersList
     onOpen={(s, box) => (selected = { server: s, box })}
     onSettings={() => (showSettings = true)}
+    onNotifications={() => (showNotifications = true)}
   />
 {/if}
 

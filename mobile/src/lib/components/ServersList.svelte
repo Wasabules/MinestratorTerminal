@@ -9,9 +9,11 @@
   let {
     onOpen,
     onSettings,
+    onNotifications,
   }: {
     onOpen: (server: ServerListItem, box: MyBoxSummary | null) => void;
     onSettings: () => void;
+    onNotifications: () => void;
   } = $props();
 
   let myboxes = $state<MyBoxSummary[]>([]);
@@ -109,6 +111,9 @@
     {#if auth.user}<span class="who selectable">{auth.user.pseudo}</span>{/if}
   </div>
   <div class="actions">
+    <button class="ic" onclick={onNotifications} aria-label={t("notifications.title")}>
+      <Icon name="alert" size={20} />
+    </button>
     <button class="ic" onclick={onSettings} aria-label={t("settings.title")}>
       <Icon name="settings" size={20} />
     </button>

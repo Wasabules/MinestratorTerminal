@@ -112,6 +112,12 @@ Console live**. À étoffer ensuite :
 - ⏳ **Palier FCM (garanti)** : daemon `crates/minestrator-daemon` (surveillance + push FCM), pour
   être prévenu même process tué / tél en veille. Reste à câbler la **réception** côté Android →
   voir [`docs/PUSH.md`](../docs/PUSH.md).
+- ✅ **Notifications de l'hébergeur** : écran dédié (cloche de la liste) — recherche, filtres par
+  catégorie, messages entiers. Lecture seule : `GET /user` les porte, mais aucun endpoint de
+  marquage « lu » n'est accessible avec une clé du panel (cf. `ARCHITECTURE.md` §4.1).
+- ✅ **Journal d'actions** dans l'Aperçu (date, action, badge staff), **téléchargement du dernier
+  backup**, **avertissements de l'hébergeur** avant stop/restart, **icônes de jeu** via le CDN et
+  **compteur de joueurs** sur la liste (un seul appel groupé pour tous les serveurs).
 - **Éditeurs de config en formulaire** (`server.properties`, `ops.json`…), Copilote en chat.
 - **Natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
 - **Factorisation** : extraire `ipc.ts`/`events.ts`/i18n/tokens dans un package partagé avec le desktop.

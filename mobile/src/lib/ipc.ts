@@ -22,6 +22,7 @@ import type {
   SftpEntry,
   Snapshot,
   UpdateInfo,
+  UserNotification,
   UserProfile,
 } from "./types";
 
@@ -40,6 +41,8 @@ export const api = {
   livePlayersBulk: (ids: number[]) => invoke<LivePlayers[]>("live_players_bulk", { ids }),
   /** Catalogue des eggs de l'hébergeur. */
   listEggs: () => invoke<Egg[]>("list_eggs"),
+  /** Notifications de l'hébergeur (lecture seule ; livrées avec le profil). */
+  userNotifications: () => invoke<UserNotification[]>("user_notifications"),
   metricsHistory: (serverId: number, sinceSecs: number) =>
     invoke<MetricSample[]>("metrics_history", { serverId, sinceSecs }),
   /** Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère. */

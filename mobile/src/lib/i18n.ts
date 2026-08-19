@@ -122,6 +122,22 @@ const fr: Dict = {
   "update.error": "Échec — réessaie plus tard.",
   "update.later": "Plus tard",
 
+  "notifications.title": "Notifications",
+  "notifications.empty": "Aucune notification.",
+  "notifications.count": "notification(s) de MineStrator",
+  "notifications.search": "Rechercher…",
+  "notifications.allKinds": "Toutes",
+  "notifications.noMatch": "Aucune notification ne correspond.",
+
+  "overview.activity": "Activité récente",
+  "overview.byStaff": "staff",
+  "overview.downloadLastBackup": "Télécharger le dernier backup",
+  "overview.supportRef": "Réf. support",
+  "overview.confirm": "Confirmer",
+
+  "console.suspended": "Serveur suspendu ou expiré",
+  "console.hibernated": "Serveur en hibernation",
+
   "error.generic": "Une erreur est survenue.",
   "error.unauthorized": "Clé API invalide ou expirée.",
   "error.rate_limited": "Trop de requêtes, réessaie dans un instant.",
@@ -207,6 +223,22 @@ const en: Dict = {
   "settings.batteryAllow": "Tap to allow background execution",
   "settings.batteryOk": "Background execution allowed",
   "settings.appSettings": "App settings (battery, autostart)",
+
+  "notifications.title": "Notifications",
+  "notifications.empty": "No notifications.",
+  "notifications.count": "notification(s) from MineStrator",
+  "notifications.search": "Search…",
+  "notifications.allKinds": "All",
+  "notifications.noMatch": "No notification matches.",
+
+  "overview.activity": "Recent activity",
+  "overview.byStaff": "staff",
+  "overview.downloadLastBackup": "Download the latest backup",
+  "overview.supportRef": "Support ref",
+  "overview.confirm": "Confirm",
+
+  "console.suspended": "Server suspended or expired",
+  "console.hibernated": "Server hibernating",
 
   "error.generic": "Something went wrong.",
   "error.unauthorized": "Invalid or expired API key.",

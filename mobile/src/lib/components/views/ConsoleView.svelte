@@ -160,9 +160,17 @@
 
 <div class="console">
   <header>
-    <span class="phase" class:open={phase === "open"}>
+    <span class="phase" class:open={phase === "open"} class:stopped={phase === "suspended"}>
       {phase === "open" ? "●" : "○"}
-      {phase !== "open" ? t("console.connecting") : ""}
+      <!-- `suspended` et `hibernated` sont des états TERMINAUX : les afficher « Connexion… »
+           laisserait croire à une tentative en cours qui n'aura jamais lieu. -->
+      {phase === "open"
+        ? ""
+        : phase === "suspended"
+          ? t("console.suspended")
+          : phase === "hibernated"
+            ? t("console.hibernated")
+            : t("console.connecting")}
     </span>
     <div class="tools">
       <button class="tool" aria-label="A-" onclick={() => setFont(fontSize - 1)}>A−</button>
@@ -263,6 +271,9 @@
     display: flex;
     align-items: center;
     gap: 6px;
+  }
+  .phase.stopped {
+    color: var(--state-danger);
   }
   .phase.open {
     color: var(--state-running);

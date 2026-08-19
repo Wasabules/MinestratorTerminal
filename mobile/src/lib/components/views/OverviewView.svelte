@@ -1,8 +1,15 @@
 <script lang="ts">
-  import { api, humanizeError } from "../../ipc";
+  import { api, humanizeError, openExternal } from "../../ipc";
   import { t } from "../../i18n";
   import Icon from "../Icon.svelte";
-  import type { ConsoleStats, LiveLight, MyBoxSummary, PowerAction, ServerListItem } from "../../types";
+  import type {
+    ConsoleStats,
+    LiveLight,
+    MyBoxSummary,
+    PowerAction,
+    ServerAction,
+    ServerListItem,
+  } from "../../types";
 
   let {
     server,
@@ -17,6 +24,34 @@
   let error = $state<string | null>(null);
   let busy = $state<PowerAction | null>(null);
   let copied = $state(false);
+  /** Journal d'actions de l'hébergeur (couvre le panel web et le staff), via le détail serveur. */
+  let history = $state<ServerAction[]>([]);
+  /** Action retenue tant que l'avertissement de l'hébergeur n'est pas confirmé. */
+  let pending = $state<PowerAction | null>(null);
+
+  /** Avertissement configuré par l'hébergeur pour cette action, sinon `null`. */
+  function warningFor(action: PowerAction): string | null {
+    if (action === "restart") return server.restart_warning || null;
+    if (action === "stop" || action === "kill") return server.stop_warning || null;
+    return null;
+  }
+
+  /** Demande confirmation si l'hébergeur a posé un avertissement, sinon exécute directement. */
+  function request(action: PowerAction) {
+    if (warningFor(action)) {
+      pending = action;
+      return;
+    }
+    void power(action);
+  }
+
+  async function loadHistory() {
+    try {
+      history = (await api.serverDetails(serverId)).history ?? [];
+    } catch {
+      history = [];
+    }
+  }
 
   async function copyAddr() {
     try {
@@ -46,6 +81,7 @@
 
   async function power(action: PowerAction) {
     if (busy) return;
+    pending = null;
     busy = action;
     try {
       await api.powerAction(serverId, action);
@@ -134,6 +170,7 @@
     if (!active) return;
     refreshLive();
     refreshStats();
+    loadHistory();
     const a = setInterval(refreshLive, 8000);
     const b = setInterval(refreshStats, 4000);
     return () => {
@@ -214,18 +251,145 @@
     <p class="motd selectable">{live.motd}</p>
   {/if}
 
+  {#if server.last_backup_url || server.support_ref}
+    <div class="meta">
+      {#if server.last_backup_url}
+        <!-- URL signée (jeton porteur) : ouverte sans jamais être affichée. -->
+        <button class="linklike" onclick={() => openExternal(server.last_backup_url!)}>
+          <Icon name="save" size={15} />
+          {t("overview.downloadLastBackup")}
+        </button>
+      {/if}
+      {#if server.support_ref}
+        <span class="dim selectable">{t("overview.supportRef")} : {server.support_ref}</span>
+      {/if}
+    </div>
+  {/if}
+
   <!-- Alimentation -->
   <div class="power">
     {#each powerButtons as b (b.action)}
-      <button class={b.kind} disabled={busy !== null} onclick={() => power(b.action)}>
+      <button class={b.kind} disabled={busy !== null} onclick={() => request(b.action)}>
         <Icon name={b.icon} size={18} />
         <span>{busy === b.action ? "…" : t(b.key)}</span>
       </button>
     {/each}
   </div>
+
+  {#if pending}
+    <div class="warnbox">
+      <p class="warntext">{warningFor(pending)}</p>
+      <div class="warnact">
+        <button class="ghost" onclick={() => (pending = null)}>{t("backups.cancel")}</button>
+        <button class="danger" onclick={() => power(pending!)}>{t("overview.confirm")}</button>
+      </div>
+    </div>
+  {/if}
+
+  {#if history.length > 0}
+    <div class="acts">
+      <small>{t("overview.activity")}</small>
+      {#each history.slice(0, 6) as h (h.date + h.action)}
+        <div class="act">
+          <span class="a-date dim">{h.date.slice(0, 16)}</span>
+          <span class="a-what">{h.action}</span>
+          {#if h.staff}<span class="a-staff">{t("overview.byStaff")}</span>{/if}
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 16px;
+    font-size: 13px;
+  }
+  .linklike {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--brand-primary);
+    font: inherit;
+    font-size: 13px;
+  }
+
+  .warnbox {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+  }
+  .warntext {
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .warnact {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .warnact button {
+    padding: 8px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font: inherit;
+    font-size: 14px;
+  }
+  .warnact .ghost {
+    background: transparent;
+    color: var(--text-muted);
+  }
+  .warnact .danger {
+    background: var(--state-danger);
+    border-color: transparent;
+    color: #fff;
+  }
+
+  .acts {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .acts small {
+    color: var(--text-dim);
+    margin-bottom: 2px;
+  }
+  .act {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .a-date {
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .a-what {
+    font-family: var(--font-mono, monospace);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .a-staff {
+    flex: none;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--brand-tertiary) 22%, transparent);
+    color: var(--brand-tertiary);
+  }
+
   .view {
     padding: 16px;
     display: flex;
