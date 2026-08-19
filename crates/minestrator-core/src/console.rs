@@ -92,6 +92,15 @@ async fn supervise(
                     return;
                 }
             }
+            // Suspendu / expiré : contrairement à l'hibernation, ça ne se lève pas tout seul —
+            // il faut une action de facturation. Reconnecter en boucle ne ferait que consommer
+            // une requête toutes les 30 s sans aucune chance d'aboutir : on s'arrête ici et le
+            // front rend l'état. L'utilisateur rouvre l'onglet une fois la situation régularisée.
+            Outcome::Forbidden => {
+                tracing::info!(conn = %conn_id, "console non connectable : serveur suspendu ou expiré");
+                phase(&events, &conn_id, "suspended");
+                return;
+            }
             Outcome::Disconnected(reason) => {
                 tracing::warn!(conn = %conn_id, "console ws déconnectée: {reason}");
                 phase(&events, &conn_id, "reconnecting");
@@ -111,6 +120,8 @@ async fn supervise(
 enum Outcome {
     Shutdown,
     Hibernated,
+    /// Serveur suspendu ou expiré (403) : état terminal, pas de reconnexion.
+    Forbidden,
     Disconnected(String),
 }
 
@@ -124,8 +135,14 @@ async fn run_once(
     monitor: bool,
     shutdown: &mut mpsc::Receiver<()>,
 ) -> Outcome {
+    // Volontairement le détail COMPLET du serveur ici, pas `get_ws_credentials` : seul lui
+    // distingue « hiberné » (url/token vides, on n'ouvre pas de WS) de « suspendu/expiré »
+    // (l'endpoint léger répond 403 dans les deux cas). Le gain de l'endpoint léger est pris au
+    // rafraîchissement de token, bien plus fréquent que l'ouverture.
     let details = match api.get_server(token, server_id).await {
         Ok(d) => d,
+        // 403 = suspendu / expiré : distinct d'une panne réseau, et non réessayable.
+        Err(crate::Error::Forbidden) => return Outcome::Forbidden,
         Err(e) => return Outcome::Disconnected(format!("détails serveur: {e:?}")),
     };
     let (url, ws_token) = match (details.ws_url, details.ws_token) {
@@ -200,9 +217,21 @@ async fn run_once(
                                     }
                                 }
                             }
+                            "install output" => {
+                                // Sortie de l'installateur Wings (déploiement de l'egg) : sans ça,
+                                // un serveur en cours d'installation affiche une console vide.
+                                if let Some(line) = evt.first_str() {
+                                    if !monitor {
+                                        let _ = events.send(CoreEvent::ConsoleOutput(ConsoleOutput { conn_id: conn_id.to_string(), line: line.to_string() }));
+                                    }
+                                }
+                            }
                             "token expiring" | "token expired" => {
-                                if let Ok(d) = api.get_server(token, server_id).await {
-                                    if let Some(fresh) = d.ws_token {
+                                // Endpoint dédié : ~1 Kio, contre plusieurs Kio pour le détail
+                                // complet du serveur, et ça arrive à chaque expiration de token
+                                // sur CHAQUE connexion (le superviseur en tient une par serveur).
+                                if let Ok(creds) = api.get_ws_credentials(token, server_id).await {
+                                    if let Some(fresh) = creds.token {
                                         let _ = write.send(Message::text(json!({ "event": "auth", "args": [fresh] }).to_string())).await;
                                     }
                                 }

@@ -38,6 +38,11 @@ export interface CopilotTab {
   kind: 'copilot';
 }
 
+export interface NotificationsTab {
+  id: string;
+  kind: 'notifications';
+}
+
 export interface ServerTab {
   id: string;
   kind: 'server';
@@ -46,7 +51,7 @@ export interface ServerTab {
   view: ServerView;
 }
 
-export type Tab = HomeTab | SettingsTab | CopilotTab | ServerTab;
+export type Tab = HomeTab | SettingsTab | CopilotTab | NotificationsTab | ServerTab;
 
 /** Métadonnées d'affichage par vue (ordre = ordre des actions dans l'UI). `icon` = nom dans Icon.svelte. */
 export const VIEWS: { id: ServerView; icon: string; ready: boolean }[] = [
@@ -98,6 +103,18 @@ class TabManager {
       return;
     }
     const tab: CopilotTab = { id: uid(), kind: 'copilot' };
+    this.tabs.push(tab);
+    this.activeId = tab.id;
+  }
+
+  /** Ouvre (ou focus) l'onglet Notifications — unique. */
+  openNotifications(): void {
+    const existing = this.tabs.find((t) => t.kind === 'notifications');
+    if (existing) {
+      this.activeId = existing.id;
+      return;
+    }
+    const tab: NotificationsTab = { id: uid(), kind: 'notifications' };
     this.tabs.push(tab);
     this.activeId = tab.id;
   }

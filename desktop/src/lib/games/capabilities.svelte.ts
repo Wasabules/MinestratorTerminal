@@ -2,6 +2,10 @@
  * Capacités par jeu, côté front : store réactif keyé par `serverId`, alimenté depuis
  * `ServerListItem.capabilities` (calculé en Rust, voir `crate::games`). Sert à gater les
  * vues/fonctions exposées. Miroir de `src/lib/servers/runtime.svelte.ts`.
+ *
+ * Le même store retient l'**entrée de liste** complète : elle porte des métadonnées que seule
+ * la liste fournit (avertissements de power action, note, dernier backup, réf. support), et les
+ * vues serveur n'ont sinon aucun moyen de les obtenir sans refaire un appel.
  */
 
 import { api } from '$lib/ipc';
@@ -18,16 +22,27 @@ export const GENERIC_CAPS: GameCapabilities = {
   backups: true,
 };
 
-const store = $state<{ map: Record<number, GameCapabilities> }>({ map: {} });
+const store = $state<{
+  map: Record<number, GameCapabilities>;
+  items: Record<number, ServerListItem>;
+}>({ map: {}, items: {} });
 
 /** Mémorise les capacités d'une liste de serveurs (à appeler après `api.listServers()`). */
 export function rememberCaps(servers: ServerListItem[]): void {
-  for (const s of servers) store.map[s.id] = s.capabilities;
+  for (const s of servers) {
+    store.map[s.id] = s.capabilities;
+    store.items[s.id] = s;
+  }
 }
 
 /** Capacités connues d'un serveur (réactif ; `undefined` si jamais chargé). */
 export function serverCaps(id: number): GameCapabilities | undefined {
   return store.map[id];
+}
+
+/** Entrée de liste connue d'un serveur (réactif ; `undefined` si jamais chargée). */
+export function serverItem(id: number): ServerListItem | undefined {
+  return store.items[id];
 }
 
 /**

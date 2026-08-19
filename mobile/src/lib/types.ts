@@ -22,6 +22,19 @@ export interface MyBoxSummary {
   days_left: number;
   expired: boolean;
   suspended: boolean;
+  trial: boolean;
+  bonus: boolean;
+  expires_at: string | null;
+}
+
+/** Capacités dérivées du jeu (miroir de `crate::games`, calculé en Rust). */
+export interface GameCapabilities {
+  family: string;
+  console_autocomplete: string;
+  log_format: string;
+  players: boolean;
+  mods: string;
+  backups: boolean;
 }
 
 export interface ServerListItem {
@@ -30,15 +43,69 @@ export interface ServerListItem {
   mybox_id: number;
   egg_name: string;
   egg_icon: string | null;
+  /** URL CDN complète de la vignette du jeu (composée par le core). */
+  egg_icon_url: string | null;
+  /** URL CDN de la bannière large (~200 Kio : ne pas la charger sans l'afficher). */
+  egg_header_url: string | null;
   address: string;
   /** active | hibernation | disabled | suspended | expired */
   status: string;
   owner: boolean;
+  capabilities: GameCapabilities;
+  /** Identifiant d'egg exact du catalogue de l'hébergeur. */
+  egg_id: number | null;
+  /** URL signée de téléchargement du dernier backup (jeton porteur : ne pas afficher en clair). */
+  last_backup_url: string | null;
+  /** Avertissement de l'hébergeur à afficher avant un redémarrage. */
+  restart_warning: string | null;
+  /** Avertissement à afficher avant un arrêt. */
+  stop_warning: string | null;
+  /**
+   * Raison d'indisponibilité, sous forme de clé i18n du panel
+   * (`PANEL.SERVERS_LIST.SERVER_IS_DISABLED_MYBOX`) — à traduire, jamais à afficher brut.
+   */
+  unavailable_reason: string | null;
+  /** Fin d'abonnement du serveur. */
+  expires_at: string | null;
+  /** Référence courte à donner au support. */
+  support_ref: string | null;
 }
+
+/** Joueurs en ligne d'un serveur, via l'appel groupé (`live_players_bulk`). */
+export interface LivePlayers {
+  server_id: number;
+  current: number;
+  limit: number;
+}
+
+/** Entrée du catalogue d'eggs de l'hébergeur (`/site/eggs`). */
+export interface Egg {
+  id: number;
+  name: string;
+  icon_url: string | null;
+  header_url: string | null;
+  cpu: string;
+  ram: string;
+  disk: string;
+  official: boolean;
+}
+
 
 export interface ServersOverview {
   myboxes: MyBoxSummary[];
   servers: ServerListItem[];
+}
+
+/** Entrée du journal d'actions tenu par l'hébergeur (couvre aussi le panel web et le staff). */
+export interface ServerAction {
+  /** `YYYY-MM-DD HH:MM:SS.mmm`. */
+  date: string;
+  /** Adresse d'origine — utile pour repérer une action qu'on n'a pas faite soi-même. */
+  ip: string;
+  /** Action du staff de l'hébergeur plutôt que du titulaire. */
+  staff: boolean;
+  /** Identifiant d'action (`power.restart`…). */
+  action: string;
 }
 
 export interface ServerDetails {
@@ -47,6 +114,8 @@ export interface ServerDetails {
   hibernation: boolean;
   ws_url: string | null;
   ws_token: string | null;
+  /** Journal d'actions, du plus récent au plus ancien. */
+  history: ServerAction[];
 }
 
 export interface CpuLimits {
@@ -130,7 +199,7 @@ export interface ConsoleStatus {
 }
 export interface ConsoleConnection {
   conn_id: string;
-  /** connecting | open | reconnecting | closed | hibernated */
+  /** connecting | open | reconnecting | closed | hibernated | suspended (terminal) */
   phase: string;
 }
 export interface ConsoleStats {

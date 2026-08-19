@@ -18,6 +18,7 @@
     Autonomy,
     CliStatus,
     CopilotConfig,
+    Egg,
     GameSettings,
     LlmProvider,
     McpConfig,
@@ -33,6 +34,8 @@
 
   let config = $state<SupervisorConfig | null>(null);
   let servers = $state<ServerListItem[]>([]);
+  /** Catalogue d'eggs de l'hébergeur : table de référence du mapping jeu → capacités. */
+  let eggs = $state<Egg[]>([]);
   let mcp = $state<McpConfig | null>(null);
   let privacy = $state<PrivacyConfig | null>(null);
 
@@ -162,6 +165,11 @@
       servers = (await api.listServers()).servers;
     } catch {
       /* liste indispo */
+    }
+    try {
+      eggs = await api.listEggs();
+    } catch {
+      /* catalogue indispo : la section debug s'affiche sans */
     }
     try {
       mcp = await api.getMcpConfig();
@@ -1081,7 +1089,11 @@
               </div>
               <div class="dbg-line">
                 <span class="dbg-k dim">egg</span>
-                <code class="dbg-v">{s.egg_name || '—'}{s.bedrock ? '  (bedrock)' : ''}</code>
+                <code class="dbg-v"
+                  >{s.egg_name || '—'}{s.egg_id != null ? `  #${s.egg_id}` : '  (id inconnu)'}{s.bedrock
+                    ? '  (bedrock)'
+                    : ''}</code
+                >
               </div>
               <div class="dbg-line">
                 <span class="dbg-k dim">caps</span>
@@ -1091,6 +1103,19 @@
                     .console_autocomplete}</code
                 >
               </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      {#if eggs.length > 0}
+        <h2>{t('settings.debugEggs')}</h2>
+        <p class="desc dim">{t('settings.debugEggsDesc', { count: eggs.length })}</p>
+        <div class="dbg-list">
+          {#each eggs as egg (egg.id)}
+            <div class="dbg-line">
+              <span class="dbg-k dim">#{egg.id}</span>
+              <code class="dbg-v">{egg.name} · {egg.cpu} vCPU / {egg.ram} Go / {egg.disk} Go</code>
             </div>
           {/each}
         </div>

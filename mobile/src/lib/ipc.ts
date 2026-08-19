@@ -11,7 +11,9 @@ import type {
   AppError,
   Backup,
   ConsoleStats,
+  Egg,
   LiveLight,
+  LivePlayers,
   MetricSample,
   PlayerAction,
   PowerAction,
@@ -34,6 +36,10 @@ export const api = {
   listServers: () => invoke<ServersOverview>("list_servers"),
   serverDetails: (id: number) => invoke<ServerDetails>("server_details", { id }),
   liveLight: (id: number) => invoke<LiveLight>("live_light", { id }),
+  /** Joueurs en ligne de plusieurs serveurs en UN appel (liste). Joueurs uniquement. */
+  livePlayersBulk: (ids: number[]) => invoke<LivePlayers[]>("live_players_bulk", { ids }),
+  /** Catalogue des eggs de l'hébergeur. */
+  listEggs: () => invoke<Egg[]>("list_eggs"),
   metricsHistory: (serverId: number, sinceSecs: number) =>
     invoke<MetricSample[]>("metrics_history", { serverId, sinceSecs }),
   /** Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère. */

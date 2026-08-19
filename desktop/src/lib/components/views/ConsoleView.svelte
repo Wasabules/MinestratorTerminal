@@ -13,7 +13,7 @@
   import { redactLine } from '$lib/redact';
   import { t } from '$lib/i18n';
   import { isRunning } from '$lib/status';
-  import { serverCaps } from '$lib/games/capabilities.svelte';
+  import { serverCaps, serverItem } from '$lib/games/capabilities.svelte';
   import PowerControl from '../PowerControl.svelte';
   import Icon from '../Icon.svelte';
   import type { ServerTab } from '$lib/tabs/tabs.svelte';
@@ -107,9 +107,11 @@
   const phaseColor = $derived(
     phase === 'open'
       ? 'var(--state-running)'
-      : phase === 'closed' || phase === 'hibernated'
-        ? 'var(--state-offline)'
-        : 'var(--state-pending)'
+      : phase === 'suspended'
+        ? 'var(--state-danger)'
+        : phase === 'closed' || phase === 'hibernated'
+          ? 'var(--state-offline)'
+          : 'var(--state-pending)'
   );
 
   // Détection du niveau selon le format de log du jeu (source : capacités).
@@ -411,7 +413,14 @@
         <button class="lv warn" class:off={!filter.warn} onclick={() => toggleLevel('warn')}>WARN</button>
         <button class="lv info" class:off={!filter.info} onclick={() => toggleLevel('info')}>INFO</button>
       </div>
-      <PowerControl serverId={serverId} running={running} disabled={phase === 'hibernated'} compact />
+      <PowerControl
+        serverId={serverId}
+        running={running}
+        disabled={phase === 'hibernated' || phase === 'suspended'}
+        restartWarning={serverItem(serverId)?.restart_warning}
+        stopWarning={serverItem(serverId)?.stop_warning}
+        compact
+      />
     </div>
   </div>
 

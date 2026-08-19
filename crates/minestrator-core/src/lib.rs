@@ -64,9 +64,10 @@ pub use mcp::McpConfig;
 pub use nbt::NbtNode;
 pub use redact::PrivacyConfig;
 pub use models::{
-    Backup, CpuLimits, InstalledItem, LimitMb, LiveLight, MarketItem, MarketPage, MarketVersion,
-    MyBoxSummary, Players, ServerDetails, ServerListItem, ServersOverview, SftpEntry, Snapshot,
-    Startup, UserProfile,
+    Backup, CpuLimits, Egg, InstalledItem, LimitMb, LiveLight, LivePlayers, MarketItem, MarketPage,
+    MarketVersion, MyBoxSummary, Players, ServerAction, ServerDetails, ServerListItem,
+    ServersOverview, SftpEntry,
+    Snapshot, Startup, UserNotification, UserProfile,
 };
 pub use store::MetricSample;
 pub use supervisor::{Supervisor, SupervisorConfig, SupervisorState};
@@ -461,6 +462,46 @@ impl Core {
 
     pub async fn live_light(&self, id: i64) -> Result<LiveLight> {
         self.api.get_live_light(&self.token()?, id).await
+    }
+
+    /// Joueurs en ligne de plusieurs serveurs en **un seul appel** — pour une liste, là où
+    /// interroger [`Self::live_light`] serveur par serveur coûterait N requêtes. Ne renvoie que
+    /// les joueurs : le CPU/RAM/disque et le statut restent du ressort de `live_light`.
+    pub async fn live_players_bulk(&self, ids: &[i64]) -> Result<Vec<LivePlayers>> {
+        self.api.live_players_bulk(&self.token()?, ids).await
+    }
+
+    /// Notifications de l'hébergeur (lecture seule : aucun endpoint de marquage « lu » n'est
+    /// accessible avec une clé du panel). Cache court — elles bougent peu et la vue peut être
+    /// rouverte souvent.
+    pub async fn user_notifications(&self) -> Result<Vec<UserNotification>> {
+        const KEY: &str = "user:notifications";
+        if let Some(hit) = self.cache.get(KEY) {
+            if let Ok(list) = serde_json::from_str(&hit) {
+                return Ok(list);
+            }
+        }
+        let list = self.api.get_notifications(&self.token()?).await?;
+        if let Ok(json) = serde_json::to_string(&list) {
+            self.cache.put(KEY.into(), json, std::time::Duration::from_secs(60));
+        }
+        Ok(list)
+    }
+
+    /// Catalogue des eggs de l'hébergeur (jeux + bases de données). Mis en cache une heure : il
+    /// ne bouge qu'au rythme des ajouts de jeux côté hébergeur.
+    pub async fn list_eggs(&self) -> Result<Vec<Egg>> {
+        const KEY: &str = "site:eggs";
+        if let Some(hit) = self.cache.get(KEY) {
+            if let Ok(eggs) = serde_json::from_str(&hit) {
+                return Ok(eggs);
+            }
+        }
+        let eggs = self.api.list_eggs(&self.token()?).await?;
+        if let Ok(json) = serde_json::to_string(&eggs) {
+            self.cache.put(KEY.into(), json, std::time::Duration::from_secs(3600));
+        }
+        Ok(eggs)
     }
 
     pub async fn console_logs(&self, id: i64) -> Result<Vec<String>> {

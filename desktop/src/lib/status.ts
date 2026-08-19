@@ -36,6 +36,9 @@ export function runtimeMeta(state: string): StateMeta {
       return { key: 'starting', color: 'var(--state-pending)' };
     case 'stopping':
       return { key: 'stopping', color: 'var(--state-pending)' };
+    // Déploiement de l'egg par Wings : la console reçoit `install output`, pas `console output`.
+    case 'installing':
+      return { key: 'installing', color: 'var(--state-hibernate)' };
     default:
       return { key: 'offline', color: 'var(--state-offline)' };
   }

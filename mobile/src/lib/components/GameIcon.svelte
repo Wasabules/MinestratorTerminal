@@ -1,8 +1,8 @@
 <script lang="ts">
   /**
-   * Icône du jeu. L'API ne renvoie qu'un nom de fichier (`minecraft.webp`) sans CDN accessible
-   * → comme le desktop, on affiche un **monogramme** (1ʳᵉ lettre du jeu) sur un fond coloré
-   * dérivé du nom. Si un jour `src` est une vraie URL http(s), on tente l'image (repli monogramme).
+   * Icône du jeu. Le core compose l'URL CDN complète (`egg_icon_url`) à partir du nom de fichier
+   * renvoyé par l'API (`minecraft.webp`) — voir `config::EGG_ICON_BASE`. Repli **monogramme**
+   * (1ʳᵉ lettre du jeu, fond coloré dérivé du nom) si l'URL manque ou si l'image ne charge pas.
    */
   let { src = null, name = "", size = 32 }: { src?: string | null; name?: string; size?: number } =
     $props();

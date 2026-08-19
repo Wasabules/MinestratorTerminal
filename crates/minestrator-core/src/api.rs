@@ -6,16 +6,18 @@
 use crate::config::{API_BASE_URL, USER_AGENT};
 use crate::error::{Error, Result};
 use crate::models::{
-    Backup, BackupsData, ConsoleLogs, Envelope, InstalledItem, InstalledRaw, LiveLight,
-    MarketListRaw, MarketPage, MarketVersion, MarketVersionsRaw, McVersionsData, ServerDetails,
-    ServerFullData, ServersData, ServersOverview, SftpCreds, SftpData, Snapshot, SnapshotsData,
-    Startup, StartupData, UserData, UserProfile,
+    Backup, BackupsData, ConsoleLogs, Egg, EggsData, Envelope, InstalledItem, InstalledRaw,
+    LiveBulkData, LiveLight, LivePlayers, MarketListRaw, MarketPage, MarketVersion,
+    MarketVersionsRaw, McVersionsData, ServerDetails, ServerFullData, ServersData, ServersOverview,
+    SftpCreds, SftpData, Snapshot, SnapshotsData, Startup, StartupData, UserData,
+    UserNotification, UserProfile,
+    WsCredentials, WsCredentialsData,
 };
 use base64::Engine;
 use reqwest::{header, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[derive(Clone)]
 pub struct ApiClient {
@@ -74,6 +76,28 @@ impl ApiClient {
 
     async fn post_ok<B: Serialize>(&self, token: &str, path: &str, body: &B) -> Result<()> {
         self.send_no_data(reqwest::Method::POST, token, path, body).await
+    }
+
+    /// POST dont la réponse porte des données utiles (à l'inverse de [`Self::post_ok`]).
+    async fn post_data<T: DeserializeOwned, B: Serialize>(
+        &self,
+        token: &str,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        let resp = self
+            .http
+            .post(format!("{API_BASE_URL}{path}"))
+            .header(header::AUTHORIZATION, Self::bearer(token))
+            .header(header::ACCEPT, "application/json")
+            .json(body)
+            .send()
+            .await?;
+        let data = Self::read_envelope(resp)
+            .await?
+            .ok_or_else(|| Error::Unexpected("réponse sans champ `data`".into()))?;
+        serde_json::from_value(data)
+            .map_err(|e| Error::Unexpected(format!("structure `data` inattendue : {e}")))
     }
 
     /// Envoie une requête à corps JSON sans exploiter la réponse (juste vérifier le succès).
@@ -194,6 +218,19 @@ impl ApiClient {
         Ok(UserProfile::from(data.user.datas))
     }
 
+    /// Notifications de l'hébergeur. Elles voyagent avec le profil : `/user/notifications` et
+    /// `/user/notifications/unreaded` (vus dans l'app mobile) ne répondent pas à une clé du
+    /// panel — le premier renvoie le profil, le second un 404 (vérifié le 2026-08-19).
+    pub async fn get_notifications(&self, token: &str) -> Result<Vec<UserNotification>> {
+        let data: UserData = self.get(token, "/user").await?;
+        Ok(data
+            .user
+            .notifications
+            .into_iter()
+            .map(UserNotification::from)
+            .collect())
+    }
+
     pub async fn list_servers(&self, token: &str, user_id: i64) -> Result<ServersOverview> {
         let raw: ServersData = self.get(token, &format!("/user/{user_id}/servers")).await?;
         Ok(ServersOverview::from(raw))
@@ -206,6 +243,43 @@ impl ApiClient {
 
     pub async fn get_live_light(&self, token: &str, id: i64) -> Result<LiveLight> {
         self.get(token, &format!("/server/{id}/live/light")).await
+    }
+
+    /// Identifiants WebSocket seuls — réponse ~1 Kio, contre plusieurs Kio pour `get_server`
+    /// (qui embarque SFTP, historique, ports…). À préférer partout où seul le couple url/token
+    /// compte, en particulier au rafraîchissement sur `token expiring`.
+    pub async fn get_ws_credentials(&self, token: &str, id: i64) -> Result<WsCredentials> {
+        let raw: WsCredentialsData = self.get(token, &format!("/server/{id}/websocket")).await?;
+        Ok(WsCredentials::from(raw))
+    }
+
+    /// Compte de joueurs de plusieurs serveurs en un appel. Ne renvoie **que** les joueurs :
+    /// pour le CPU/RAM/disque ou le statut, il faut toujours [`Self::get_live_light`] par serveur.
+    pub async fn live_players_bulk(&self, token: &str, ids: &[i64]) -> Result<Vec<LivePlayers>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let raw: LiveBulkData = self
+            .post_data(token, "/servers/live/light/bulk", &json!({ "server_ids": ids }))
+            .await?;
+        Ok(raw
+            .servers
+            .into_iter()
+            .filter_map(|(id, entry)| {
+                let players = entry?.players?;
+                Some(LivePlayers {
+                    server_id: id.parse().ok()?,
+                    current: players.current,
+                    limit: players.limit,
+                })
+            })
+            .collect())
+    }
+
+    /// Catalogue des eggs de l'hébergeur (jeux proposés + bases de données).
+    pub async fn list_eggs(&self, token: &str) -> Result<Vec<Egg>> {
+        let raw: EggsData = self.get(token, "/site/eggs").await?;
+        Ok(raw.eggs.into_iter().map(Egg::from).collect())
     }
 
     pub async fn get_console_logs(&self, token: &str, id: i64) -> Result<Vec<String>> {

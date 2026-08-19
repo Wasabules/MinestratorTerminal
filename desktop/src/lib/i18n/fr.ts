@@ -42,7 +42,10 @@ export const fr = {
     expired: 'Expirée',
     suspended: 'Suspendue',
     pro: 'Pro',
+    trial: 'Essai',
+    bonus: 'Bonus',
     subUser: 'sous-utilisateur',
+    playersOnline: 'Joueurs en ligne',
     resources: '{cpu} vCPU · {ram} Go RAM · {disk} Go',
   },
   status: {
@@ -55,6 +58,10 @@ export const fr = {
     offline: 'Hors ligne',
     starting: 'Démarrage',
     stopping: 'Arrêt',
+    installing: 'Installation',
+    reason: {
+      SERVER_IS_DISABLED_MYBOX: 'Désactivé car la MyBox est suspendue ou expirée.',
+    },
   },
   view: {
     overview: 'Aperçu',
@@ -223,6 +230,10 @@ export const fr = {
     noColor: 'Aucune',
   },
   overview: {
+    activity: 'Activité récente',
+    byStaff: 'staff',
+    downloadLastBackup: 'Télécharger le dernier backup',
+    supportRef: 'Réf. support : {ref}',
     copyAddress: 'Copier l’adresse de connexion',
     copy: 'Copier',
     copied: 'Copié',
@@ -273,6 +284,17 @@ export const fr = {
     title: 'Alertes',
     empty: 'Aucune alerte',
     clear: 'Tout effacer',
+    fromHost: 'Notifications MineStrator',
+    seeAll: 'Tout voir',
+    noHostNotif: 'Aucune notification',
+  },
+  notifications: {
+    title: 'Notifications',
+    summary: '{count} notification(s) de MineStrator',
+    empty: 'Aucune notification.',
+    search: 'Rechercher…',
+    allKinds: 'Toutes',
+    noMatch: 'Aucune notification ne correspond.',
   },
   copilot: {
     title: 'Copilote',
@@ -340,6 +362,9 @@ export const fr = {
     debugServers: 'Diagnostic des serveurs',
     debugServersDesc:
       "Egg brut renvoyé par MineStrator → capacités calculées par l'app (jeu, marketplace, format de log…). Idéal pour vérifier la détection d'un jeu.",
+    debugEggs: "Catalogue d'eggs",
+    debugEggsDesc:
+      "Les {count} eggs proposés par l'hébergeur. Leur identifiant est ce qui détermine les capacités d'un serveur (vues, mods, console).",
     debugNoServers: 'Aucun serveur chargé.',
     compactTabs: 'Onglets compacts',
     compactTabsDesc: 'Afficher uniquement les icônes des vues (le nom du serveur reste visible).',
@@ -501,6 +526,7 @@ export const fr = {
     reconnecting: 'Reconnexion…',
     closed: 'Déconnecté',
     hibernated: 'Serveur hiberné',
+    suspended: 'Serveur suspendu ou expiré',
     toBottom: 'Revenir en bas',
     analyzeSel: 'Analyser la sélection',
     exportLog: 'Exporter le log vers',

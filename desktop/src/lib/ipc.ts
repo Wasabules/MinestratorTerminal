@@ -12,12 +12,14 @@ import type {
   ChatReply,
   CliStatus,
   CopilotConfig,
+  Egg,
   FicsitInstalledMod,
   FicsitModPage,
   FicsitVersion,
   GameSettings,
   InstalledItem,
   LiveLight,
+  LivePlayers,
   MarketInstalledMod,
   MarketModPage,
   MarketModVersion,
@@ -38,6 +40,7 @@ import type {
   SmlVersion,
   Snapshot,
   SupervisorConfig,
+  UserNotification,
   UserProfile,
 } from './types';
 
@@ -59,6 +62,18 @@ export const api = {
 
   /** Données live allégées (limites, joueurs, version). */
   liveLight: (id: number) => invoke<LiveLight>('live_light', { id }),
+
+  /**
+   * Joueurs en ligne de plusieurs serveurs en UN appel — pour une liste, là où `liveLight`
+   * coûterait une requête par serveur. Ne renvoie que les joueurs (ni CPU, ni disque, ni statut).
+   */
+  livePlayersBulk: (ids: number[]) => invoke<LivePlayers[]>('live_players_bulk', { ids }),
+
+  /** Catalogue des eggs de l'hébergeur (jeux + bases de données). Mis en cache côté Rust. */
+  listEggs: () => invoke<Egg[]>('list_eggs'),
+
+  /** Notifications de l'hébergeur (lecture seule ; livrées avec le profil). */
+  userNotifications: () => invoke<UserNotification[]>('user_notifications'),
 
   /** Historique de métriques (depuis N secondes) pour les graphes. */
   metricsHistory: (serverId: number, sinceSecs: number) =>

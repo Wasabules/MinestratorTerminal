@@ -44,7 +44,10 @@ export const en: Dict = {
     expired: 'Expired',
     suspended: 'Suspended',
     pro: 'Pro',
+    trial: 'Trial',
+    bonus: 'Bonus',
     subUser: 'sub-user',
+    playersOnline: 'Players online',
     resources: '{cpu} vCPU · {ram} GB RAM · {disk} GB',
   },
   status: {
@@ -57,6 +60,10 @@ export const en: Dict = {
     offline: 'Offline',
     starting: 'Starting',
     stopping: 'Stopping',
+    installing: 'Installing',
+    reason: {
+      SERVER_IS_DISABLED_MYBOX: 'Disabled because the MyBox is suspended or expired.',
+    },
   },
   view: {
     overview: 'Overview',
@@ -224,6 +231,10 @@ export const en: Dict = {
     noColor: 'None',
   },
   overview: {
+    activity: 'Recent activity',
+    byStaff: 'staff',
+    downloadLastBackup: 'Download the latest backup',
+    supportRef: 'Support ref: {ref}',
     copyAddress: 'Copy connection address',
     copy: 'Copy',
     copied: 'Copied',
@@ -274,6 +285,17 @@ export const en: Dict = {
     title: 'Alerts',
     empty: 'No alerts',
     clear: 'Clear all',
+    fromHost: 'MineStrator notifications',
+    seeAll: 'See all',
+    noHostNotif: 'No notifications',
+  },
+  notifications: {
+    title: 'Notifications',
+    summary: '{count} notification(s) from MineStrator',
+    empty: 'No notifications.',
+    search: 'Search…',
+    allKinds: 'All',
+    noMatch: 'No notification matches.',
   },
   copilot: {
     title: 'Copilot',
@@ -341,6 +363,9 @@ export const en: Dict = {
     debugServers: 'Servers diagnostic',
     debugServersDesc:
       "Raw egg returned by MineStrator → capabilities computed by the app (game, marketplace, log format…). Handy to verify a game's detection.",
+    debugEggs: 'Egg catalogue',
+    debugEggsDesc:
+      "The {count} eggs offered by the host. Their id is what drives a server's capabilities (views, mods, console).",
     debugNoServers: 'No server loaded.',
     compactTabs: 'Compact tabs',
     compactTabsDesc: 'Show only view icons (the server name stays visible).',
@@ -502,6 +527,7 @@ export const en: Dict = {
     reconnecting: 'Reconnecting…',
     closed: 'Disconnected',
     hibernated: 'Server hibernating',
+    suspended: 'Server suspended or expired',
     toBottom: 'Scroll to bottom',
     analyzeSel: 'Analyze selection',
     exportLog: 'Export log to',

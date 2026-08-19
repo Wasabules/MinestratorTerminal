@@ -179,8 +179,46 @@ Repris de V1 et **re-vérifiés dans le code actuel** (`config.rs`, `api.rs`, `c
 | Statuts HTTP | `401 → Unauthorized`, `403 → Forbidden`, **`429 → RateLimited` immédiat**. |
 | WS `websocket.url` + `token` dans `GET /server/{id}` ; **vides si hiberné** | `run_once` récupère l'URL/token à chaque (re)connexion ; url/token absents → `Outcome::Hibernated` (pas de WS). |
 | **`Origin: https://minestrator.com` OBLIGATOIRE** sur le handshake WS (sinon 403) | `config::WS_ORIGIN`, posé par `tokio-tungstenite`. **Impossible depuis un webview → le WS DOIT vivre en Rust.** C'est la justification n°1 de l'architecture. |
-| Infra **Pterodactyl / Wings** | events `auth success` → `send logs`+`send stats` ; `status` ; `stats` (~1×/s) ; `console output` ; `token expiring`/`token expired`. |
+| Infra **Pterodactyl / Wings** | events `auth success` → `send logs`+`send stats` ; `status` ; `stats` (~1×/s) ; `console output` ; `install output` (déploiement de l'egg) ; `token expiring`/`token expired`. |
 | Jauges | `stats` porte `cpu_absolute` (%), `memory_bytes`/`memory_limit_bytes`, `disk_bytes`, `uptime`, `state`. |
+
+### 4.1 Endpoints vérifiés au banc d'essai (2026-08-19)
+
+Relevés par reverse engineering de l'app mobile officielle (`C:\Users\Geoffrey\minestrator-re`,
+`API_SPEC.md`), puis **testés un à un** contre l'API avec une clé du panel. La vérification a compté :
+la moitié des endpoints annoncés par le RE n'existent pas pour cette authentification.
+
+| Endpoint | Verdict | Usage dans le core |
+|---|---|---|
+| `GET /server/{id}/websocket` | OK — `{websocket:{url,token}}`, ~1 Kio | Rafraîchissement de token (`console.rs`), à la place du détail complet du serveur |
+| `POST /servers/live/light/bulk` (`{server_ids}`) | OK mais **joueurs seulement** — ni CPU, ni disque, ni statut. Une entrée peut valoir `null` | `Core::live_players_bulk`, pour les compteurs de la liste |
+| `GET /site/eggs` | OK — 37 eggs (`id`, `name`, `icon`, `resources`, `is_official`) | `Core::list_eggs` (cache 1 h) + table de mapping de `games.rs` |
+| `https://cdn.minestrator.com/eggs/server_icon/{icon}` | OK — webp ~1 Kio (`…/server_header/` ≈ 200 Kio) | `config::EGG_ICON_BASE`, composé dans `ServerListItem` |
+| `GET /user/servers` | ✗ renvoie le **profil**, pas les serveurs | on garde `/user/{user_id}/servers` |
+| `GET /user/servers/websocket` | ✗ 404 | — |
+| `GET /user/tickets`, `/user/notifications/unreaded` | ✗ inaccessibles (auth mobile `api_authkey` requise) | — ; les notifications utilisateur sont **déjà** dans `GET /user` (`user.notifications[]`) |
+| En-tête `X-App-Token` | ✗ non requis | on ne l'envoie pas : c'est le secret client de l'app officielle |
+
+> **Piège de l'API** : un chemin `/user/<inconnu>` ne renvoie **pas** 404 mais le profil complet,
+> avec `description: "User - Informations - Get user datas"`. Un endpoint « qui répond 200 » n'est
+> donc pas un endpoint qui existe — vérifier la présence des clés attendues dans `data`.
+>
+> `GET /server/{id}/websocket` répond **403 `API_SERVER_SUSPENDED`** pour un serveur suspendu :
+> il ne distingue pas suspension et hibernation, d'où le maintien de `get_server` à l'ouverture
+> d'une connexion console (voir le commentaire dans `console.rs::run_once`).
+
+**Champs déjà servis par l'API et longtemps ignorés au parsing** (aucun appel supplémentaire) :
+`/user/{id}/servers` porte `id_egg`, `last_backup`, `poweraction_message_restart`/`_stop`, `note`,
+`tend`, `hashsupport` par serveur, et `is_trial`/`has_bonus`/`tend` par MyBox.
+
+> **Deux champs mentent sur leur nom** (constaté en faisant tourner l'app, 2026-08-19) :
+> `note` n'est pas une note libre mais une **clé i18n du panel** décrivant l'indisponibilité
+> (`PANEL.SERVERS_LIST.SERVER_IS_DISABLED_MYBOX`) — à traduire, jamais à afficher brut ; et
+> `last_backup` n'est pas une date mais l'**URL signée de téléchargement** du dernier backup
+> (`https://flash.minestrator.com/get/<jeton>`) — jeton porteur, à ouvrir sans jamais l'afficher.
+> D'où les noms `unavailable_reason` et `last_backup_url` côté `ServerListItem`. `/server/{id}` porte
+en plus `history[]` (journal d'actions : date, IP, `is_staff`, `action`) et `ports[]` — pistes pour
+le « journal d'audit » du ROADMAP.
 
 **Séquence WebSocket (`console.rs`).** `get_server` → connexion `wss://…` avec `Origin` → `{"event":"auth","args":[token]}` → sur `auth success`, `send logs` (sauf mode monitor) + `send stats` → relais des events en `CoreEvent`. Sur `token expiring`/`token expired` : re-`get_server` et ré-`auth` avec le token frais. `Ping`→`Pong`. Sur close/erreur : **reconnexion à backoff** (1 s → ×2 → **30 s max**), remis à 1 s si la session a tenu ≥ 30 s (jugée saine). Une **connexion monitor** (superviseur) ne demande pas les logs et ne relaie pas `console output` : elle ne pousse que stats/status et repère les lignes WARN/ERROR pour le Copilote.
 
@@ -204,7 +242,7 @@ Le WS ne sert qu'à **recevoir** output + stats + status.
 | Domaine | Commandes (extraits) |
 |---|---|
 | **Auth** | `validate_and_store_key`, `has_stored_key`, `get_user`, `logout` |
-| **Serveurs** | `list_servers`, `server_details`, `live_light`, `metrics_history`, `get_startup`/… |
+| **Serveurs** | `list_servers`, `server_details`, `live_light`, `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
 | **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |

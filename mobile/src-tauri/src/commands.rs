@@ -3,8 +3,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    Backup, ConsoleStats, Core, Error, LiveLight, MetricSample, ServerDetails, ServersOverview,
-    SftpEntry, Snapshot, UserProfile,
+    Backup, ConsoleStats, Core, Egg, Error, LiveLight, LivePlayers, MetricSample, ServerDetails,
+    ServersOverview, SftpEntry, Snapshot, UserNotification, UserProfile,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -53,6 +53,26 @@ pub async fn server_details(core: State<'_, Arc<Core>>, id: i64) -> Result<Serve
 #[tauri::command]
 pub async fn live_light(core: State<'_, Arc<Core>>, id: i64) -> Result<LiveLight, Error> {
     core.live_light(id).await
+}
+
+#[tauri::command]
+pub async fn live_players_bulk(
+    core: State<'_, Arc<Core>>,
+    ids: Vec<i64>,
+) -> Result<Vec<LivePlayers>, Error> {
+    core.live_players_bulk(&ids).await
+}
+
+#[tauri::command]
+pub async fn list_eggs(core: State<'_, Arc<Core>>) -> Result<Vec<Egg>, Error> {
+    core.list_eggs().await
+}
+
+#[tauri::command]
+pub async fn user_notifications(
+    core: State<'_, Arc<Core>>,
+) -> Result<Vec<UserNotification>, Error> {
+    core.user_notifications().await
 }
 
 #[tauri::command]

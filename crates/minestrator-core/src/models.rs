@@ -34,6 +34,78 @@ pub struct UserData {
 #[derive(Debug, Deserialize)]
 pub struct UserWrap {
     pub datas: UserDatas,
+    /// Notifications de l'hébergeur (incidents, crédits, changements d'offre…). Elles arrivent
+    /// avec le profil : aucun endpoint dédié n'est accessible avec une clé du panel.
+    #[serde(default)]
+    pub notifications: Vec<UserNotificationRaw>,
+}
+// `GET /user` porte aussi `global_message`/`global_alert` (bandeaux promo de l'hébergeur) :
+// volontairement non parsés — DESIGN.md §7 rappelle que ce sont des campagnes temporaires et
+// qu'il ne faut pas les câbler. À reprendre le jour où l'on décide d'afficher ces bandeaux.
+
+/// Notification brute. L'API sérialise **tout en chaînes**, y compris `id`, `viewed` et `readed`
+/// (`"0"`/`"1"`) : on passe par `Value` pour accepter aussi bien `"0"` que `0`.
+#[derive(Debug, Deserialize)]
+pub struct UserNotificationRaw {
+    #[serde(default)]
+    pub id: serde_json::Value,
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub color: String,
+    #[serde(default)]
+    pub icon: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub date: String,
+    #[serde(default)]
+    pub readed: serde_json::Value,
+}
+
+/// Notification exposée aux frontends.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserNotification {
+    pub id: String,
+    /// Catégorie donnée par l'hébergeur (`Information`, `Erreur`, `StratorAI`…).
+    pub kind: String,
+    /// Sévérité au vocabulaire du panel : `error` | `warning` | `success` | `primary`.
+    pub color: String,
+    pub message: String,
+    pub date: String,
+    pub read: bool,
+}
+
+impl From<UserNotificationRaw> for UserNotification {
+    fn from(n: UserNotificationRaw) -> Self {
+        UserNotification {
+            id: flat_string(&n.id),
+            kind: n.kind,
+            color: n.color,
+            message: n.message,
+            date: n.date,
+            read: truthy(&n.readed),
+        }
+    }
+}
+
+/// Rend une valeur JSON scalaire en texte, qu'elle soit chaîne ou nombre.
+fn flat_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        _ => String::new(),
+    }
+}
+
+/// Vrai pour `1`, `"1"`, `true` — l'API mélange les trois selon les champs.
+fn truthy(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Bool(b) => *b,
+        serde_json::Value::Number(n) => n.as_i64().unwrap_or(0) != 0,
+        serde_json::Value::String(s) => s != "0" && !s.is_empty(),
+        _ => false,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -97,6 +169,15 @@ struct MyBoxGroupRaw {
     is_suspended: i64,
     #[serde(default)]
     is_pro: i64,
+    /// Offre d'essai (période limitée) — distincte de `is_free`.
+    #[serde(default)]
+    is_trial: i64,
+    /// Ressources bonus offertes sur la MyBox (promo, parrainage…).
+    #[serde(default)]
+    has_bonus: i64,
+    /// Date d'expiration (`YYYY-MM-DD HH:MM:SS`) — `tend_days` n'en donne que le nombre de jours.
+    #[serde(default)]
+    tend: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -137,6 +218,33 @@ struct ServerRaw {
     is_bedrock: i64,
     #[serde(default)]
     owner: i64,
+    /// Identifiant d'egg **exact** (catalogue `/site/eggs`) : bien plus fiable que `egg_name`
+    /// pour reconnaître le jeu. Voir [`crate::games`].
+    #[serde(default)]
+    id_egg: Option<i64>,
+    /// Malgré son nom, ce n'est pas une date mais l'**URL signée de téléchargement** du dernier
+    /// backup (`https://flash.minestrator.com/get/<jeton chiffré>`, vérifié le 2026-08-19).
+    /// Jeton porteur : ne pas l'afficher en clair ni le journaliser.
+    #[serde(default)]
+    last_backup: Option<String>,
+    /// Avertissements configurés par l'hébergeur, à afficher AVANT l'action correspondante
+    /// (chaîne vide = rien à afficher).
+    #[serde(default)]
+    poweraction_message_restart: Option<String>,
+    #[serde(default)]
+    poweraction_message_stop: Option<String>,
+    /// Malgré son nom, ce champ ne porte pas une note libre mais une **clé de traduction du
+    /// panel** expliquant l'indisponibilité (vérifié le 2026-08-19 : tous les serveurs suspendus
+    /// du compte de test renvoient `PANEL.SERVERS_LIST.SERVER_IS_DISABLED_MYBOX`, les actifs
+    /// `null` ou `""`). À traduire côté frontend, jamais à afficher brut.
+    #[serde(default)]
+    note: Option<String>,
+    /// Fin d'abonnement du serveur (`YYYY-MM-DD HH:MM:SS`).
+    #[serde(default)]
+    tend: Option<String>,
+    /// Référence courte à donner au support (ex. `P75E4`).
+    #[serde(default)]
+    hashsupport: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -158,6 +266,10 @@ pub struct MyBoxSummary {
     pub expired: bool,
     pub suspended: bool,
     pub pro: bool,
+    pub trial: bool,
+    pub bonus: bool,
+    /// Date d'expiration brute, pour un affichage exact (`days_left` reste l'arrondi).
+    pub expires_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -166,11 +278,31 @@ pub struct ServerListItem {
     pub name: String,
     pub mybox_id: i64,
     pub egg_name: String,
+    /// Nom de fichier brut renvoyé par l'API (`minecraft.webp`) — conservé pour le debug.
     pub egg_icon: Option<String>,
+    /// URL CDN complète de la vignette du jeu, prête à poser dans un `<img>`.
+    pub egg_icon_url: Option<String>,
+    /// URL CDN de la bannière large du jeu (~200 Kio : ne la charger que si elle est affichée).
+    pub egg_header_url: Option<String>,
     pub address: String,
     pub status: String,
     pub owner: bool,
     pub bedrock: bool,
+    /// Identifiant d'egg exact (catalogue `/site/eggs`), quand l'API le fournit.
+    pub egg_id: Option<i64>,
+    /// URL signée de téléchargement du dernier backup automatique (`None` si aucun).
+    pub last_backup_url: Option<String>,
+    /// Avertissement à afficher avant un redémarrage (`None` si l'hébergeur n'en a pas défini).
+    pub restart_warning: Option<String>,
+    /// Avertissement à afficher avant un arrêt.
+    pub stop_warning: Option<String>,
+    /// Raison d'indisponibilité, sous forme de **clé i18n du panel**
+    /// (`PANEL.SERVERS_LIST.SERVER_IS_DISABLED_MYBOX`). Vide pour un serveur sain.
+    pub unavailable_reason: Option<String>,
+    /// Fin d'abonnement du serveur.
+    pub expires_at: Option<String>,
+    /// Référence courte à donner au support.
+    pub support_ref: Option<String>,
     /// Capacités dérivées du jeu (quelles vues/fonctions exposer). Voir [`crate::games`].
     pub capabilities: crate::games::GameCapabilities,
 }
@@ -192,6 +324,9 @@ impl From<ServersData> for ServersOverview {
                 expired: m.is_expired != 0,
                 suspended: m.is_suspended != 0,
                 pro: m.is_pro != 0,
+                trial: m.is_trial != 0,
+                bonus: m.has_bonus != 0,
+                expires_at: m.tend,
             })
             .collect();
         myboxes.sort_by_cached_key(|m| m.name.to_lowercase());
@@ -202,7 +337,16 @@ impl From<ServersData> for ServersOverview {
             .map(|s| ServerListItem {
                 status: server_status(&s).to_string(),
                 address: server_address(&s),
-                capabilities: crate::games::capabilities_for(&s.egg_name, s.is_bedrock != 0),
+                capabilities: crate::games::capabilities_for_egg(
+                    s.id_egg,
+                    &s.egg_name,
+                    s.is_bedrock != 0,
+                ),
+                egg_icon_url: egg_asset_url(s.egg_icon.as_deref(), crate::config::EGG_ICON_BASE),
+                egg_header_url: egg_asset_url(
+                    s.egg_icon.as_deref(),
+                    crate::config::EGG_HEADER_BASE,
+                ),
                 id: s.id,
                 name: s.name,
                 mybox_id: s.id_mybox,
@@ -210,6 +354,13 @@ impl From<ServersData> for ServersOverview {
                 egg_icon: s.egg_icon,
                 owner: s.owner != 0,
                 bedrock: s.is_bedrock != 0,
+                egg_id: s.id_egg,
+                last_backup_url: s.last_backup,
+                restart_warning: non_empty(s.poweraction_message_restart),
+                stop_warning: non_empty(s.poweraction_message_stop),
+                unavailable_reason: non_empty(s.note),
+                expires_at: s.tend,
+                support_ref: non_empty(s.hashsupport),
             })
             .collect();
         servers.sort_by_cached_key(|s| s.name.to_lowercase());
@@ -239,6 +390,142 @@ fn server_address(s: &ServerRaw) -> String {
     }
 }
 
+/// L'API renvoie beaucoup de chaînes vides là où « pas de valeur » serait plus juste
+/// (notes, avertissements de power action) : on les ramène à `None`.
+fn non_empty(v: Option<String>) -> Option<String> {
+    v.filter(|s| !s.trim().is_empty())
+}
+
+/// Complète un nom de fichier d'egg (`minecraft.webp`) en URL CDN. Une valeur déjà absolue est
+/// laissée telle quelle : si l'API se met un jour à renvoyer des URLs, rien ne casse.
+fn egg_asset_url(icon: Option<&str>, base: &str) -> Option<String> {
+    let icon = icon.map(str::trim).filter(|s| !s.is_empty())?;
+    if icon.starts_with("http://") || icon.starts_with("https://") {
+        return Some(icon.to_string());
+    }
+    Some(format!("{base}{icon}"))
+}
+
+// --- GET /server/{id}/websocket -------------------------------------------
+
+/// Identifiants WebSocket seuls. `GET /server/{id}/websocket` renvoie ~1 Kio là où
+/// `GET /server/{id}` en renvoie plusieurs (SFTP, historique, ports…) : à préférer pour le
+/// rafraîchissement de token, qui arrive plusieurs fois par heure et par connexion.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct WsCredentials {
+    #[serde(default)]
+    pub url: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WsCredentialsData {
+    #[serde(default)]
+    websocket: WsCredentials,
+}
+
+impl From<WsCredentialsData> for WsCredentials {
+    fn from(d: WsCredentialsData) -> Self {
+        d.websocket
+    }
+}
+
+// --- POST /servers/live/light/bulk ----------------------------------------
+
+/// Compte de joueurs de plusieurs serveurs en **un seul appel**. Attention : contrairement à
+/// `GET /server/{id}/live/light`, la réponse ne porte QUE les joueurs — ni CPU, ni disque, ni
+/// statut. C'est une vue de liste, pas un remplaçant du `live_light` complet.
+#[derive(Debug, Clone, Serialize)]
+pub struct LivePlayers {
+    pub server_id: i64,
+    pub current: i64,
+    pub limit: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LiveBulkData {
+    /// Valeur `null` observée pour un serveur que l'hôte ne sait pas interroger sur le moment
+    /// (vérifié le 2026-08-19) : sans l'`Option`, toute la réponse échouerait à se désérialiser.
+    #[serde(default)]
+    pub servers: std::collections::HashMap<String, Option<LiveBulkEntry>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LiveBulkEntry {
+    #[serde(default)]
+    pub players: Option<PlayersRaw>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct PlayersRaw {
+    #[serde(default)]
+    pub current: i64,
+    #[serde(default)]
+    pub limit: i64,
+}
+
+// --- GET /site/eggs -------------------------------------------------------
+
+/// Entrée du catalogue d'eggs de l'hébergeur (37 au 2026-08-19) : la table de référence qui
+/// relie un `id_egg` à un jeu, sans passer par des mots-clés dans un nom.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Egg {
+    pub id: i64,
+    pub name: String,
+    pub icon_url: Option<String>,
+    pub header_url: Option<String>,
+    /// Ressources minimales recommandées (cpu en cœurs, ram/disk en Go).
+    pub cpu: String,
+    pub ram: String,
+    pub disk: String,
+    pub official: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EggsData {
+    #[serde(default)]
+    pub eggs: Vec<EggRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct EggRaw {
+    pub id: i64,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub resources: EggResourcesRaw,
+    #[serde(default)]
+    pub is_official: i64,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct EggResourcesRaw {
+    #[serde(default)]
+    pub cpu: String,
+    #[serde(default)]
+    pub ram: String,
+    #[serde(default)]
+    pub disk: String,
+}
+
+impl From<EggRaw> for Egg {
+    fn from(e: EggRaw) -> Self {
+        Egg {
+            icon_url: egg_asset_url(e.icon.as_deref(), crate::config::EGG_ICON_BASE),
+            header_url: egg_asset_url(e.icon.as_deref(), crate::config::EGG_HEADER_BASE),
+            id: e.id,
+            name: e.name,
+            cpu: e.resources.cpu,
+            ram: e.resources.ram,
+            disk: e.resources.disk,
+            official: e.is_official != 0,
+        }
+    }
+}
+
 // --- GET /server/{id} -----------------------------------------------------
 
 #[derive(Debug, Deserialize)]
@@ -246,6 +533,37 @@ pub struct ServerFullData {
     server: ServerObjRaw,
     #[serde(default)]
     websocket: WsRaw,
+    /// Journal d'actions tenu par l'hébergeur — la brique que le ROADMAP appelait « journal
+    /// d'audit », déjà servie ici : elle couvre AUSSI les actions faites hors de l'app
+    /// (panel web, staff), qu'un journal purement local ne verrait jamais.
+    #[serde(default)]
+    history: Vec<ServerActionRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ServerActionRaw {
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    ip: String,
+    #[serde(default)]
+    is_staff: bool,
+    #[serde(default)]
+    action: String,
+}
+
+/// Entrée du journal d'actions d'un serveur.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServerAction {
+    /// `YYYY-MM-DD HH:MM:SS.mmm` tel que renvoyé par l'API.
+    pub date: String,
+    /// Adresse d'origine de l'action. Utile pour repérer une action qu'on n'a pas faite ;
+    /// passe par [`crate::redact`] avant tout envoi à un LLM ou un service de paste.
+    pub ip: String,
+    /// Action déclenchée par le staff de l'hébergeur plutôt que par le titulaire du compte.
+    pub staff: bool,
+    /// Identifiant d'action (`power.restart`, `power.stop`…).
+    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -272,6 +590,8 @@ pub struct ServerDetails {
     pub hibernation: bool,
     pub ws_url: Option<String>,
     pub ws_token: Option<String>,
+    /// Journal d'actions, du plus récent au plus ancien.
+    pub history: Vec<ServerAction>,
 }
 
 impl From<ServerFullData> for ServerDetails {
@@ -282,6 +602,16 @@ impl From<ServerFullData> for ServerDetails {
             hibernation: r.server.hibernation != 0,
             ws_url: r.websocket.url.filter(|u| !u.is_empty()),
             ws_token: r.websocket.token.filter(|t| !t.is_empty()),
+            history: r
+                .history
+                .into_iter()
+                .map(|h| ServerAction {
+                    date: h.date,
+                    ip: h.ip,
+                    staff: h.is_staff,
+                    action: h.action,
+                })
+                .collect(),
         }
     }
 }

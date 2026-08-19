@@ -18,6 +18,8 @@
   let servers = $state<ServerListItem[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  /** Joueurs en ligne par serveur — un seul appel groupé pour toute la liste. */
+  let players = $state<Record<number, { current: number; limit: number }>>({});
 
   async function load() {
     loading = true;
@@ -26,10 +28,25 @@
       const overview = await api.listServers();
       myboxes = overview.myboxes;
       servers = overview.servers;
+      void loadPlayers();
     } catch (err) {
       error = humanizeError(err);
     } finally {
       loading = false;
+    }
+  }
+
+  /** Best-effort : un compte de joueurs manquant ne doit pas dégrader la liste. */
+  async function loadPlayers() {
+    const ids = servers.filter((s) => s.status === "active").map((s) => s.id);
+    if (ids.length === 0) return;
+    try {
+      const rows = await api.livePlayersBulk(ids);
+      players = Object.fromEntries(
+        rows.map((r) => [r.server_id, { current: r.current, limit: r.limit }]),
+      );
+    } catch {
+      players = {};
     }
   }
 
@@ -127,13 +144,18 @@
             <li>
               <button class="row" onclick={() => onOpen(s, g.box)}>
                 <span class="ico">
-                  <GameIcon src={s.egg_icon} name={s.egg_name} size={38} />
+                  <GameIcon src={s.egg_icon_url} name={s.egg_name} size={38} />
                   <span class="dot" style="background:{statusColor(s.status)}"></span>
                 </span>
                 <span class="name">
                   <strong>{s.name}</strong>
                   <small class="dim selectable">{s.egg_name} · {s.address}</small>
                 </span>
+                {#if players[s.id] && s.capabilities?.players}
+                  <span class="players dim">
+                    <Icon name="players" size={13} />{players[s.id].current}/{players[s.id].limit}
+                  </span>
+                {/if}
                 <Icon name="chevronRight" size={18} />
               </button>
             </li>
@@ -145,6 +167,15 @@
 </div>
 
 <style>
+  .players {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+
   .top {
     display: flex;
     align-items: flex-end;

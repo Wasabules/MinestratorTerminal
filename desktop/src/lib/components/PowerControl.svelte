@@ -8,11 +8,26 @@
     running,
     disabled = false,
     compact = false,
-  }: { serverId: number; running: boolean; disabled?: boolean; compact?: boolean } = $props();
+    restartWarning = null,
+    stopWarning = null,
+  }: {
+    serverId: number;
+    running: boolean;
+    disabled?: boolean;
+    compact?: boolean;
+    /**
+     * Avertissements configurés par l'hébergeur pour CE serveur (`poweraction_message_*` de
+     * l'API). Quand ils existent, l'action passe par une confirmation qui les affiche.
+     */
+    restartWarning?: string | null;
+    stopWarning?: string | null;
+  } = $props();
 
   let busy = $state(false);
   let menuOpen = $state(false);
   let error = $state<string | null>(null);
+  /** Action retenue en attente de confirmation (avertissement de l'hébergeur à lire). */
+  let pending = $state<PowerAction | null>(null);
 
   const RUNNING_ACTIONS: PowerAction[] = ['restart', 'restart10', 'stop10', 'kill'];
   const STOPPED_ACTIONS: PowerAction[] = ['restart'];
@@ -20,8 +35,26 @@
   // Actions secondaires regroupées dans le menu « ⋯ ».
   const secondary = $derived(running ? RUNNING_ACTIONS : STOPPED_ACTIONS);
 
+  /** Avertissement associé à une action, ou `null` si l'hébergeur n'en a pas défini. */
+  function warningFor(action: PowerAction): string | null {
+    if (action === 'restart' || action === 'restart10') return restartWarning || null;
+    if (action === 'stop' || action === 'stop10' || action === 'kill') return stopWarning || null;
+    return null;
+  }
+
+  /** Demande confirmation si l'hébergeur a posé un avertissement, sinon exécute directement. */
+  function request(action: PowerAction) {
+    menuOpen = false;
+    if (warningFor(action)) {
+      pending = action;
+      return;
+    }
+    void act(action);
+  }
+
   async function act(action: PowerAction) {
     menuOpen = false;
+    pending = null;
     busy = true;
     error = null;
     try {
@@ -38,7 +71,7 @@
 
 <div class="power">
   <div class="group" class:danger={running} class:compact>
-    <button class="main" disabled={disabled || busy} onclick={() => act(primary)}>
+    <button class="main" disabled={disabled || busy} onclick={() => request(primary)}>
       {#if busy}<span class="spinner"></span>{/if}
       {t(`power.${primary}`)}
     </button>
@@ -57,10 +90,22 @@
     ></button>
     <div class="menu" role="menu">
       {#each secondary as action (action)}
-        <button class="item" role="menuitem" onclick={() => act(action)}>
+        <button class="item" role="menuitem" onclick={() => request(action)}>
           {t(`power.${action}`)}
         </button>
       {/each}
+    </div>
+  {/if}
+
+  {#if pending}
+    <button class="backdrop" aria-label={t('common.close')} onclick={() => (pending = null)}
+    ></button>
+    <div class="confirm" role="dialog" aria-modal="true">
+      <p class="warn">{warningFor(pending)}</p>
+      <div class="confirm-actions">
+        <button class="btn btn--ghost" onclick={() => (pending = null)}>{t('common.cancel')}</button>
+        <button class="btn" onclick={() => act(pending!)}>{t(`power.${pending}`)}</button>
+      </div>
     </div>
   {/if}
 
@@ -68,6 +113,30 @@
 </div>
 
 <style>
+  .confirm {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 6px);
+    right: 0;
+    width: 280px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--elevated);
+    box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
+  }
+  .confirm .warn {
+    margin: 0 0 10px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
   .power {
     position: relative;
     display: inline-flex;

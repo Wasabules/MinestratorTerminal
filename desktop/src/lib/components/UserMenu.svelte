@@ -45,6 +45,17 @@
         role="menuitem"
         onclick={() => {
           open = false;
+          tabs.openNotifications();
+        }}
+      >
+        <span class="i-ico"><Icon name="bell" size={15} /></span>{t('notifications.title')}
+      </button>
+
+      <button
+        class="item"
+        role="menuitem"
+        onclick={() => {
+          open = false;
           tabs.openSettings();
         }}
       >

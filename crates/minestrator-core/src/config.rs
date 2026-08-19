@@ -10,6 +10,12 @@ pub const OFFICIAL_MCP_URL: &str = "https://mcp.sttr.io/minestrator";
 /// Origin exigé par le daemon Wings sur le handshake WebSocket (sinon 403).
 pub const WS_ORIGIN: &str = "https://minestrator.com";
 
+/// CDN des visuels d'egg. L'API ne renvoie qu'un **nom de fichier** (`minecraft.webp`) dans
+/// `egg_icon` : ces bases le complètent en URL affichable. `server_icon` = vignette carrée
+/// (~1 Kio), `server_header` = bannière large (~200 Kio, à ne charger que si on l'affiche).
+pub const EGG_ICON_BASE: &str = "https://cdn.minestrator.com/eggs/server_icon/";
+pub const EGG_HEADER_BASE: &str = "https://cdn.minestrator.com/eggs/server_header/";
+
 pub const USER_AGENT: &str = concat!("MinestratorCore/", env!("CARGO_PKG_VERSION"));
 
 // Sur Android, le backend secrets est fichier (pas de `keyring`) → cette constante n'y sert pas.

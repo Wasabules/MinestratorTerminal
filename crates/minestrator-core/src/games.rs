@@ -54,6 +54,50 @@ fn caps(
     }
 }
 
+/// Identifiants d'egg **exacts** (catalogue `/site/eggs`, relevé le 2026-08-19) des jeux que l'app
+/// sait traiter spécifiquement. C'est la voie fiable : `id_egg` est stable côté hébergeur, là où
+/// `egg_name` bouge au gré des renommages et piège sur les suffixes (« Terraria (Vanilla) »).
+/// Tout id absent d'ici retombe sur l'heuristique de [`capabilities_for`].
+const EGG_MINECRAFT_JAVA: i64 = 1;
+const EGG_MINECRAFT_BEDROCK: i64 = 4362;
+const EGG_SATISFACTORY: i64 = 12;
+const EGG_VALHEIM: i64 = 6;
+const EGG_V_RISING: i64 = 13;
+const EGG_FACTORIO: i64 = 14;
+const EGG_RUST: i64 = 33;
+/// Eggs qui ne sont pas des jeux : bases de données proposées par l'hébergeur. Elles n'ont ni
+/// joueurs, ni mods, ni autocomplétion console — les traiter comme un jeu générique afficherait
+/// une vue Joueurs et une marketplace vides.
+const EGG_DATABASES: &[i64] = &[15 /* Redis 7 */, 16 /* MongoDB 7 */, 30 /* MariaDB 11.6 */];
+
+/// Déduit les capacités d'un serveur en privilégiant l'`id_egg` exact quand l'API le fournit,
+/// avec repli sur l'heuristique par mots-clés ([`capabilities_for`]) pour les eggs inconnus —
+/// un nouveau jeu ajouté par l'hébergeur reste ainsi utilisable sans mise à jour de l'app.
+pub fn capabilities_for_egg(
+    id_egg: Option<i64>,
+    egg_name: &str,
+    bedrock: bool,
+) -> GameCapabilities {
+    let Some(id) = id_egg else {
+        return capabilities_for(egg_name, bedrock);
+    };
+    if EGG_DATABASES.contains(&id) {
+        return caps("database", "none", "generic", false, "none");
+    }
+    match id {
+        EGG_MINECRAFT_JAVA => caps("minecraft", "minecraft_java", "minecraft", true, "minecraft"),
+        EGG_MINECRAFT_BEDROCK => caps("minecraft", "minecraft_bedrock", "minecraft", true, "none"),
+        EGG_SATISFACTORY => caps("satisfactory", "none", "unreal", false, "ficsit"),
+        EGG_VALHEIM => caps("valheim", "none", "generic", false, "thunderstore"),
+        EGG_V_RISING => caps("v_rising", "none", "generic", false, "thunderstore"),
+        EGG_FACTORIO => caps("factorio", "none", "generic", false, "factorio"),
+        EGG_RUST => caps("rust", "none", "generic", false, "umod"),
+        // Egg connu de l'hébergeur mais pas de nous (Palworld, ARK, DayZ…) : l'heuristique peut
+        // encore reconnaître un fork Minecraft installé sous un autre egg.
+        _ => capabilities_for(egg_name, bedrock),
+    }
+}
+
 /// Déduit les capacités d'un serveur depuis son `egg_name` et le flag `bedrock` (Bedrock détecté
 /// de façon fiable via le flag de l'API, pas par le nom). La valeur `mods` nomme la marketplace :
 /// `minecraft` (Modrinth/CF/Spigot via MineStrator) · `ficsit` · `thunderstore` (Valheim/V Rising)
@@ -137,5 +181,34 @@ mod tests {
         assert_eq!(capabilities_for("Factorio", false).mods, "factorio");
         assert_eq!(capabilities_for("Rust", false).mods, "umod");
         assert_eq!(capabilities_for("Rust", false).family, "rust");
+    }
+
+    #[test]
+    fn egg_id_wins_over_the_name() {
+        // Un serveur Minecraft nommé « Vanilla » : l'heuristique doit être court-circuitée par l'id.
+        let c = capabilities_for_egg(Some(EGG_MINECRAFT_JAVA), "26.1.2 CanvasMC", false);
+        assert_eq!(c.family, "minecraft");
+        assert_eq!(c.mods, "minecraft");
+        assert_eq!(capabilities_for_egg(Some(EGG_SATISFACTORY), "", false).mods, "ficsit");
+        assert_eq!(capabilities_for_egg(Some(EGG_FACTORIO), "", false).mods, "factorio");
+    }
+
+    #[test]
+    fn databases_are_not_games() {
+        for id in EGG_DATABASES {
+            let c = capabilities_for_egg(Some(*id), "MariaDB 11.6", false);
+            assert_eq!(c.family, "database", "egg {id}");
+            assert!(!c.players, "egg {id} ne doit pas exposer de joueurs");
+            assert_eq!(c.mods, "none");
+        }
+    }
+
+    #[test]
+    fn unknown_egg_id_falls_back_to_the_heuristic() {
+        // Egg absent de notre table : on garde la reconnaissance par nom (fork Minecraft ici).
+        let c = capabilities_for_egg(Some(99_999), "Paper 1.21", false);
+        assert_eq!(c.family, "minecraft");
+        // Sans id du tout (ancienne réponse d'API), comportement historique inchangé.
+        assert_eq!(capabilities_for_egg(None, "Satisfactory", false).mods, "ficsit");
     }
 }

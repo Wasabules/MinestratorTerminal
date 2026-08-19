@@ -2,11 +2,12 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Error, FicsitInstallItem,
+    ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Egg, Error, FicsitInstallItem,
     FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
+    LivePlayers,
     MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
     MetricSample, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
-    ServersOverview, SftpEntry, SmlVersion, Snapshot, SupervisorConfig, UserProfile,
+    ServersOverview, SftpEntry, SmlVersion, Snapshot, SupervisorConfig, UserNotification, UserProfile,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -56,6 +57,26 @@ pub async fn server_details(core: State<'_, Arc<Core>>, id: i64) -> Result<Serve
 #[tauri::command]
 pub async fn live_light(core: State<'_, Arc<Core>>, id: i64) -> Result<LiveLight, Error> {
     core.live_light(id).await
+}
+
+#[tauri::command]
+pub async fn live_players_bulk(
+    core: State<'_, Arc<Core>>,
+    ids: Vec<i64>,
+) -> Result<Vec<LivePlayers>, Error> {
+    core.live_players_bulk(&ids).await
+}
+
+#[tauri::command]
+pub async fn list_eggs(core: State<'_, Arc<Core>>) -> Result<Vec<Egg>, Error> {
+    core.list_eggs().await
+}
+
+#[tauri::command]
+pub async fn user_notifications(
+    core: State<'_, Arc<Core>>,
+) -> Result<Vec<UserNotification>, Error> {
+    core.user_notifications().await
 }
 
 #[tauri::command]

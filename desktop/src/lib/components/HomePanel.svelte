@@ -9,6 +9,8 @@
   let data = $state<ServersOverview | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  /** Joueurs en ligne par serveur, remplis en UN appel groupé après le chargement de la liste. */
+  let players = $state<Record<number, { current: number; limit: number }>>({});
 
   async function load() {
     loading = true;
@@ -16,10 +18,28 @@
     try {
       data = await api.listServers();
       rememberCaps(data.servers);
+      void loadPlayers(data.servers);
     } catch (e) {
       error = humanizeError(e);
     } finally {
       loading = false;
+    }
+  }
+
+  /**
+   * Un seul appel pour tous les serveurs actifs. Best-effort : le compte de joueurs est un
+   * bonus d'affichage, un échec ne doit pas dégrader la page (ni afficher d'erreur).
+   */
+  async function loadPlayers(servers: ServerListItem[]) {
+    const ids = servers.filter((s) => s.status === 'active').map((s) => s.id);
+    if (ids.length === 0) return;
+    try {
+      const rows = await api.livePlayersBulk(ids);
+      players = Object.fromEntries(
+        rows.map((r) => [r.server_id, { current: r.current, limit: r.limit }])
+      );
+    } catch {
+      players = {};
     }
   }
 
@@ -78,7 +98,7 @@
         {:else}
           <div class="grid">
             {#each serversOf(mybox) as server (server.id)}
-              <ServerCard {server} />
+              <ServerCard {server} players={players[server.id] ?? null} />
             {/each}
           </div>
         {/if}
@@ -90,7 +110,7 @@
         <div class="group-head"><h2>{t('home.others')}</h2></div>
         <div class="grid">
           {#each orphans as server (server.id)}
-            <ServerCard {server} />
+            <ServerCard {server} players={players[server.id] ?? null} />
           {/each}
         </div>
       </section>

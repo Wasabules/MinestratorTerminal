@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
+  import { openUrl } from '@tauri-apps/plugin-opener';
   import { api } from '$lib/ipc';
   import { consoleEvents } from '$lib/events';
   import { t } from '$lib/i18n';
@@ -8,7 +9,13 @@
   import { fmtBytes } from '$lib/copilot/format';
   import { tabs, type ServerTab, type ServerView } from '$lib/tabs/tabs.svelte';
   import { serverCaps, availableViews } from '$lib/games/capabilities.svelte';
-  import type { ConsoleStats, LiveLight, MetricSample } from '$lib/types';
+  import type {
+    ConsoleStats,
+    LiveLight,
+    MetricSample,
+    ServerAction,
+    ServerListItem,
+  } from '$lib/types';
   import Gauge from '../Gauge.svelte';
   import PowerControl from '../PowerControl.svelte';
   import StatusDot from '../StatusDot.svelte';
@@ -20,7 +27,12 @@
   const connId = $derived(tab.id);
 
   let live = $state<LiveLight | null>(null);
-  let address = $state(''); // adresse de connexion (dns ou ip:port), depuis la liste des serveurs
+  // Entrée de la liste des serveurs : porte l'adresse, mais aussi les métadonnées que seule la
+  // liste fournit (avertissements de power action, dernier backup, référence support).
+  let item = $state<ServerListItem | null>(null);
+  /** Journal d'actions de l'hébergeur (panel web et staff compris), du plus récent au plus ancien. */
+  let history = $state<ServerAction[]>([]);
+  const address = $derived(item?.address ?? '');
   let copied = $state(false);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
   let stats = $state<ConsoleStats | null>(null);
@@ -53,6 +65,7 @@
   onMount(() => {
     void loadLive();
     void loadAddress();
+    void loadHistory();
     void connect();
     void loadMetrics();
     metricsTimer = setInterval(loadMetrics, 15000);
@@ -77,9 +90,18 @@
   async function loadAddress() {
     try {
       const list = await api.listServers();
-      address = list.servers.find((s) => s.id === serverId)?.address ?? '';
+      item = list.servers.find((s) => s.id === serverId) ?? null;
     } catch {
       /* liste indisponible */
+    }
+  }
+
+  /** L'historique voyage avec le détail du serveur : aucun endpoint supplémentaire. */
+  async function loadHistory() {
+    try {
+      history = (await api.serverDetails(serverId)).history ?? [];
+    } catch {
+      history = [];
     }
   }
 
@@ -167,7 +189,13 @@
         {t(`status.${rt.key}`)}
       </span>
     </div>
-    <PowerControl {serverId} {running} disabled={hibernated} />
+    <PowerControl
+      {serverId}
+      {running}
+      disabled={hibernated}
+      restartWarning={item?.restart_warning}
+      stopWarning={item?.stop_warning}
+    />
   </header>
 
   {#if address}
@@ -186,6 +214,21 @@
 
   {#if hibernated}
     <div class="note">{t('overview.hibernated')}</div>
+  {/if}
+
+  {#if item?.last_backup_url || item?.support_ref}
+    <div class="srvmeta dim">
+      {#if item?.last_backup_url}
+        <!-- URL signée : on l'ouvre sans jamais l'afficher (jeton porteur). -->
+        <button class="linklike" onclick={() => void openUrl(item!.last_backup_url!)}>
+          <Icon name="download" size={13} />
+          {t('overview.downloadLastBackup')}
+        </button>
+      {/if}
+      {#if item?.support_ref}
+        <span class="selectable">{t('overview.supportRef', { ref: item.support_ref })}</span>
+      {/if}
+    </div>
   {/if}
 
   <section class="gauges">
@@ -253,6 +296,22 @@
     </div>
   </section>
 
+  {#if history.length > 0}
+    <section class="block">
+      <h2>{t('overview.activity')}</h2>
+      <div class="acts">
+        {#each history.slice(0, 8) as h (h.date + h.action)}
+          <div class="act">
+            <span class="a-date dim">{h.date.slice(0, 19)}</span>
+            <span class="a-what">{h.action}</span>
+            {#if h.staff}<span class="chip staff">{t('overview.byStaff')}</span>{/if}
+            <span class="a-ip dim selectable">{h.ip}</span>
+          </div>
+        {/each}
+      </div>
+    </section>
+  {/if}
+
   <section class="block">
     <h2>{t('overview.openView')}</h2>
     <div class="views">
@@ -272,6 +331,66 @@
 </div>
 
 <style>
+  .acts {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .act {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .act:nth-child(odd) {
+    background: color-mix(in srgb, var(--text) 3%, transparent);
+  }
+  .a-date {
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .a-what {
+    font-family: var(--font-mono);
+    flex: 1;
+    min-width: 0;
+  }
+  .a-ip {
+    font-variant-numeric: tabular-nums;
+    flex: none;
+  }
+  .chip.staff {
+    flex: none;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--brand-tertiary) 22%, transparent);
+    color: var(--brand-tertiary);
+  }
+
+  .linklike {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--brand-primary);
+    font: inherit;
+    cursor: pointer;
+  }
+  .linklike:hover {
+    text-decoration: underline;
+  }
+
+  .srvmeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    font-size: 12px;
+  }
+
   .view {
     max-width: 900px;
     margin: 0 auto;

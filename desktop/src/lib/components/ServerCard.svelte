@@ -8,11 +8,29 @@
   import StatusDot from './StatusDot.svelte';
   import Icon from './Icon.svelte';
 
-  let { server }: { server: ServerListItem } = $props();
+  let {
+    server,
+    players = null,
+  }: {
+    server: ServerListItem;
+    /** Joueurs en ligne (appel groupé du parent) ; `null` tant qu'inconnu ou serveur inactif. */
+    players?: { current: number; limit: number } | null;
+  } = $props();
 
   const meta = $derived(statusMeta(server.status));
   const color = $derived(serverColor(server.id));
   const monogram = $derived((server.egg_name || server.name || '?').charAt(0).toUpperCase());
+  /**
+   * L'API renvoie la raison d'indisponibilité comme clé i18n du panel
+   * (`PANEL.SERVERS_LIST.SERVER_IS_DISABLED_MYBOX`) : on traduit le dernier segment quand on le
+   * connaît, et on n'affiche rien plutôt qu'une clé brute sinon.
+   */
+  const reason = $derived.by(() => {
+    const key = server.unavailable_reason?.split('.').pop();
+    if (!key) return null;
+    const label = t(`status.reason.${key}`);
+    return label === `status.reason.${key}` ? null : label;
+  });
   let iconFailed = $state(false); // repli monogramme si l'icône du jeu ne charge pas
   const quick: ServerView[] = ['overview', 'console', 'sftp'];
 
@@ -23,11 +41,11 @@
 
 <div class="card srv">
   <button class="head" onclick={() => open('overview')} title={t('view.overview')}>
-    {#if server.egg_icon && !iconFailed}
+    {#if server.egg_icon_url && !iconFailed}
       <img
         class="game-icon"
         style="--ring: {color ?? 'var(--brand-primary)'}"
-        src={server.egg_icon}
+        src={server.egg_icon_url}
         alt=""
         loading="lazy"
         onerror={() => (iconFailed = true)}
@@ -41,13 +59,18 @@
       <span class="name">{server.name}</span>
       <span class="addr">{server.address}</span>
     </span>
-    <span class="badge status" style="color: {meta.color}">
+    <span class="badge status" style="color: {meta.color}" title={reason ?? undefined}>
       <StatusDot color={meta.color} />{t(`status.${meta.key}`)}
     </span>
   </button>
 
   <div class="meta">
     <span class="chip">{server.egg_name}{server.bedrock ? ' · Bedrock' : ''}</span>
+    {#if players && server.capabilities.players}
+      <span class="chip players" title={t('home.playersOnline')}>
+        <Icon name="users" size={12} />{players.current}/{players.limit}
+      </span>
+    {/if}
     {#if !server.owner}<span class="chip sub">{t('home.subUser')}</span>{/if}
     {#if isDebug()}
       <span class="chip dbg"
@@ -142,6 +165,12 @@
     background: var(--elevated);
     border-radius: 999px;
     padding: 3px 9px;
+  }
+  .chip.players {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
   }
   .chip.sub {
     color: var(--brand-strator);
