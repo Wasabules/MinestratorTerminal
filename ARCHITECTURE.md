@@ -192,6 +192,7 @@ la moitié des endpoints annoncés par le RE n'existent pas pour cette authentif
 |---|---|---|
 | `GET /server/{id}/websocket` | OK — `{websocket:{url,token}}`, ~1 Kio | Rafraîchissement de token (`console.rs`), à la place du détail complet du serveur |
 | `POST /servers/live/light/bulk` (`{server_ids}`) | OK mais **joueurs seulement** — ni CPU, ni disque, ni statut. Une entrée peut valoir `null` | `Core::live_players_bulk`, pour les compteurs de la liste |
+| `GET /server/{id}/activity?limit&offset` | OK — **journal d'audit** paginé : `action_name`, `action_category`, `action_result`, `actor_name` (l'auteur !), `actor_type`, `context` (ex. la commande tapée), `ip`, `is_staff`, `created_at` ; `pagination.total` (2 173 entrées sur un serveur de test) | `Core::server_activity`, section « Activité récente » de l'Aperçu (desktop + mobile) |
 | `GET /site/eggs` | OK — 37 eggs (`id`, `name`, `icon`, `resources`, `is_official`) | `Core::list_eggs` (cache 1 h) + table de mapping de `games.rs` |
 | `https://cdn.minestrator.com/eggs/server_icon/{icon}` | OK — webp ~1 Kio (`…/server_header/` ≈ 200 Kio) | `config::EGG_ICON_BASE`, composé dans `ServerListItem` |
 | `GET /user/servers` | ✗ renvoie le **profil**, pas les serveurs | on garde `/user/{user_id}/servers` |
@@ -206,6 +207,12 @@ la moitié des endpoints annoncés par le RE n'existent pas pour cette authentif
 > `GET /server/{id}/websocket` répond **403 `API_SERVER_SUSPENDED`** pour un serveur suspendu :
 > il ne distingue pas suspension et hibernation, d'où le maintien de `get_server` à l'ouverture
 > d'une connexion console (voir le commentaire dans `console.rs::run_once`).
+
+> Le `history[]` de `GET /server/{id}` (date/ip/is_staff/action) est **abandonné** au profit de
+> `/activity`, qui nomme l'auteur et porte le contexte. Une seule source pour le journal.
+>
+> ⚠️ `context` peut contenir ce que l'utilisateur a tapé en console : le passer par
+> [`redact`](../crates/minestrator-core/src/redact.rs) avant tout envoi vers un LLM ou un paste.
 
 **Champs déjà servis par l'API et longtemps ignorés au parsing** (aucun appel supplémentaire) :
 `/user/{id}/servers` porte `id_egg`, `last_backup`, `poweraction_message_restart`/`_stop`, `note`,
@@ -242,7 +249,7 @@ Le WS ne sert qu'à **recevoir** output + stats + status.
 | Domaine | Commandes (extraits) |
 |---|---|
 | **Auth** | `validate_and_store_key`, `has_stored_key`, `get_user`, `logout` |
-| **Serveurs** | `list_servers`, `server_details`, `live_light`, `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
+| **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
 | **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |

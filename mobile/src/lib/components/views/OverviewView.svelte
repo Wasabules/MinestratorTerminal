@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, humanizeError, openExternal } from "../../ipc";
+  import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
   import Icon from "../Icon.svelte";
   import type {
@@ -7,7 +7,7 @@
     LiveLight,
     MyBoxSummary,
     PowerAction,
-    ServerAction,
+    ActivityEntry,
     ServerListItem,
   } from "../../types";
 
@@ -15,7 +15,17 @@
     server,
     mybox,
     active,
-  }: { server: ServerListItem; mybox: MyBoxSummary | null; active: boolean } = $props();
+    onNavigate,
+  }: {
+    server: ServerListItem;
+    mybox: MyBoxSummary | null;
+    active: boolean;
+    /** Ouvre un autre onglet du serveur (la tuile Joueurs y renvoie). */
+    onNavigate?: (tab: string) => void;
+  } = $props();
+
+  /** MOTD replié par défaut : décoratif, il mangeait le haut de l'écran. */
+  let motdOpen = $state(false);
 
   const serverId = $derived(server.id);
 
@@ -24,8 +34,8 @@
   let error = $state<string | null>(null);
   let busy = $state<PowerAction | null>(null);
   let copied = $state(false);
-  /** Journal d'actions de l'hébergeur (couvre le panel web et le staff), via le détail serveur. */
-  let history = $state<ServerAction[]>([]);
+  /** Journal d'audit de l'hébergeur (couvre le panel web et le staff), endpoint dédié. */
+  let history = $state<ActivityEntry[]>([]);
   /** Action retenue tant que l'avertissement de l'hébergeur n'est pas confirmé. */
   let pending = $state<PowerAction | null>(null);
 
@@ -45,12 +55,68 @@
     void power(action);
   }
 
+  /**
+   * Libellé lisible d'une action. L'API renvoie des identifiants pointés (`power.restart`) ;
+   * ceux qu'on ne connaît pas sont affichés tels quels plutôt que masqués.
+   */
+  function actionLabel(a: string): string {
+    const k = `action.${a}`;
+    return t(k) !== k ? t(k) : a;
+  }
+
+  function actionIcon(a: string): string {
+    if (a.startsWith("console.")) return "console";
+    if (a.startsWith("sftp.") || a.startsWith("file")) return "files";
+    if (a.startsWith("power.")) {
+      const verb = a.slice(6);
+      if (verb === "start") return "play";
+      if (verb === "stop") return "stop";
+      if (verb === "kill") return "kill";
+      return "restart";
+    }
+    return "shield";
+  }
+
+  /**
+   * Qui a fait l'action. L'endpoint `/activity` nomme l'auteur (`actor_name`), contrairement au
+   * `history[]` du détail serveur. Repli sur staff/compte quand le nom manque.
+   */
+  function actorLabel(h: ActivityEntry): string {
+    if (h.actor) return h.staff ? `${h.actor} (${t("overview.actorStaff")})` : h.actor;
+    return h.staff ? t("overview.actorStaff") : t("overview.actorAccount");
+  }
+
+  /** `2026-08-12 23:29:20.515` → `12/08 23:29`. */
+  function shortDate(d: string): string {
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}:\d{2})/);
+    return m ? `${m[3]}/${m[2]} ${m[4]}` : d.slice(0, 16);
+  }
+
+  /** Journal d'audit : la vue n'en montre qu'une poignée, inutile d'en demander plus. */
   async function loadHistory() {
     try {
-      history = (await api.serverDetails(serverId)).history ?? [];
+      history = (await api.serverActivity(serverId, 8, 0)).items;
     } catch {
       history = [];
     }
+  }
+
+  /**
+   * Partage l'adresse via la feuille de partage Android (`navigator.share`), pour l'envoyer à
+   * ses joueurs. Repli silencieux sur la copie si l'API n'est pas disponible ou si l'utilisateur
+   * annule — `share()` rejette aussi dans ce cas, ce qui n'est pas une erreur.
+   */
+  async function shareAddr() {
+    const data = { title: server.name, text: server.address };
+    try {
+      if (navigator.share) {
+        await navigator.share(data);
+        return;
+      }
+    } catch {
+      return; // annulation utilisateur : ne pas enchaîner sur une copie surprise
+    }
+    void copyAddr();
   }
 
   async function copyAddr() {
@@ -96,12 +162,23 @@
     }
   }
 
+  /**
+   * État d'exécution. `GET /server/{id}/live/light` renvoie `status: null` (vérifié le
+   * 2026-08-19) : la seule source fiable est l'échantillon WebSocket (`stats.state`), d'où
+   * l'ordre. `live.status` reste en second au cas où l'API se mette à le renseigner.
+   */
+  const runState = $derived(stats?.state ?? live?.status ?? null);
+  const isRunning = $derived(runState === "running");
+  /** État connu ? Si non, on n'ose pas désactiver de bouton (permissif plutôt que bloquant). */
+  const stateKnown = $derived(runState !== null);
+
   function statusColor(s: string | null): string {
     switch (s) {
       case "running":
         return "var(--state-running)";
       case "starting":
       case "stopping":
+      case "installing":
         return "var(--state-pending)";
       default:
         return "var(--state-offline)";
@@ -158,12 +235,33 @@
     },
   ]);
 
-  const powerButtons: { action: PowerAction; key: string; icon: string; kind: string }[] = [
-    { action: "start", key: "power.start", icon: "play", kind: "ok" },
-    { action: "restart", key: "power.restart", icon: "restart", kind: "warn" },
-    { action: "stop", key: "power.stop", icon: "stop", kind: "warn" },
-    { action: "kill", key: "power.kill", icon: "kill", kind: "danger" },
-  ];
+  /**
+   * Trois boutons sur une ligne. Démarrer et Arrêter s'excluent — les afficher ensemble
+   * proposerait toujours une action sans objet — donc le premier emplacement est contextuel.
+   * Redémarrer et Kill n'ont de sens que sur un serveur en marche : désactivés sinon, sauf
+   * si l'état est inconnu (on ne bloque pas sur une incertitude).
+   */
+  const powerButtons = $derived<
+    { action: PowerAction; key: string; icon: string; kind: string; off: boolean }[]
+  >([
+    isRunning
+      ? { action: "stop", key: "power.stop", icon: "stop", kind: "warn", off: false }
+      : { action: "start", key: "power.start", icon: "play", kind: "ok", off: false },
+    {
+      action: "restart",
+      key: "power.restart",
+      icon: "restart",
+      kind: "warn",
+      off: stateKnown && !isRunning,
+    },
+    {
+      action: "kill",
+      key: "power.kill",
+      icon: "kill",
+      kind: "danger",
+      off: stateKnown && !isRunning,
+    },
+  ]);
 
   // Poll seulement quand l'onglet est actif (pager).
   $effect(() => {
@@ -183,57 +281,73 @@
 <div class="view">
   {#if error}<p class="err selectable">{error}</p>{/if}
 
-  <!-- Statut + MyBox -->
-  <div class="status">
-    <span class="dot" style="background:{statusColor(live?.status ?? null)}"></span>
-    <span class="slabel">{statusLabel(live?.status ?? null)}</span>
-    {#if mybox}
-      <span class="pill selectable">{mybox.offer} · {mybox.days_left} j</span>
-    {/if}
-  </div>
+  <!-- Bloc de tête : état, offre et jauges d'un seul coup d'œil. -->
+  <section class="head-card">
+    <div class="status">
+      <span class="dot" class:pulse={isRunning} style="background:{statusColor(runState)}"></span>
+      <span class="slabel">{statusLabel(runState)}</span>
+      {#if mybox}
+        <span class="pill selectable">{mybox.offer} · {mybox.days_left} j</span>
+      {/if}
+    </div>
 
-  <!-- Jauges live -->
-  <div class="gauges">
-    {#each gauges as g (g.key)}
-      <div class="gauge">
-        <div class="grow">
-          <span class="gname">{t(g.key)}</span>
-          <span class="gval selectable">{g.value}</span>
+    <div class="gauges">
+      {#each gauges as g (g.key)}
+        <div class="gauge">
+          <div class="grow">
+            <span class="gname">{t(g.key)}</span>
+            <span class="gval selectable">{g.value}</span>
+          </div>
+          <div class="track"><div class="fill" style="width:{g.pct}%; background:{gaugeColor(g.pct)}"></div></div>
         </div>
-        <div class="track"><div class="fill" style="width:{g.pct}%; background:{gaugeColor(g.pct)}"></div></div>
-      </div>
+      {/each}
+    </div>
+  </section>
+
+  <!-- Alimentation : à sa place sous les jauges, puis collée en HAUT dès qu'on défile plus
+       bas. `sticky` dans `.page` (le conteneur scrollable) plutôt que `fixed`, sinon la barre
+       s'afficherait aussi par-dessus les autres onglets du pager. -->
+  <div class="power sticky">
+    {#each powerButtons as b (b.action)}
+      <button
+        class={b.kind}
+        disabled={busy !== null || b.off}
+        onclick={() => request(b.action)}
+      >
+        <Icon name={b.icon} size={18} />
+        <span>{busy === b.action ? "…" : t(b.key)}</span>
+      </button>
     {/each}
   </div>
 
-  <!-- Infos serveur -->
-  <div class="tiles">
-    <div class="tile">
-      <small>{t("overview.version")}</small>
-      <strong class="selectable">{live?.version ?? "—"}</strong>
-    </div>
-    <div class="tile">
-      <small>{t("overview.players")}</small>
-      <strong class="selectable">{live?.players ? `${live.players.current}/${live.players.limit}` : "—"}</strong>
-    </div>
-    <div class="tile">
-      <small>{t("overview.uptime")}</small>
-      <strong class="selectable">{fmtUptime(stats?.uptime)}</strong>
-    </div>
-    <div class="tile">
-      <small>Jeu</small>
-      <strong class="selectable">{server.egg_name}</strong>
-    </div>
-  </div>
-
-  <!-- Connexion -->
+  <!-- Connexion : l'info qu'on vient chercher le plus souvent après l'état. -->
   <div class="conn">
     <div class="conncol">
       <small>Connexion</small>
       <span class="addr selectable">{server.address}</span>
     </div>
+    <button class="copybtn" onclick={shareAddr} aria-label={t("overview.share")}>
+      <Icon name="external" size={18} />
+    </button>
     <button class="copybtn" onclick={copyAddr} aria-label="Copier">
       <Icon name={copied ? "check" : "copy"} size={18} />
     </button>
+  </div>
+
+  <!-- Trois tuiles : « Jeu » a disparu, l'en-tête porte déjà l'icône et le nom du jeu. -->
+  <div class="tiles">
+    <div class="tile">
+      <small>{t("overview.version")}</small>
+      <strong class="selectable">{live?.version ?? "—"}</strong>
+    </div>
+    <button class="tile as-btn" onclick={() => onNavigate?.("players")}>
+      <small>{t("overview.players")}</small>
+      <strong>{live?.players ? `${live.players.current}/${live.players.limit}` : "—"}</strong>
+    </button>
+    <div class="tile">
+      <small>{t("overview.uptime")}</small>
+      <strong class="selectable">{fmtUptime(stats?.uptime)}</strong>
+    </div>
   </div>
 
   {#if live?.players && live.players.list.length > 0}
@@ -248,33 +362,14 @@
   {/if}
 
   {#if live?.motd}
-    <p class="motd selectable">{live.motd}</p>
-  {/if}
-
-  {#if server.last_backup_url || server.support_ref}
-    <div class="meta">
-      {#if server.last_backup_url}
-        <!-- URL signée (jeton porteur) : ouverte sans jamais être affichée. -->
-        <button class="linklike" onclick={() => openExternal(server.last_backup_url!)}>
-          <Icon name="save" size={15} />
-          {t("overview.downloadLastBackup")}
-        </button>
-      {/if}
-      {#if server.support_ref}
-        <span class="dim selectable">{t("overview.supportRef")} : {server.support_ref}</span>
-      {/if}
+    <div class="motdbox">
+      <button class="motdtoggle" onclick={() => (motdOpen = !motdOpen)}>
+        {t("overview.motd")}
+        <span class="caret" class:open={motdOpen}>›</span>
+      </button>
+      {#if motdOpen}<p class="motd selectable">{live.motd}</p>{/if}
     </div>
   {/if}
-
-  <!-- Alimentation -->
-  <div class="power">
-    {#each powerButtons as b (b.action)}
-      <button class={b.kind} disabled={busy !== null} onclick={() => request(b.action)}>
-        <Icon name={b.icon} size={18} />
-        <span>{busy === b.action ? "…" : t(b.key)}</span>
-      </button>
-    {/each}
-  </div>
 
   {#if pending}
     <div class="warnbox">
@@ -287,20 +382,83 @@
   {/if}
 
   {#if history.length > 0}
-    <div class="acts">
-      <small>{t("overview.activity")}</small>
-      {#each history.slice(0, 6) as h (h.date + h.action)}
-        <div class="act">
-          <span class="a-date dim">{h.date.slice(0, 16)}</span>
-          <span class="a-what">{h.action}</span>
-          {#if h.staff}<span class="a-staff">{t("overview.byStaff")}</span>{/if}
-        </div>
-      {/each}
-    </div>
+    <section class="acts">
+      <h3>{t("overview.activity")}</h3>
+      <ul>
+        {#each history.slice(0, 6) as h (h.date + h.action)}
+          <li class="act" class:staff={h.staff}>
+            <span class="a-ico"><Icon name={actionIcon(h.action)} size={16} /></span>
+            <span class="a-body">
+              <span class="a-top">
+                    <strong>{actionLabel(h.action)}</strong>
+                {#if h.result && h.result !== "success"}
+                  <span class="a-ko">{h.result}</span>
+                {/if}
+                <span class="a-date dim">{shortDate(h.date)}</span>
+              </span>
+              <span class="a-sub dim">
+                <!-- `&nbsp;` : Svelte élague l'espace en tête de balise, d'où un « Wasab_II· » collé. -->
+                {actorLabel(h)}{#if h.ip}<span class="a-ip selectable">&nbsp;· {h.ip}</span>{/if}
+              </span>
+              {#if h.context}
+                <!-- Contexte fourni par l'API : la commande console tapée, typiquement. -->
+                <code class="a-ctx selectable">{h.context}</code>
+              {/if}
+            </span>
+          </li>
+        {/each}
+      </ul>
+    </section>
   {/if}
 </div>
 
 <style>
+  .head-card {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+  .tile.as-btn {
+    text-align: left;
+    border: 1px solid var(--border);
+    font: inherit;
+    cursor: pointer;
+  }
+  .tile.as-btn strong {
+    color: var(--brand-primary);
+  }
+  .motdbox {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .motdtoggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 11px 13px;
+    background: none;
+    border: 0;
+    color: var(--text-muted);
+    font: inherit;
+    font-size: 13px;
+  }
+  .caret {
+    transition: transform 0.15s ease;
+  }
+  .caret.open {
+    transform: rotate(90deg);
+  }
+  .motdbox .motd {
+    padding: 0 13px 12px;
+  }
+
   .meta {
     display: flex;
     flex-wrap: wrap;
@@ -354,40 +512,96 @@
     color: #fff;
   }
 
-  .acts {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  .acts h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
   }
-  .acts small {
-    color: var(--text-dim);
-    margin-bottom: 2px;
+  .acts ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+    overflow: hidden;
   }
   .act {
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 13px;
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .act + .act {
+    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  }
+  .a-ico {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    flex: none;
+    background: color-mix(in srgb, var(--text) 7%, transparent);
+    color: var(--text-muted);
+  }
+  /* Action du staff de l'hébergeur : signalée par la couleur, pas par un badge de plus. */
+  .act.staff .a-ico {
+    background: color-mix(in srgb, var(--brand-tertiary) 20%, transparent);
+    color: var(--brand-tertiary);
+  }
+  .a-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    flex: 1;
+  }
+  .a-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .a-top strong {
+    font-size: 14px;
+    font-weight: 600;
   }
   .a-date {
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
     flex: none;
   }
-  .a-what {
-    font-family: var(--font-mono, monospace);
-    flex: 1;
-    min-width: 0;
+  .a-sub {
+    font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .a-staff {
+  .a-ip {
+    font-variant-numeric: tabular-nums;
+  }
+  .a-ctx {
+    display: block;
+    margin-top: 3px;
+    padding: 3px 7px;
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--text) 6%, transparent);
+    font-family: var(--font-mono, monospace);
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .a-ko {
     flex: none;
     padding: 1px 6px;
     border-radius: 999px;
     font-size: 11px;
-    background: color-mix(in srgb, var(--brand-tertiary) 22%, transparent);
-    color: var(--brand-tertiary);
+    background: color-mix(in srgb, var(--state-danger) 20%, transparent);
+    color: var(--state-danger);
   }
 
   .view {
@@ -463,17 +677,25 @@
   }
   .tiles {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    /* Trois colonnes : en 1fr 1fr, la troisième tuile restait seule sur sa ligne. */
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
   }
   .tile {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 14px;
+    /* Resserré : trois colonnes laissent ~1/3 de largeur par tuile. */
+    padding: 10px;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 4px;
+  }
+  .tile strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tile small {
     color: var(--text-dim);
@@ -548,11 +770,28 @@
     color: var(--text-muted);
     font-size: 13px;
     font-family: var(--font-mono);
+    /* Le MOTD contient de vrais retours à la ligne : les respecter au lieu de tout aplatir. */
+    white-space: pre-line;
+    line-height: 1.4;
+  }
+  .power.sticky {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    /* Marges négatives : la barre occupe toute la largeur malgré le padding de `.view`. */
+    margin: 0 -16px;
+    padding: 10px 16px;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
   }
   .power {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .power button:disabled {
+    opacity: 0.4;
   }
   .power button {
     display: flex;

@@ -83,6 +83,23 @@ impl<R: Runtime> BackgroundMonitor<R> {
 
     /// Ouvre la fiche « infos de l'app » (batterie, autostart selon l'OEM, notifications).
     #[allow(unused)]
+    /// Pousse un résumé d'état dans la notification persistante du service. No-op hors Android,
+    /// et sans effet si la surveillance en arrière-plan est désactivée.
+    pub fn update_status(&self, _title: &str, _text: &str) -> Result<(), String> {
+        #[cfg(target_os = "android")]
+        {
+            #[derive(serde::Serialize)]
+            struct Args<'a> {
+                title: &'a str,
+                text: &'a str,
+            }
+            self.handle
+                .run_mobile_plugin::<()>("updateStatus", Args { title: _title, text: _text })
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
     pub fn open_app_settings(&self) -> Result<(), String> {
         #[cfg(target_os = "android")]
         {

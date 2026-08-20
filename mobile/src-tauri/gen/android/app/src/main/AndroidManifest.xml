@@ -32,6 +32,10 @@
                 <!-- AndroidTV support -->
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- Raccourcis d'appui long sur l'icône de l'app. -->
+            <meta-data
+              android:name="android.app.shortcuts"
+              android:resource="@xml/shortcuts" />
         </activity>
 
         <provider

@@ -13,7 +13,7 @@
     ConsoleStats,
     LiveLight,
     MetricSample,
-    ServerAction,
+    ActivityEntry,
     ServerListItem,
   } from '$lib/types';
   import Gauge from '../Gauge.svelte';
@@ -30,8 +30,8 @@
   // Entrée de la liste des serveurs : porte l'adresse, mais aussi les métadonnées que seule la
   // liste fournit (avertissements de power action, dernier backup, référence support).
   let item = $state<ServerListItem | null>(null);
-  /** Journal d'actions de l'hébergeur (panel web et staff compris), du plus récent au plus ancien. */
-  let history = $state<ServerAction[]>([]);
+  /** Journal d'audit de l'hébergeur (panel web et staff compris), du plus récent au plus ancien. */
+  let history = $state<ActivityEntry[]>([]);
   const address = $derived(item?.address ?? '');
   let copied = $state(false);
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
@@ -96,13 +96,29 @@
     }
   }
 
-  /** L'historique voyage avec le détail du serveur : aucun endpoint supplémentaire. */
+  /**
+   * Journal d'audit via son endpoint dédié : il nomme l'auteur de chaque action et porte le
+   * contexte (la commande tapée, par exemple), là où le `history[]` du détail serveur se
+   * limitait à date/ip/staff.
+   */
   async function loadHistory() {
     try {
-      history = (await api.serverDetails(serverId)).history ?? [];
+      history = (await api.serverActivity(serverId, 8, 0)).items;
     } catch {
       history = [];
     }
+  }
+
+  /** Libellé lisible d'une action ; les identifiants inconnus sont affichés tels quels. */
+  function actionLabel(a: string): string {
+    const k = `action.${a}`;
+    return t(k) === k ? a : t(k);
+  }
+
+  /** Auteur nommé quand l'API le connaît, sinon repli sur staff/compte. */
+  function actorLabel(h: ActivityEntry): string {
+    if (h.actor) return h.staff ? `${h.actor} (${t('overview.byStaff')})` : h.actor;
+    return h.staff ? t('overview.byStaff') : t('overview.actorAccount');
   }
 
   function copyAddress() {
@@ -300,12 +316,16 @@
     <section class="block">
       <h2>{t('overview.activity')}</h2>
       <div class="acts">
-        {#each history.slice(0, 8) as h (h.date + h.action)}
+        {#each history as h (h.id)}
           <div class="act">
-            <span class="a-date dim">{h.date.slice(0, 19)}</span>
-            <span class="a-what">{h.action}</span>
-            {#if h.staff}<span class="chip staff">{t('overview.byStaff')}</span>{/if}
-            <span class="a-ip dim selectable">{h.ip}</span>
+            <span class="a-date dim">{h.date.slice(0, 16)}</span>
+            <span class="a-what">
+              {actionLabel(h.action)}
+              {#if h.context}<code class="a-ctx selectable">{h.context}</code>{/if}
+              {#if h.result && h.result !== 'success'}<span class="a-ko">{h.result}</span>{/if}
+            </span>
+            <span class="a-who dim" class:staff={h.staff}>{actorLabel(h)}</span>
+            {#if h.ip}<span class="a-ip dim selectable">{h.ip}</span>{/if}
           </div>
         {/each}
       </div>
@@ -352,21 +372,42 @@
     flex: none;
   }
   .a-what {
-    font-family: var(--font-mono);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
     flex: 1;
     min-width: 0;
+  }
+  .a-ctx {
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--text) 7%, transparent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .a-ko {
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 11px;
+    background: color-mix(in srgb, var(--state-danger) 18%, transparent);
+    color: var(--state-danger);
+  }
+  .a-who {
+    flex: none;
+    max-width: 18ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .a-who.staff {
+    color: var(--brand-tertiary);
   }
   .a-ip {
     font-variant-numeric: tabular-nums;
     flex: none;
-  }
-  .chip.staff {
-    flex: none;
-    padding: 1px 6px;
-    border-radius: 999px;
-    font-size: 11px;
-    background: color-mix(in srgb, var(--brand-tertiary) 22%, transparent);
-    color: var(--brand-tertiary);
   }
 
   .linklike {

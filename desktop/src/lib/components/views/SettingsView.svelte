@@ -14,6 +14,7 @@
   import { isCompactTabs, setCompactTabs } from '$lib/tabs/mode.svelte';
   import { closeBehavior, setCloseBehavior, type CloseBehavior } from '$lib/close.svelte';
   import { isDebug, setDebug } from '$lib/debug.svelte';
+  import { isFake, setFake } from '$lib/fake.svelte';
   import type {
     Autonomy,
     CliStatus,
@@ -31,6 +32,7 @@
   type Section = 'general' | 'games' | 'supervisor' | 'mcp' | 'copilot' | 'privacy' | 'debug';
   let section = $state<Section>('general');
   let debugOn = $state(false);
+  let fakeOn = $state(false);
 
   let config = $state<SupervisorConfig | null>(null);
   let servers = $state<ServerListItem[]>([]);
@@ -197,6 +199,7 @@
     compactTabs = isCompactTabs();
     closeBehav = closeBehavior();
     debugOn = isDebug();
+    fakeOn = isFake();
     autoUpdate = isAutoUpdateEnabled();
     try {
       appVersion = await getVersion();
@@ -1073,6 +1076,14 @@
           <div class="tl-desc dim">{t('settings.debugModeDesc')}</div>
         </div>
         <input type="checkbox" bind:checked={debugOn} onchange={() => setDebug(debugOn)} />
+      </label>
+
+      <label class="toggle-row">
+        <div class="tl">
+          <div class="tl-title">{t('settings.fakeMode')}</div>
+          <div class="tl-desc dim">{t('settings.fakeModeDesc')}</div>
+        </div>
+        <input type="checkbox" bind:checked={fakeOn} onchange={() => setFake(fakeOn)} />
       </label>
 
       <h2>{t('settings.debugServers')}</h2>

@@ -2,6 +2,7 @@
   import { api, humanizeError } from "../../ipc";
   import { consoleEvents } from "../../events";
   import { t } from "../../i18n";
+  import { isFake, fakeText } from "../../fake.svelte";
   import { suggest, recordUsage } from "../../mcCommands";
   import Icon from "../Icon.svelte";
   import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -58,7 +59,9 @@
   // eslint-disable-next-line no-control-regex
   const ANSI = /\[[0-9;]*m|\[[0-9;]*m/g;
   function push(line: string) {
-    lines.push(line.replace(ANSI, ""));
+    // Mode démo : la console est le flux le plus bavard en pseudos et adresses.
+    const clean = line.replace(ANSI, "");
+    lines.push(isFake() ? fakeText(clean) : clean);
     if (lines.length > MAX_LINES) lines.splice(0, lines.length - MAX_LINES);
   }
 

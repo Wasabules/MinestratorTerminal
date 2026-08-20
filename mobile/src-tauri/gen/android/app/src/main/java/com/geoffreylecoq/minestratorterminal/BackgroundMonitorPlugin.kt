@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
 import app.tauri.annotation.Command
+import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
@@ -24,6 +25,13 @@ import app.tauri.plugin.Plugin
  *
  * Appelé depuis Rust via `run_mobile_plugin("<command>", …)`.
  */
+/** Arguments de `updateStatus` (désérialisés par le pont Tauri). */
+@InvokeArg
+internal class StatusArgs {
+  var title: String = "MinestratorTerminal"
+  var text: String = ""
+}
+
 @TauriPlugin
 class BackgroundMonitorPlugin(private val activity: Activity) : Plugin(activity) {
   @Command
@@ -40,6 +48,21 @@ class BackgroundMonitorPlugin(private val activity: Activity) : Plugin(activity)
   fun stop(invoke: Invoke) {
     try {
       MonitorService.stop(activity)
+      invoke.resolve()
+    } catch (ex: Exception) {
+      invoke.reject(ex.message)
+    }
+  }
+
+  /**
+   * Met à jour le texte de la notification persistante (résumé de l'état des serveurs poussé par
+   * le superviseur Rust). Sans effet si la surveillance en arrière-plan n'est pas active.
+   */
+  @Command
+  fun updateStatus(invoke: Invoke) {
+    try {
+      val args = invoke.parseArgs(StatusArgs::class.java)
+      MonitorService.update(activity, args.title, args.text)
       invoke.resolve()
     } catch (ex: Exception) {
       invoke.reject(ex.message)

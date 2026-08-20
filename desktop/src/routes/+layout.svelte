@@ -12,6 +12,7 @@
   import { initTabMode } from '$lib/tabs/mode.svelte';
   import { initCloseBehavior } from '$lib/close.svelte';
   import { initDebug } from '$lib/debug.svelte';
+  import { initFake, isFake } from '$lib/fake.svelte';
   import UpdateBanner from '$lib/components/UpdateBanner.svelte';
   import CloseDialog from '$lib/components/CloseDialog.svelte';
 
@@ -28,6 +29,7 @@
     initTabMode();
     initCloseBehavior();
     initDebug();
+    initFake();
     try {
       if (!(await api.hasStoredKey())) {
         setAuth({ status: 'signed_out' });
@@ -65,7 +67,28 @@
 <UpdateBanner />
 <CloseDialog />
 
+{#if isFake()}
+  <!-- Repère permanent : sans lui, on peut croire lire de vraies données, ou publier une capture
+       en pensant le mode actif alors qu'il ne l'est pas. -->
+  <div class="fakebar">{t('settings.fakeBanner')}</div>
+{/if}
+
 <style>
+  .fakebar {
+    position: fixed;
+    z-index: 999;
+    left: 50%;
+    bottom: 10px;
+    transform: translateX(-50%);
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--brand-tertiary) 85%, black);
+    color: #fff;
+    font-size: 11px;
+    letter-spacing: 0.03em;
+    pointer-events: none;
+    opacity: 0.85;
+  }
   .boot {
     height: 100vh;
     display: flex;

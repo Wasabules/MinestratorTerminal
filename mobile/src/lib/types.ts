@@ -111,16 +111,33 @@ export interface ServersOverview {
   servers: ServerListItem[];
 }
 
-/** Entrée du journal d'actions tenu par l'hébergeur (couvre aussi le panel web et le staff). */
-export interface ServerAction {
-  /** `YYYY-MM-DD HH:MM:SS.mmm`. */
-  date: string;
-  /** Adresse d'origine — utile pour repérer une action qu'on n'a pas faite soi-même. */
-  ip: string;
-  /** Action du staff de l'hébergeur plutôt que du titulaire. */
-  staff: boolean;
-  /** Identifiant d'action (`power.restart`…). */
+/**
+ * Entrée du journal d'audit d'un serveur (`GET /server/{id}/activity`). Couvre les actions
+ * faites hors de l'app — panel web, staff de l'hébergeur — et nomme leur auteur.
+ */
+export interface ActivityEntry {
+  id: number;
+  /** `power.restart`, `console.command`, `sftp.write`… */
   action: string;
+  /** Famille : `power`, `console`, `sftp`… */
+  category: string;
+  /** `success` ou l'échec renvoyé par l'hôte. */
+  result: string;
+  /** Nom de l'auteur, quand l'API le connaît. */
+  actor: string | null;
+  actor_type: string;
+  /** Action du staff de l'hébergeur plutôt que du compte. */
+  staff: boolean;
+  ip: string | null;
+  date: string;
+  /** Détail lisible (ex. la commande console exécutée). */
+  context: string | null;
+}
+
+export interface ActivityPage {
+  items: ActivityEntry[];
+  total: number;
+  has_more: boolean;
 }
 
 export interface ServerDetails {
@@ -129,8 +146,6 @@ export interface ServerDetails {
   hibernation: boolean;
   ws_url: string | null;
   ws_token: string | null;
-  /** Journal d'actions, du plus récent au plus ancien. */
-  history: ServerAction[];
 }
 
 export interface CpuLimits {
@@ -242,4 +257,30 @@ export type AppErrorKind =
 export interface AppError {
   kind: AppErrorKind;
   message: string;
+}
+
+/** Entrée d'une archive lue en place (`.zip`, `.tar`, `.tar.gz`), sans extraction. */
+export interface ArchiveEntry {
+  path: string;
+  size: number;
+  is_dir: boolean;
+}
+
+/** Résultat de recherche SFTP ; `truncated` signale l'arrêt au garde-fou du core. */
+export interface SftpSearchResult {
+  entries: SftpEntry[];
+  truncated: boolean;
+}
+
+/** Progression d'un transfert SFTP, émise par le core (`sftp://progress`). */
+export interface SftpProgress {
+  id: string;
+  name: string;
+  /** `up` | `down`. */
+  direction: string;
+  done: number;
+  total: number;
+  /** `active` | `done` | `error`. */
+  status: string;
+  error: string | null;
 }

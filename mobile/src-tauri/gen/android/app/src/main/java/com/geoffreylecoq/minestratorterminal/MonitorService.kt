@@ -31,6 +31,16 @@ class MonitorService : Service() {
   companion object {
     private const val CHANNEL_ID = "minestrator_monitor"
     private const val NOTIF_ID = 4201
+    const val EXTRA_TITLE = "title"
+    const val EXTRA_TEXT = "text"
+
+    /**
+     * Dernier résumé poussé par le superviseur Rust. Conservé au niveau de la classe pour que le
+     * service le retrouve s'il est recréé par le système (`START_STICKY` rejoue `onStartCommand`
+     * sans les extras d'origine).
+     */
+    @Volatile private var lastTitle: String = "MinestratorTerminal"
+    @Volatile private var lastText: String = "Surveillance des serveurs active"
 
     fun start(context: Context) {
       val intent = Intent(context, MonitorService::class.java)
@@ -44,6 +54,39 @@ class MonitorService : Service() {
     fun stop(context: Context) {
       context.stopService(Intent(context, MonitorService::class.java))
     }
+
+    /**
+     * Met à jour le texte de la notification persistante sans redémarrer le service.
+     * Sans effet si la surveillance en arrière-plan est désactivée (aucun service en cours) :
+     * on ne réveille pas un service que l'utilisateur n'a pas demandé.
+     */
+    fun update(context: Context, title: String, text: String) {
+      lastTitle = title
+      lastText = text
+      val mgr = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+      val running = mgr.activeNotifications.any { it.id == NOTIF_ID }
+      if (!running) return
+      mgr.notify(NOTIF_ID, buildNotification(context, title, text))
+    }
+
+    /** Construit la notification persistante ; le tap rouvre l'app. */
+    private fun buildNotification(context: Context, title: String, text: String): Notification {
+      val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+      val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+        (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
+      val pending = launch?.let { PendingIntent.getActivity(context, 0, it, flags) }
+
+      return NotificationCompat.Builder(context, CHANNEL_ID)
+        .setContentTitle(title)
+        .setContentText(text)
+        // Le résumé multi-serveurs dépasse une ligne : BigText le rend lisible une fois déplié.
+        .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+        .setSmallIcon(android.R.drawable.stat_notify_sync)
+        .setOngoing(true)
+        .setPriority(NotificationCompat.PRIORITY_LOW)
+        .setContentIntent(pending)
+        .build()
+    }
   }
 
   override fun onCreate() {
@@ -52,7 +95,7 @@ class MonitorService : Service() {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    val notif = buildNotification()
+    val notif = buildNotification(this, lastTitle, lastText)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
       // Android 14+ : un type de service au premier plan est obligatoire.
       startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -80,20 +123,4 @@ class MonitorService : Service() {
     mgr.createNotificationChannel(channel)
   }
 
-  private fun buildNotification(): Notification {
-    // Tap → rouvre l'app.
-    val launch = packageManager.getLaunchIntentForPackage(packageName)
-    val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-      (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0)
-    val pending = launch?.let { PendingIntent.getActivity(this, 0, it, flags) }
-
-    return NotificationCompat.Builder(this, CHANNEL_ID)
-      .setContentTitle("MinestratorTerminal")
-      .setContentText("Surveillance des serveurs active")
-      .setSmallIcon(android.R.drawable.stat_notify_sync)
-      .setOngoing(true)
-      .setPriority(NotificationCompat.PRIORITY_LOW)
-      .setContentIntent(pending)
-      .build()
-  }
 }

@@ -3,7 +3,7 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    Backup, ConsoleStats, Core, Egg, Error, LiveLight, LivePlayers, MetricSample, ServerDetails,
+    ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, LiveLight, LivePlayers, MetricSample, ServerDetails,
     ServersOverview, SftpEntry, Snapshot, UserNotification, UserProfile,
 };
 use std::sync::Arc;
@@ -66,6 +66,16 @@ pub async fn live_players_bulk(
 #[tauri::command]
 pub async fn list_eggs(core: State<'_, Arc<Core>>) -> Result<Vec<Egg>, Error> {
     core.list_eggs().await
+}
+
+#[tauri::command]
+pub async fn server_activity(
+    core: State<'_, Arc<Core>>,
+    id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<ActivityPage, Error> {
+    core.server_activity(id, limit, offset).await
 }
 
 #[tauri::command]
@@ -178,6 +188,86 @@ pub async fn sftp_mkdir(
     path: String,
 ) -> Result<(), Error> {
     core.sftp_mkdir(server_id, &path).await
+}
+
+/// Résultat de recherche : le tuple `(entrées, tronqué)` du core se sérialiserait en tableau
+/// anonyme côté JS, illisible. La couche d'adaptation lui donne des noms.
+#[derive(serde::Serialize)]
+pub struct SftpSearchOut {
+    entries: Vec<SftpEntry>,
+    /// La recherche s'est arrêtée avant d'avoir tout parcouru (garde-fou du core).
+    truncated: bool,
+}
+
+#[tauri::command]
+pub async fn sftp_search(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    root: String,
+    query: String,
+) -> Result<SftpSearchOut, Error> {
+    let (entries, truncated) = core.sftp_search(server_id, &root, &query).await?;
+    Ok(SftpSearchOut { entries, truncated })
+}
+
+/// Image lue via SFTP et rendue en data URI, directement affichable dans un `<img>`.
+#[tauri::command]
+pub async fn sftp_read_data_uri(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<String, Error> {
+    core.sftp_read_data_uri(server_id, &path).await
+}
+
+/// Contenu d'une archive (`.zip`, `.tar`, `.tar.gz`) — lecture seule, sans extraction.
+#[tauri::command]
+pub async fn sftp_archive_list(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<Vec<ArchiveEntry>, Error> {
+    core.sftp_archive_list(server_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_archive_read_text(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    entry: String,
+) -> Result<String, Error> {
+    core.sftp_archive_read_text(server_id, &path, &entry).await
+}
+
+/// Demande l'arrêt d'un transfert en cours (envoi natif). Sans effet s'il est déjà fini.
+#[tauri::command]
+pub fn cancel_transfer(core: State<'_, Arc<Core>>, transfer_id: String) {
+    core.cancel_transfer(&transfer_id);
+}
+
+/// Taille d'un fichier distant : donne le total avant de télécharger par blocs.
+#[tauri::command]
+pub async fn sftp_file_size(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<u64, Error> {
+    core.sftp_file_size(server_id, &path).await
+}
+
+/// Lit une tranche d'un fichier distant, en base64.
+#[tauri::command]
+pub async fn sftp_download_chunk(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    offset: u64,
+    len: usize,
+) -> Result<String, Error> {
+    use base64::Engine as _;
+    let data = core.sftp_read_range(server_id, &path, offset, len).await?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&data))
 }
 
 #[tauri::command]

@@ -50,6 +50,16 @@ export const en: Dict = {
     playersOnline: 'Players online',
     resources: '{cpu} vCPU · {ram} GB RAM · {disk} GB',
   },
+  action: {
+    'power.start': 'Start',
+    'power.stop': 'Stop',
+    'power.restart': 'Restart',
+    'power.kill': 'Force stop',
+    'console.command': 'Console command',
+    'sftp.write': 'File modified',
+    'sftp.delete': 'File deleted',
+    'sftp.upload': 'File uploaded',
+  },
   status: {
     active: 'Ready',
     hibernation: 'Hibernating',
@@ -233,6 +243,7 @@ export const en: Dict = {
   overview: {
     activity: 'Recent activity',
     byStaff: 'staff',
+    actorAccount: 'your account',
     downloadLastBackup: 'Download the latest backup',
     supportRef: 'Support ref: {ref}',
     copyAddress: 'Copy connection address',
@@ -357,6 +368,10 @@ export const en: Dict = {
     factorioTokenWhere:
       "Get “service-username” and “service-token” from Factorio's player-data.json (game data folder).",
     debug: 'Debug',
+    fakeMode: 'Demo data',
+    fakeModeDesc:
+      'Replaces usernames, addresses, IPs and support references with fictional values — for publishable screenshots. Display only: commands sent stay unchanged.',
+    fakeBanner: 'Demo data',
     debugMode: 'Debug mode',
     debugModeDesc:
       'Shows technical info on views (egg, computed capabilities, mod source, ids).',

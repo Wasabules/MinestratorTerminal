@@ -2,6 +2,8 @@
   import { api, ensureNotificationPermission } from "$lib/ipc";
   import { auth } from "$lib/stores/auth.svelte";
   import { settings } from "$lib/stores/settings.svelte";
+  import { initFake, isFake } from "$lib/fake.svelte";
+  import { t } from "$lib/i18n";
   import Onboarding from "$lib/components/Onboarding.svelte";
   import ServersList from "$lib/components/ServersList.svelte";
   import ServerView from "$lib/components/ServerView.svelte";
@@ -14,8 +16,51 @@
   let showSettings = $state(false);
   let showNotifications = $state(false);
 
+  /**
+   * Écran courant mémorisé, pour le retrouver après un rechargement du webview.
+   *
+   * Android peut tuer le *renderer* d'une WebView passée en arrière-plan (pression mémoire) ;
+   * la page repart alors de zéro et l'utilisateur se retrouve sur la liste des serveurs sans
+   * comprendre pourquoi — typiquement au retour du sélecteur de fichiers. Le même effet se
+   * produit en développement quand le client Vite se reconnecte.
+   */
+  const LAST_SERVER = "mnstr-last-server";
+
+  function rememberServer(id: number | null): void {
+    try {
+      if (id === null) localStorage.removeItem(LAST_SERVER);
+      else localStorage.setItem(LAST_SERVER, String(id));
+    } catch {
+      /* stockage indisponible : la restauration est un confort, pas une exigence */
+    }
+  }
+
+  /** Rouvre le dernier serveur consulté, si la liste le contient encore. */
+  async function restoreServer(): Promise<void> {
+    let wanted: number | null = null;
+    try {
+      const raw = localStorage.getItem(LAST_SERVER);
+      wanted = raw ? Number(raw) : null;
+    } catch {
+      return;
+    }
+    if (!wanted || selected) return;
+    try {
+      const { servers, myboxes } = await api.listServers();
+      const server = servers.find((s) => s.id === wanted);
+      if (!server) {
+        rememberServer(null); // serveur disparu : on n'insiste pas
+        return;
+      }
+      selected = { server, box: myboxes.find((m) => m.id === server.mybox_id) ?? null };
+    } catch {
+      /* liste indisponible : on reste sur l'accueil */
+    }
+  }
+
   // Thème : applique au boot + suit le système quand le préréglage est "system".
   $effect(() => {
+    initFake();
     settings.applyTheme();
     if (typeof matchMedia === "undefined") return;
     const mq = matchMedia("(prefers-color-scheme: light)");
@@ -39,6 +84,12 @@
     })();
   });
 
+  // Restauration de l'écran après un rechargement (voir `LAST_SERVER`).
+  $effect(() => {
+    if (!auth.isAuthed) return;
+    void restoreServer();
+  });
+
   // Notifications : demande la permission une fois connecté (Android 13+ l'exige à l'exécution,
   // sinon les alertes du superviseur sont bloquées silencieusement). No-op si déjà accordée.
   // Ré-arme aussi le service de surveillance si l'utilisateur l'avait activé (le process a pu
@@ -54,6 +105,11 @@
   <UpdateBanner />
 {/if}
 
+{#if isFake()}
+  <!-- Repère permanent : sans lui, on peut publier une capture en croyant le mode actif. -->
+  <div class="fakebar">{t("settings.fakeMode")}</div>
+{/if}
+
 {#if !auth.booted}
   <div class="splash"><div class="logo"></div></div>
 {:else if !auth.isAuthed}
@@ -63,16 +119,41 @@
 {:else if showNotifications}
   <NotificationsView onBack={() => (showNotifications = false)} />
 {:else if selected}
-  <ServerView server={selected.server} mybox={selected.box} onBack={() => (selected = null)} />
+  <ServerView
+    server={selected.server}
+    mybox={selected.box}
+    onBack={() => {
+      selected = null;
+      rememberServer(null);
+    }}
+  />
 {:else}
   <ServersList
-    onOpen={(s, box) => (selected = { server: s, box })}
+    onOpen={(s, box) => {
+      selected = { server: s, box };
+      rememberServer(s.id);
+    }}
     onSettings={() => (showSettings = true)}
     onNotifications={() => (showNotifications = true)}
   />
 {/if}
 
 <style>
+  .fakebar {
+    position: fixed;
+    z-index: 999;
+    left: 50%;
+    bottom: calc(var(--safe-bottom) + 6px);
+    transform: translateX(-50%);
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--brand-tertiary) 85%, black);
+    color: #fff;
+    font-size: 10px;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+
   .splash {
     height: 100dvh;
     display: grid;

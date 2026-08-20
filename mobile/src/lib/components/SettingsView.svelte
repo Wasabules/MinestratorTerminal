@@ -3,10 +3,13 @@
   import { settings, type ThemePref, type LangPref } from "../stores/settings.svelte";
   import { api, openExternal, ensureNotificationPermission } from "../ipc";
   import { t } from "../i18n";
+  import { isFake, setFake } from "../fake.svelte";
   import Icon from "./Icon.svelte";
   import type { UpdateInfo } from "../types";
 
   let { onBack }: { onBack: () => void } = $props();
+
+  let fakeOn = $state(isFake());
 
   let version = $state("0.4.0");
   $effect(() => {
@@ -142,6 +145,25 @@
     </section>
 
     <!-- Surveillance en arrière-plan -->
+    <section>
+      <h3>{t("settings.privacy")}</h3>
+      <button
+        class="switchrow"
+        role="switch"
+        aria-checked={fakeOn}
+        onclick={() => {
+          fakeOn = !fakeOn;
+          setFake(fakeOn);
+        }}
+      >
+        <span class="switchtxt">
+          <span class="switchlabel">{t("settings.fakeMode")}</span>
+          <span class="switchhint">{t("settings.fakeModeHint")}</span>
+        </span>
+        <span class="switch" class:on={fakeOn}><span class="knob"></span></span>
+      </button>
+    </section>
+
     <section>
       <h3>{t("settings.notifications")}</h3>
       <button

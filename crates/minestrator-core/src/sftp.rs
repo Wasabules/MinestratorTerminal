@@ -36,6 +36,38 @@ pub struct SftpManager {
     sessions: Mutex<HashMap<i64, Arc<SftpConn>>>,
 }
 
+/// La session est-elle morte ? Seul ce cas justifie de purger le pool et de rejouer.
+///
+/// Distinction essentielle : une erreur **métier** (fichier absent, permission refusée) arrive
+/// sur une session parfaitement saine. La confondre avec une panne de connexion fait fermer la
+/// session et payer une poignée de main SSH complète pour re-produire la même erreur.
+///
+/// Sur mobile, le cas courant est le passage de l'app en arrière-plan : Android coupe son réseau
+/// (`os error 103`) et la session meurt sans que rien ne le signale avant la prochaine opération.
+pub fn is_session_dead(e: &Error) -> bool {
+    match e {
+        // Toute la couche connexion (SSH, canal, réseau) remonte en `Network`.
+        Error::Network(_) => true,
+        Error::Unexpected(m) => {
+            let m = m.to_ascii_lowercase();
+            [
+                "session closed",
+                "not connected",
+                "connection reset",
+                "connection abort",
+                "broken pipe",
+                "os error 103",
+                "channel closed",
+                "unexpected eof",
+                "early eof",
+            ]
+            .iter()
+            .any(|marker| m.contains(marker))
+        }
+        _ => false,
+    }
+}
+
 impl SftpManager {
     fn cached(&self, id: i64) -> Option<Arc<SftpConn>> {
         self.sessions.lock().unwrap().get(&id).cloned()
@@ -57,7 +89,15 @@ impl SftpManager {
 }
 
 async fn open(creds: SftpCreds) -> Result<SftpConn> {
-    let config = Arc::new(client::Config::default());
+    // Sonde périodique : sans elle, une session inactive meurt en silence (veille du téléphone,
+    // NAT qui oublie la connexion, coupure réseau en arrière-plan) et l'app ne l'apprend qu'à la
+    // prochaine opération, qui échoue. `keepalive_max` laisse tomber la session après quatre
+    // sondes sans réponse, au lieu de la garder indéfiniment dans le pool.
+    let config = Arc::new(client::Config {
+        keepalive_interval: Some(std::time::Duration::from_secs(20)),
+        keepalive_max: 4,
+        ..client::Config::default()
+    });
     let mut handle = client::connect(config, (creds.host.as_str(), creds.port), Handler)
         .await
         .map_err(|e| Error::Network(format!("SSH: {e}")))?;
@@ -91,6 +131,27 @@ async fn open(creds: SftpCreds) -> Result<SftpConn> {
 
 fn sftp_err<E: std::fmt::Display>(e: E) -> Error {
     Error::Unexpected(format!("SFTP: {e}"))
+}
+
+/// Réduit un nom de fichier à un composant simple, sûr à concaténer à un dossier distant.
+///
+/// Le nom vient du système hôte : sur Android, c'est `OpenableColumns.DISPLAY_NAME`, une valeur
+/// que l'app ne contrôle pas. Interpolé tel quel, un `../../authorized_keys` écrirait **hors du
+/// dossier consulté**. On ne garde donc que le dernier segment, et on refuse ce qui ne peut pas
+/// être un nom de fichier.
+pub fn safe_file_name(name: &str) -> Result<String> {
+    let last = name
+        // '\u{5C}' = antislash, écrit ainsi pour rester lisible dans les scripts d'édition.
+        .rsplit(['/', '\u{5C}'])
+        .next()
+        .unwrap_or("")
+        .trim();
+    if last.is_empty() || last == "." || last == ".." {
+        return Err(Error::Unexpected(format!(
+            "Nom de fichier invalide : « {name} »."
+        )));
+    }
+    Ok(last.to_string())
 }
 
 fn join(dir: &str, name: &str) -> String {
@@ -300,6 +361,72 @@ pub async fn upload(
     Ok(name)
 }
 
+/// Téléverse depuis un **fichier déjà ouvert**, en pouvant **reprendre** à `start`.
+///
+/// `start = 0` crée (et tronque) le fichier distant ; `start > 0` reprend un envoi interrompu en
+/// écrivant à la suite. Le flux local est repositionné en conséquence, de sorte que ce qui a déjà
+/// atteint le serveur n'est ni renvoyé ni dupliqué.
+///
+/// Renvoie le nombre total d'octets du fichier une fois l'envoi terminé (`start` inclus).
+pub async fn upload_stream_from(
+    conn: &SftpConn,
+    src: &mut tokio::fs::File,
+    remote: &str,
+    start: u64,
+    total: u64,
+    on_progress: &mut impl FnMut(u64, u64),
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<u64> {
+    use tokio::io::AsyncSeekExt;
+
+    // Le flux local doit repartir exactement là où le serveur s'est arrêté.
+    src.seek(std::io::SeekFrom::Start(start))
+        .await
+        .map_err(|e| Error::Unexpected(format!("positionnement local: {e}")))?;
+
+    let mut dst = if start == 0 {
+        conn.sftp.create(remote).await.map_err(sftp_err)?
+    } else {
+        conn.sftp
+            .open_with_flags(
+                remote,
+                russh_sftp::protocol::OpenFlags::CREATE
+                    | russh_sftp::protocol::OpenFlags::WRITE
+                    | russh_sftp::protocol::OpenFlags::APPEND,
+            )
+            .await
+            .map_err(sftp_err)?
+    };
+
+    let mut buf = vec![0u8; CHUNK];
+    let mut done = start;
+    loop {
+        // Arrêt coopératif : vérifié entre deux blocs, jamais au milieu d'une écriture — le
+        // fichier distant reste ainsi cohérent avec ce que le serveur a réellement reçu.
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            let _ = dst.shutdown().await;
+            return Err(Error::Unexpected("Transfert annulé.".into()));
+        }
+        let n = src
+            .read(&mut buf)
+            .await
+            .map_err(|e| Error::Unexpected(format!("lecture locale: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n])
+            .await
+            .map_err(|e| Error::Unexpected(format!("écriture SFTP: {e}")))?;
+        done += n as u64;
+        on_progress(done, total);
+    }
+    dst.flush()
+        .await
+        .map_err(|e| Error::Unexpected(format!("flush SFTP: {e}")))?;
+    let _ = dst.shutdown().await;
+    Ok(done)
+}
+
 /// Télécharge un fichier distant vers un chemin local par blocs ; `on_progress(done, total)`.
 pub async fn download(
     conn: &SftpConn,
@@ -359,6 +486,37 @@ pub async fn write_bytes(conn: &SftpConn, path: &str, data: &[u8]) -> Result<()>
         .map_err(|e| Error::Unexpected(format!("flush SFTP: {e}")))?;
     let _ = file.shutdown().await;
     Ok(())
+}
+
+
+/// Taille d'un fichier distant, sans le lire.
+pub async fn file_size(conn: &SftpConn, path: &str) -> Result<u64> {
+    let meta = conn.sftp.metadata(path).await.map_err(sftp_err)?;
+    Ok(meta.size.unwrap_or(0))
+}
+
+/// Lit une **tranche** d'un fichier distant (`offset`, `len`), pour un téléchargement progressif.
+pub async fn read_range(conn: &SftpConn, path: &str, offset: u64, len: usize) -> Result<Vec<u8>> {
+    use tokio::io::AsyncSeekExt;
+    let mut file = conn.sftp.open(path).await.map_err(sftp_err)?;
+    file.seek(std::io::SeekFrom::Start(offset))
+        .await
+        .map_err(|e| Error::Unexpected(format!("positionnement SFTP: {e}")))?;
+    let mut buf = vec![0u8; len];
+    let mut read = 0usize;
+    // `read` peut rendre moins que demandé : on boucle jusqu'au bloc plein ou la fin du fichier.
+    while read < len {
+        let n = file
+            .read(&mut buf[read..])
+            .await
+            .map_err(|e| Error::Unexpected(format!("lecture SFTP: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        read += n;
+    }
+    buf.truncate(read);
+    Ok(buf)
 }
 
 pub async fn remove(conn: &SftpConn, path: &str, is_dir: bool) -> Result<()> {

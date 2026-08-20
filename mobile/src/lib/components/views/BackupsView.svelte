@@ -1,11 +1,20 @@
 <script lang="ts">
-  import { api, humanizeError } from "../../ipc";
+  import { api, humanizeError, openExternal } from "../../ipc";
   import { t } from "../../i18n";
   import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
   import type { Backup, Snapshot } from "../../types";
 
-  let { serverId, active }: { serverId: number; active: boolean } = $props();
+  let {
+    serverId,
+    active,
+    lastBackupUrl = null,
+  }: {
+    serverId: number;
+    active: boolean;
+    /** URL signée du dernier backup (jeton porteur : ouverte, jamais affichée). */
+    lastBackupUrl?: string | null;
+  } = $props();
   let loaded = $state(false);
 
   let backups = $state<Backup[]>([]);
@@ -121,6 +130,12 @@
     <!-- Backups quotidiens -->
     <section>
       <h3>{t("backups.daily")}</h3>
+      {#if lastBackupUrl}
+        <button class="dl" onclick={() => openExternal(lastBackupUrl)}>
+          <Icon name="save" size={16} />
+          {t("overview.downloadLastBackup")}
+        </button>
+      {/if}
       {#if backups.length === 0}
         <p class="dim">{t("backups.none")}</p>
       {:else}
@@ -169,6 +184,22 @@
 {/if}
 
 <style>
+  .dl {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--brand-primary);
+    font: inherit;
+    font-size: 14px;
+  }
+
   .view {
     padding: 16px;
     display: flex;

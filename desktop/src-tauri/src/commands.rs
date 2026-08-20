@@ -2,7 +2,7 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Egg, Error, FicsitInstallItem,
+    ActivityPage, ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Egg, Error, FicsitInstallItem,
     FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
     LivePlayers,
     MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
@@ -70,6 +70,16 @@ pub async fn live_players_bulk(
 #[tauri::command]
 pub async fn list_eggs(core: State<'_, Arc<Core>>) -> Result<Vec<Egg>, Error> {
     core.list_eggs().await
+}
+
+#[tauri::command]
+pub async fn server_activity(
+    core: State<'_, Arc<Core>>,
+    id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<ActivityPage, Error> {
+    core.server_activity(id, limit, offset).await
 }
 
 #[tauri::command]

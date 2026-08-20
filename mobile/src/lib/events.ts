@@ -6,6 +6,7 @@ import type {
   ConsoleOutput,
   ConsoleStats,
   ConsoleStatus,
+  SftpProgress,
 } from "./types";
 
 export const consoleEvents = {
@@ -17,4 +18,10 @@ export const consoleEvents = {
     listen<ConsoleStatus>("console://status", (e) => cb(e.payload)),
   connection: (cb: (p: ConsoleConnection) => void): Promise<UnlistenFn> =>
     listen<ConsoleConnection>("console://connection", (e) => cb(e.payload)),
+};
+
+/** Progression des transferts SFTP pilotés par le core (envoi natif). */
+export const sftpEvents = {
+  progress: (cb: (p: SftpProgress) => void): Promise<UnlistenFn> =>
+    listen<SftpProgress>("sftp://progress", (e) => cb(e.payload)),
 };

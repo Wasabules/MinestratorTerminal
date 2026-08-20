@@ -30,7 +30,10 @@ vite.config.ts.timestamp-*
 !.env.example
 
 # --- Claude Code (sessions, mémoire, historique local) ---
-.claude
+.claude/*
+# ... sauf les skills du projet : ils décrivent des procédures de l'équipe (release, changelog)
+# et doivent suivre le dépôt, pas la machine.
+!.claude/skills/
 
 # --- Références tierces / brouillons (hors dépôt public) ---
 MCP_MINESTRATOR.txt

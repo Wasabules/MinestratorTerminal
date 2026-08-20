@@ -465,6 +465,127 @@ pub struct PlayersRaw {
     pub limit: i64,
 }
 
+// --- GET /server/{id}/activity -------------------------------------------
+
+/// Entrée du journal d'audit d'un serveur. Bien plus riche que le `history[]` de
+/// `GET /server/{id}` (qui n'a que date/ip/is_staff/action) : elle nomme l'auteur, distingue
+/// la catégorie et le résultat, et porte un contexte — la commande tapée, par exemple.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityEntry {
+    pub id: i64,
+    /// Identifiant d'action : `power.restart`, `console.command`, `sftp.write`…
+    pub action: String,
+    /// Famille d'action : `power`, `console`, `sftp`…
+    pub category: String,
+    /// `success` ou l'échec renvoyé par l'hôte.
+    pub result: String,
+    /// Nom de l'auteur. L'API le fournit ici, contrairement au `history[]` du détail serveur.
+    pub actor: Option<String>,
+    /// `user`, et vraisemblablement d'autres valeurs côté hébergeur (système, API…).
+    pub actor_type: String,
+    /// Action du staff de l'hébergeur plutôt que du compte.
+    pub staff: bool,
+    pub ip: Option<String>,
+    /// `YYYY-MM-DD HH:MM:SS.mmm`.
+    pub date: String,
+    /// Détail lisible quand l'API en fournit un (ex. la commande console exécutée).
+    /// ⚠️ Peut contenir ce que l'utilisateur a tapé : à passer par [`crate::redact`] avant
+    /// tout envoi vers un LLM ou un service de paste.
+    pub context: Option<String>,
+}
+
+/// Page de journal d'audit. `total` peut être très grand (2 173 entrées sur un serveur de test) :
+/// l'appelant pagine avec `limit`/`offset`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ActivityPage {
+    pub items: Vec<ActivityEntry>,
+    pub total: i64,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActivityData {
+    #[serde(default)]
+    pub activity: Vec<ActivityRaw>,
+    #[serde(default)]
+    pub pagination: ActivityPagination,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct ActivityPagination {
+    #[serde(default)]
+    pub total: i64,
+    #[serde(default)]
+    pub has_more: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ActivityRaw {
+    #[serde(default)]
+    pub id: i64,
+    #[serde(default)]
+    pub action_name: String,
+    #[serde(default)]
+    pub action_category: String,
+    #[serde(default)]
+    pub action_result: String,
+    #[serde(default)]
+    pub actor_name: Option<String>,
+    #[serde(default)]
+    pub actor_type: String,
+    #[serde(default)]
+    pub is_staff: bool,
+    #[serde(default)]
+    pub ip: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub context: Option<serde_json::Value>,
+}
+
+impl From<ActivityRaw> for ActivityEntry {
+    fn from(r: ActivityRaw) -> Self {
+        ActivityEntry {
+            id: r.id,
+            action: r.action_name,
+            category: r.action_category,
+            result: r.action_result,
+            actor: r.actor_name.filter(|a| !a.is_empty()),
+            actor_type: r.actor_type,
+            staff: r.is_staff,
+            ip: r.ip.filter(|i| !i.is_empty()),
+            date: r.created_at,
+            context: r.context.as_ref().and_then(context_summary),
+        }
+    }
+}
+
+/// Résume le contexte JSON en une ligne affichable. Le cas courant est `{"command": "..."}` ;
+/// tout autre objet est rendu en `clé=valeur` plutôt qu'en JSON brut.
+fn context_summary(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::Object(map) if map.is_empty() => None,
+        serde_json::Value::Object(map) => {
+            if let Some(cmd) = map.get("command").and_then(|c| c.as_str()) {
+                return Some(cmd.to_string());
+            }
+            let parts: Vec<String> = map
+                .iter()
+                .map(|(k, val)| match val {
+                    serde_json::Value::String(s) => format!("{k}={s}"),
+                    other => format!("{k}={other}"),
+                })
+                .collect();
+            Some(parts.join(" · ")).filter(|s| !s.is_empty())
+        }
+        // Une chaîne vide doit valoir « pas de contexte » : sans ce bras, elle retombait dans
+        // le cas générique et ressortait en `""` littéral.
+        serde_json::Value::String(s) => Some(s.clone()).filter(|s| !s.is_empty()),
+        serde_json::Value::Null => None,
+        other => Some(other.to_string()),
+    }
+}
+
 // --- GET /site/eggs -------------------------------------------------------
 
 /// Entrée du catalogue d'eggs de l'hébergeur (37 au 2026-08-19) : la table de référence qui
@@ -533,37 +654,6 @@ pub struct ServerFullData {
     server: ServerObjRaw,
     #[serde(default)]
     websocket: WsRaw,
-    /// Journal d'actions tenu par l'hébergeur — la brique que le ROADMAP appelait « journal
-    /// d'audit », déjà servie ici : elle couvre AUSSI les actions faites hors de l'app
-    /// (panel web, staff), qu'un journal purement local ne verrait jamais.
-    #[serde(default)]
-    history: Vec<ServerActionRaw>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServerActionRaw {
-    #[serde(default)]
-    date: String,
-    #[serde(default)]
-    ip: String,
-    #[serde(default)]
-    is_staff: bool,
-    #[serde(default)]
-    action: String,
-}
-
-/// Entrée du journal d'actions d'un serveur.
-#[derive(Debug, Clone, Serialize)]
-pub struct ServerAction {
-    /// `YYYY-MM-DD HH:MM:SS.mmm` tel que renvoyé par l'API.
-    pub date: String,
-    /// Adresse d'origine de l'action. Utile pour repérer une action qu'on n'a pas faite ;
-    /// passe par [`crate::redact`] avant tout envoi à un LLM ou un service de paste.
-    pub ip: String,
-    /// Action déclenchée par le staff de l'hébergeur plutôt que par le titulaire du compte.
-    pub staff: bool,
-    /// Identifiant d'action (`power.restart`, `power.stop`…).
-    pub action: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -590,8 +680,6 @@ pub struct ServerDetails {
     pub hibernation: bool,
     pub ws_url: Option<String>,
     pub ws_token: Option<String>,
-    /// Journal d'actions, du plus récent au plus ancien.
-    pub history: Vec<ServerAction>,
 }
 
 impl From<ServerFullData> for ServerDetails {
@@ -602,16 +690,6 @@ impl From<ServerFullData> for ServerDetails {
             hibernation: r.server.hibernation != 0,
             ws_url: r.websocket.url.filter(|u| !u.is_empty()),
             ws_token: r.websocket.token.filter(|t| !t.is_empty()),
-            history: r
-                .history
-                .into_iter()
-                .map(|h| ServerAction {
-                    date: h.date,
-                    ip: h.ip,
-                    staff: h.is_staff,
-                    action: h.action,
-                })
-                .collect(),
         }
     }
 }
@@ -1036,4 +1114,73 @@ pub struct Snapshot {
 pub struct SnapshotsData {
     #[serde(default)]
     pub snapshots: Vec<Snapshot>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn safe_file_name_keeps_only_the_last_segment() {
+        use crate::sftp::safe_file_name;
+        // Cas nominal.
+        assert_eq!(safe_file_name("IMG_2026.jpg").unwrap(), "IMG_2026.jpg");
+        // Traversée : le nom vient du système hôte, il ne doit pas pouvoir sortir du dossier.
+        assert_eq!(safe_file_name("../../authorized_keys").unwrap(), "authorized_keys");
+        assert_eq!(safe_file_name("/etc/passwd").unwrap(), "passwd");
+        assert_eq!(safe_file_name(r"dir\sub\file.txt").unwrap(), "file.txt");
+    }
+
+    #[test]
+    fn safe_file_name_rejects_what_is_not_a_name() {
+        use crate::sftp::safe_file_name;
+        for bad in ["", "   ", "..", ".", "foo/..", "bar/"] {
+            assert!(safe_file_name(bad).is_err(), "« {bad} » doit être refusé");
+        }
+    }
+
+    #[test]
+    fn activity_context_prefers_the_command() {
+        // Cas le plus courant : `console.command` porte la commande tapée.
+        assert_eq!(context_summary(&json!({"command": "list"})).as_deref(), Some("list"));
+    }
+
+    #[test]
+    fn activity_context_renders_other_objects_readably() {
+        // Un objet quelconque est rendu en `clé=valeur`, pas en JSON brut.
+        let c = context_summary(&json!({"file": "server.properties"}));
+        assert_eq!(c.as_deref(), Some("file=server.properties"));
+    }
+
+    #[test]
+    fn activity_context_ignores_empty_values() {
+        assert!(context_summary(&json!(null)).is_none());
+        assert!(context_summary(&json!({})).is_none());
+        assert!(context_summary(&json!("")).is_none());
+    }
+
+    #[test]
+    fn activity_entry_maps_api_fields() {
+        // Les noms diffèrent entre l'API (`action_name`, `created_at`) et notre modèle.
+        let raw: ActivityRaw = serde_json::from_value(json!({
+            "id": 9810035,
+            "action_name": "power.restart",
+            "action_category": "power",
+            "action_result": "success",
+            "actor_type": "user",
+            "actor_name": "Wasab_II",
+            "ip": "82.65.221.183",
+            "is_staff": false,
+            "created_at": "2026-08-19 22:41:27.704",
+            "context": null
+        }))
+        .expect("désérialisation");
+        let e = ActivityEntry::from(raw);
+        assert_eq!(e.action, "power.restart");
+        assert_eq!(e.actor.as_deref(), Some("Wasab_II"));
+        assert!(!e.staff);
+        assert_eq!(e.date, "2026-08-19 22:41:27.704");
+        assert!(e.context.is_none());
+    }
 }

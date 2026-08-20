@@ -62,6 +62,44 @@ jobs:
         run: npm ci
         working-directory: ./desktop
 
+      # Notes de version = section correspondante de CHANGELOG.md. Une seule source, relue par un
+      # humain, plutôt qu'une liste de commits illisible pour qui installe l'app.
+      - name: Extraire les notes de version du CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          # Section = du titre « ## vX.Y.Z » jusqu'au prochain titre de version.
+          BODY=$(awk -v v="## $VERSION" '
+            $0 == v { found = 1; next }
+            found && /^## v/ { exit }
+            found { print }
+          ' CHANGELOG.md | sed '/^---$/d')
+          # Sans entrée, on préfère un renvoi explicite à une release aux notes vides.
+          if [ -z "$(echo "$BODY" | tr -d '[:space:]')" ]; then
+            echo "::warning::Aucune entrée $VERSION dans CHANGELOG.md"
+            BODY="Notes de version non renseignées pour $VERSION — voir CHANGELOG.md."
+          fi
+          {
+            echo "body<<CHANGELOG_EOF"
+            echo "$BODY"
+            echo ""
+            echo "---"
+            echo ""
+            echo "**Installeurs** (en pièces jointes) :"
+            echo "- Windows : \`.msi\` ou \`.exe\` (NSIS)"
+            echo "- macOS : \`.dmg\` (universel Intel + Apple Silicon)"
+            echo "- Linux : \`.AppImage\`, \`.deb\` ou \`.rpm\`"
+            echo "- Android : \`.apk\` signé, à installer manuellement"
+            echo ""
+            echo "La mise à jour automatique proposera cette version aux applications déjà installées."
+            echo ""
+            echo "> Les binaires ne sont pas signés au niveau du système : Windows SmartScreen et"
+            echo "> macOS Gatekeeper peuvent avertir au premier lancement. Les artefacts de mise à"
+            echo "> jour, eux, sont signés et vérifiés."
+            echo "CHANGELOG_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build & release Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -74,19 +112,7 @@ jobs:
           projectPath: ./desktop
           tagName: ${{ github.ref_name }}
           releaseName: 'Minestrator Terminal ${{ github.ref_name }}'
-          releaseBody: |
-            Client desktop **Tauri 2 + SvelteKit** pour piloter des serveurs Minecraft MineStrator.
-
-            **Installeurs** (en pièces jointes) :
-            - Windows : `.msi` et `.exe` (NSIS)
-            - macOS : `.dmg` (universel Intel + Apple Silicon)
-            - Linux : `.AppImage` et `.deb`
-            - Android : `.apk` (signé) — à sideloader
-
-            Mise à jour automatique intégrée (desktop) : les versions installées proposeront cette release.
-
-            > Non signés au niveau OS : Windows SmartScreen / macOS Gatekeeper peuvent afficher un
-            > avertissement au premier lancement (les artefacts de mise à jour, eux, sont signés et vérifiés).
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
@@ -162,9 +188,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # La release draft est normalement créée par le job desktop ; sinon on la crée.
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
-            gh release create "$GITHUB_REF_NAME" --draft --title "Minestrator Terminal $GITHUB_REF_NAME" --notes "Release."
+          # La release draft est normalement créée par le job desktop ; sinon on la crée ici
+          # avec les mêmes notes, pour qu'un échec côté desktop ne donne pas une release muette.
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            NOTES=$(awk -v v="## $GITHUB_REF_NAME" '
+              $0 == v { found = 1; next }
+              found && /^## v/ { exit }
+              found { print }
+            ' CHANGELOG.md | sed '/^---$/d')
+            [ -n "$(echo "$NOTES" | tr -d '[:space:]')" ] || NOTES="Notes de version non renseignées — voir CHANGELOG.md."
+            gh release create "$GITHUB_REF_NAME" --draft --title "Minestrator Terminal $GITHUB_REF_NAME" --notes "$NOTES"
+          fi
           echo "APK produits :"
           find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -printf '  %s\t%p\n' || true
           # APK signé (release) — `*-release.apk` exclut le `*-release-unsigned.apk`.

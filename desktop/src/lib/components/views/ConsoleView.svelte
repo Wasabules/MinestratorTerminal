@@ -14,6 +14,7 @@
   import { t } from '$lib/i18n';
   import { isRunning } from '$lib/status';
   import { serverCaps, serverItem } from '$lib/games/capabilities.svelte';
+  import { isFake, fakeText } from '$lib/fake.svelte';
   import PowerControl from '../PowerControl.svelte';
   import Icon from '../Icon.svelte';
   import type { ServerTab } from '$lib/tabs/tabs.svelte';
@@ -146,6 +147,9 @@
   }
   function pushLine(line: string) {
     if (redactConsole) line = redactLine(line);
+    // Mode démo : la console est le flux le plus bavard en pseudos et adresses. Appliqué après
+    // l'anonymisation de confidentialité, qui masque, là où celui-ci remplace par du plausible.
+    if (isFake()) line = fakeText(line);
     buffer.push(line);
     if (buffer.length > MAX_BUFFER) buffer.shift();
     const lvl = levelOf(line);

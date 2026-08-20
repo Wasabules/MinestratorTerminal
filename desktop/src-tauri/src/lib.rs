@@ -103,6 +103,7 @@ pub fn run() {
             commands::live_light,
             commands::live_players_bulk,
             commands::list_eggs,
+            commands::server_activity,
             commands::user_notifications,
             commands::metrics_history,
             commands::get_supervisor_config,

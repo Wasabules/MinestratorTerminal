@@ -4,8 +4,20 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import {
+  isFake,
+  fakePlayer,
+  fakeServer,
+  fakeBox,
+  fakeIp,
+  fakeAddress,
+  fakeMail,
+  fakeRef,
+  fakeText,
+} from './fake.svelte';
 import { t } from './i18n';
 import type {
+  ActivityPage,
   AppError,
   ArchiveEntry,
   Backup,
@@ -44,6 +56,20 @@ import type {
   UserProfile,
 } from './types';
 
+/**
+ * Substitution des données identifiantes, appliquée aux réponses IPC quand le mode démo est actif.
+ *
+ * C'est le bon endroit : `ipc.ts` est le point de passage unique entre le front et le Rust
+ * (aucun composant n'appelle `invoke` directement), donc une vue ne peut pas afficher une valeur
+ * réelle en contournant le filtre. Les transformations sont ciblées champ par champ plutôt que
+ * récursives : un parcours aveugle sur les noms de champs falsifierait aussi des noms de fichiers
+ * SFTP ou des libellés d'egg, qui n'ont rien de sensible.
+ */
+async function demo<T>(value: Promise<T>, transform: (v: T) => T): Promise<T> {
+  const v = await value;
+  return isFake() ? transform(v) : v;
+}
+
 export const api = {
   /** Valide une clé API et l'enregistre dans le trousseau. Renvoie le profil. */
   validateAndStoreKey: (key: string) => invoke<UserProfile>('validate_and_store_key', { key }),
@@ -52,16 +78,40 @@ export const api = {
   hasStoredKey: () => invoke<boolean>('has_stored_key'),
 
   /** Profil de l'utilisateur courant (à partir de la clé enregistrée). */
-  getUser: () => invoke<UserProfile>('get_user'),
+  getUser: () =>
+    demo(invoke<UserProfile>('get_user'), (u) => ({
+      ...u,
+      pseudo: fakePlayer(u.pseudo),
+      mail: fakeMail(u.mail),
+    })),
 
   /** MyBox et serveurs de l'utilisateur. */
-  listServers: () => invoke<ServersOverview>('list_servers'),
+  listServers: () =>
+    demo(invoke<ServersOverview>('list_servers'), (o) => ({
+      myboxes: o.myboxes.map((m) => ({ ...m, name: fakeBox(m.name) })),
+      servers: o.servers.map((s) => ({
+        ...s,
+        name: fakeServer(s.name),
+        address: fakeAddress(s.address),
+        support_ref: s.support_ref ? fakeRef(s.support_ref) : s.support_ref,
+        // `unavailable_reason` n'est pas touché : c'est une clé i18n de l'hébergeur
+        // (`PANEL.SERVERS_LIST...`), elle n'identifie personne.
+      })),
+    })),
 
   /** Détails d'un serveur (inclut url/token WebSocket). */
   serverDetails: (id: number) => invoke<ServerDetails>('server_details', { id }),
 
   /** Données live allégées (limites, joueurs, version). */
-  liveLight: (id: number) => invoke<LiveLight>('live_light', { id }),
+  liveLight: (id: number) =>
+    demo(invoke<LiveLight>('live_light', { id }), (l) => ({
+      ...l,
+      motd: l.motd ? fakeText(l.motd) : l.motd,
+      hostname: l.hostname ? fakeText(l.hostname) : l.hostname,
+      players: l.players
+        ? { ...l.players, list: l.players.list.map((p) => fakePlayer(p)) }
+        : l.players,
+    })),
 
   /**
    * Joueurs en ligne de plusieurs serveurs en UN appel — pour une liste, là où `liveLight`
@@ -72,8 +122,24 @@ export const api = {
   /** Catalogue des eggs de l'hébergeur (jeux + bases de données). Mis en cache côté Rust. */
   listEggs: () => invoke<Egg[]>('list_eggs'),
 
+  /** Journal d'audit d'un serveur (paginé). Nomme l'auteur de chaque action. */
+  serverActivity: (id: number, limit = 20, offset = 0) =>
+    demo(invoke<ActivityPage>('server_activity', { id, limit, offset }), (page) => ({
+      ...page,
+      items: page.items.map((e) => ({
+        ...e,
+        actor: e.actor ? fakePlayer(e.actor) : e.actor,
+        ip: e.ip ? fakeIp(e.ip) : e.ip,
+        // Le contexte porte la commande tapée : elle peut nommer un joueur ou une IP.
+        context: e.context ? fakeText(e.context) : e.context,
+      })),
+    })),
+
   /** Notifications de l'hébergeur (lecture seule ; livrées avec le profil). */
-  userNotifications: () => invoke<UserNotification[]>('user_notifications'),
+  userNotifications: () =>
+    demo(invoke<UserNotification[]>('user_notifications'), (list) =>
+      list.map((n) => ({ ...n, message: fakeText(n.message) })),
+    ),
 
   /** Historique de métriques (depuis N secondes) pour les graphes. */
   metricsHistory: (serverId: number, sinceSecs: number) =>

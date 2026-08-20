@@ -21,6 +21,13 @@ tauri = { version = "2", features = [] }
 tauri-plugin-notification = "2"
 # Ouverture d'URL externe (lien vers le site MineStrator).
 tauri-plugin-opener = "2"
+# Transferts SFTP : `dialog` ouvre le sélecteur de fichiers Android (SAF) et `fs` sait lire /
+# écrire les `content://` qu'il renvoie — un chemin de fichier classique n'existe pas côté Android.
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+# Transport des octets de transfert via l'IPC (le JS ne sait pas passer de binaire brut).
+base64 = "0.22"
 
 # Toute la logique métier vit dans le core, partagé avec le desktop et le futur daemon.
 minestrator-core = { path = "../../crates/minestrator-core" }

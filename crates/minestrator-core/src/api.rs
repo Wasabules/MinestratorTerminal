@@ -6,7 +6,7 @@
 use crate::config::{API_BASE_URL, USER_AGENT};
 use crate::error::{Error, Result};
 use crate::models::{
-    Backup, BackupsData, ConsoleLogs, Egg, EggsData, Envelope, InstalledItem, InstalledRaw,
+    ActivityData, ActivityEntry, ActivityPage, Backup, BackupsData, ConsoleLogs, Egg, EggsData, Envelope, InstalledItem, InstalledRaw,
     LiveBulkData, LiveLight, LivePlayers, MarketListRaw, MarketPage, MarketVersion,
     MarketVersionsRaw, McVersionsData, ServerDetails, ServerFullData, ServersData, ServersOverview,
     SftpCreds, SftpData, Snapshot, SnapshotsData, Startup, StartupData, UserData,
@@ -274,6 +274,25 @@ impl ApiClient {
                 })
             })
             .collect())
+    }
+
+    /// Journal d'audit d'un serveur (paginé, du plus récent au plus ancien). Couvre les actions
+    /// faites hors de l'app — panel web, staff de l'hébergeur — qu'un journal local ne verrait pas.
+    pub async fn server_activity(
+        &self,
+        token: &str,
+        id: i64,
+        limit: i64,
+        offset: i64,
+    ) -> Result<ActivityPage> {
+        let raw: ActivityData = self
+            .get(token, &format!("/server/{id}/activity?limit={limit}&offset={offset}"))
+            .await?;
+        Ok(ActivityPage {
+            total: raw.pagination.total,
+            has_more: raw.pagination.has_more,
+            items: raw.activity.into_iter().map(ActivityEntry::from).collect(),
+        })
     }
 
     /// Catalogue des eggs de l'hébergeur (jeux proposés + bases de données).

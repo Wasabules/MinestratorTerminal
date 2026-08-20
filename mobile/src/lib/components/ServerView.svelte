@@ -16,7 +16,17 @@
   }: { server: ServerListItem; mybox: MyBoxSummary | null; onBack: () => void } = $props();
 
   const order = ["overview", "console", "players", "files", "backups"];
-  let active = $state("overview");
+  /** Onglet courant, mémorisé pour survivre à un rechargement du webview (cf. `+page.svelte`). */
+  const LAST_TAB = "mnstr-last-tab";
+  let active = $state(readLastTab());
+
+  function readLastTab(): string {
+    try {
+      return localStorage.getItem(LAST_TAB) ?? "overview";
+    } catch {
+      return "overview";
+    }
+  }
   let navHidden = $state(false);
   const idx = $derived(order.indexOf(active));
 
@@ -29,6 +39,11 @@
   ];
 
   function goto(id: string) {
+    try {
+      localStorage.setItem(LAST_TAB, id);
+    } catch {
+      /* stockage indisponible : sans conséquence */
+    }
     if (id !== "console") navHidden = false;
     active = id;
   }
@@ -61,6 +76,10 @@
     <button class="back" onclick={onBack} aria-label="Retour">‹</button>
     <GameIcon src={server.egg_icon_url} name={server.egg_name} size={26} />
     <span class="title selectable">{server.name}</span>
+    {#if server.support_ref}
+      <!-- Référence à donner au support : utile mais secondaire, d'où le coin discret. -->
+      <span class="ref selectable" title={t("overview.supportRef")}>{server.support_ref}</span>
+    {/if}
   </header>
 
   <div
@@ -72,7 +91,12 @@
   >
     <div class="track" style="transform: translateX(-{idx * 100}%)">
       <section class="page">
-        <OverviewView {server} {mybox} active={active === "overview"} />
+        <OverviewView
+          {server}
+          {mybox}
+          active={active === "overview"}
+          onNavigate={goto}
+        />
       </section>
       <section class="page">
         <ConsoleView
@@ -88,7 +112,11 @@
         <SftpView serverId={server.id} active={active === "files"} />
       </section>
       <section class="page">
-        <BackupsView serverId={server.id} active={active === "backups"} />
+        <BackupsView
+          serverId={server.id}
+          active={active === "backups"}
+          lastBackupUrl={server.last_backup_url}
+        />
       </section>
     </div>
   </div>
@@ -122,6 +150,18 @@
     line-height: 1;
     width: 40px;
     height: 40px;
+  }
+  .ref {
+    flex: none;
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--text) 5%, transparent);
+    color: var(--text-dim);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
   }
   .title {
     font-size: 17px;

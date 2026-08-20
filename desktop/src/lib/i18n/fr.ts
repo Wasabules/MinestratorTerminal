@@ -48,6 +48,16 @@ export const fr = {
     playersOnline: 'Joueurs en ligne',
     resources: '{cpu} vCPU · {ram} Go RAM · {disk} Go',
   },
+  action: {
+    'power.start': 'Démarrage',
+    'power.stop': 'Arrêt',
+    'power.restart': 'Redémarrage',
+    'power.kill': 'Arrêt forcé',
+    'console.command': 'Commande console',
+    'sftp.write': 'Fichier modifié',
+    'sftp.delete': 'Fichier supprimé',
+    'sftp.upload': 'Fichier envoyé',
+  },
   status: {
     active: 'Prêt',
     hibernation: 'Hibernation',
@@ -232,6 +242,7 @@ export const fr = {
   overview: {
     activity: 'Activité récente',
     byStaff: 'staff',
+    actorAccount: 'votre compte',
     downloadLastBackup: 'Télécharger le dernier backup',
     supportRef: 'Réf. support : {ref}',
     copyAddress: 'Copier l’adresse de connexion',
@@ -356,6 +367,10 @@ export const fr = {
     factorioTokenWhere:
       'Récupère « service-username » et « service-token » dans le fichier player-data.json de Factorio (dossier de données du jeu).',
     debug: 'Debug',
+    fakeMode: 'Données de démo',
+    fakeModeDesc:
+      "Remplace pseudos, adresses, IP et références support par des valeurs fictives — pour des captures d'écran publiables. N'affecte que l'affichage : les commandes envoyées restent inchangées.",
+    fakeBanner: 'Données de démo',
     debugMode: 'Mode debug',
     debugModeDesc:
       'Affiche des infos techniques sur les vues (egg, capacités calculées, source de mods, ids).',

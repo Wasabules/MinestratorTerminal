@@ -64,9 +64,9 @@ pub use mcp::McpConfig;
 pub use nbt::NbtNode;
 pub use redact::PrivacyConfig;
 pub use models::{
-    Backup, CpuLimits, Egg, InstalledItem, LimitMb, LiveLight, LivePlayers, MarketItem, MarketPage,
-    MarketVersion, MyBoxSummary, Players, ServerAction, ServerDetails, ServerListItem,
-    ServersOverview, SftpEntry,
+    ActivityEntry, ActivityPage, Backup, CpuLimits, Egg, InstalledItem, LimitMb, LiveLight, LivePlayers, MarketItem, MarketPage,
+    MarketVersion, MyBoxSummary, Players, ServerDetails, ServerListItem, ServersOverview,
+    SftpEntry,
     Snapshot, Startup, UserNotification, UserProfile,
 };
 pub use store::MetricSample;
@@ -100,6 +100,12 @@ pub struct Core {
     /// QUE l'accès à la map ; le tour, lui, tient le Mutex async de la cellule → warm et send (et
     /// deux envois concurrents) se sérialisent sur la MÊME session au lieu de s'écraser.
     chat_sessions: Mutex<HashMap<String, Arc<tokio::sync::Mutex<ChatSession>>>>,
+    /// Transferts en cours qu'on peut interrompre, par identifiant de transfert.
+    ///
+    /// Un envoi peut rester bloqué sans qu'aucune erreur ne survienne — typiquement un fichier
+    /// qu'un fournisseur Android doit d'abord rapatrier depuis le cloud : la lecture attend, et
+    /// rien ne part. Sans ce drapeau, l'utilisateur n'a aucun moyen d'en sortir.
+    transfer_cancels: Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
     /// Cache TTL des lectures d'API stables/semi-stables (voir [`cache`]). Purgé après toute écriture.
     cache: cache::TtlCache,
     /// Token API mémorisé → évite une lecture BLOQUANTE du trousseau OS (DPAPI/Keychain/D-Bus) à
@@ -141,6 +147,7 @@ impl Core {
             ficsit_paths: PersistedConfig::load(&dir, "ficsit_paths.json"),
             game_settings: PersistedConfig::load(&dir, "game_settings.json"),
             chat_sessions: Mutex::new(HashMap::new()),
+            transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
             token_cache: Mutex::new(None),
             user_id_cache: Mutex::new(None),
@@ -469,6 +476,14 @@ impl Core {
     /// les joueurs : le CPU/RAM/disque et le statut restent du ressort de `live_light`.
     pub async fn live_players_bulk(&self, ids: &[i64]) -> Result<Vec<LivePlayers>> {
         self.api.live_players_bulk(&self.token()?, ids).await
+    }
+
+    /// Journal d'audit d'un serveur. `limit` est borné : l'API en garde des milliers d'entrées
+    /// (2 173 sur un serveur de test) et une vue n'en affiche qu'une poignée.
+    pub async fn server_activity(&self, id: i64, limit: i64, offset: i64) -> Result<ActivityPage> {
+        let limit = limit.clamp(1, 100);
+        let offset = offset.max(0);
+        self.api.server_activity(&self.token()?, id, limit, offset).await
     }
 
     /// Notifications de l'hébergeur (lecture seule : aucun endpoint de marquage « lu » n'est
@@ -890,8 +905,12 @@ impl Core {
     /// Mods installés (dossiers de `Mods/`, hors SML), avec état activé/désactivé.
     pub async fn ficsit_installed(&self, server_id: i64) -> Result<Vec<FicsitInstalledMod>> {
         let mods_dir = self.ficsit_mods_dir(server_id).await?;
-        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
-        let entries = self.drop_on_err(server_id, sftp::list(&conn, &mods_dir).await)?;
+        // `&str` plutôt que la `String` : la closure doit être rejouable, donc ne peut pas
+        // consommer ses captures — une référence, elle, se recopie à chaque appel.
+        let dir = mods_dir.as_str();
+        let entries = self
+            .with_sftp(server_id, |conn| async move { sftp::list(&conn, dir).await })
+            .await?;
         let mut out = Vec::new();
         for e in entries {
             if !e.is_dir {
@@ -919,13 +938,14 @@ impl Core {
     ) -> Result<()> {
         let base = self.ficsit_mods_dir(server_id).await?;
         let base = base.trim_end_matches('/');
-        let conn = self.sftp.ensure(&self.api, &self.token()?, server_id).await?;
         let (from, to) = if enabled {
             (format!("{base}/{reference}.disabled"), format!("{base}/{reference}"))
         } else {
             (format!("{base}/{reference}"), format!("{base}/{reference}.disabled"))
         };
-        self.drop_on_err(server_id, sftp::rename(&conn, &from, &to).await)
+        let (from, to) = (from.as_str(), to.as_str());
+        self.with_sftp(server_id, |conn| async move { sftp::rename(&conn, from, to).await })
+            .await
     }
 
     /// Supprime définitivement un mod (dossier activé OU désactivé).
@@ -1137,41 +1157,102 @@ impl Core {
     /// Évince la session SFTP en cache si l'opération a échoué. Une session poolée peut mourir
     /// (idle timeout, redémarrage serveur) et resterait sinon empoisonnée pour TOUS les appels
     /// fichier suivants ; au prochain appel, `ensure` en rouvre une neuve.
+    /// Purge la session **uniquement** si elle est morte.
+    ///
+    /// L'ancien comportement purgeait sur n'importe quelle erreur : un simple « fichier
+    /// introuvable » fermait la connexion SSH et imposait une poignée de main complète à
+    /// l'opération suivante — pour rien.
     fn drop_on_err<T>(&self, id: i64, r: Result<T>) -> Result<T> {
-        if r.is_err() {
-            self.sftp.drop_session(id);
+        if let Err(e) = &r {
+            if sftp::is_session_dead(e) {
+                self.sftp.drop_session(id);
+            }
         }
         r
     }
 
+    /// Exécute une opération SFTP en la **rejouant une fois** si la session était morte.
+    ///
+    /// C'est le point unique de résilience : `ensure()` sert le pool sans pouvoir vérifier qu'une
+    /// session est encore vivante — seule une opération le révèle. Plutôt que de laisser chaque
+    /// appelant retenter (ce que presque aucun ne faisait, d'où des échecs systématiques après
+    /// chaque veille du téléphone ou passage en arrière-plan), la reprise vit ici.
+    ///
+    /// `op` est appelée au plus deux fois : elle doit donc être **rejouable**. Ne passent
+    /// délibérément pas par ici :
+    /// - les **transferts** (`run_sftp_upload/download`), qui consomment un flux et gèrent leur
+    ///   propre reprise à l'offset ;
+    /// - les **séquences transactionnelles** — installation de mods Factorio/ficsit, extraction
+    ///   d'archive, téléchargement groupé en zip. Rejouer une séquence à moitié appliquée
+    ///   réécrirait des fichiers déjà posés ou dupliquerait des entrées ; mieux vaut un échec
+    ///   franc qu'une reprise qui laisse le serveur dans un état imprévu. Ces opérations
+    ///   bénéficient tout de même de la purge ciblée de `drop_on_err` et du keepalive.
+    async fn with_sftp<T, F, Fut>(&self, id: i64, op: F) -> Result<T>
+    where
+        F: Fn(std::sync::Arc<sftp::SftpConn>) -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let token = self.token()?;
+        let conn = self.sftp.ensure(&self.api, &token, id).await?;
+        match op(conn).await {
+            Err(e) if sftp::is_session_dead(&e) => {
+                self.sftp.drop_session(id);
+                let fresh = self.sftp.ensure(&self.api, &token, id).await?;
+                op(fresh).await
+            }
+            other => other,
+        }
+    }
+
     pub async fn sftp_list(&self, id: i64, path: &str) -> Result<Vec<SftpEntry>> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::list(&conn, path).await)
+        self.with_sftp(id, |conn| async move { sftp::list(&conn, path).await })
+            .await
     }
 
     pub async fn sftp_read_text(&self, id: i64, path: &str) -> Result<String> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::read_text(&conn, path).await)
+        self.with_sftp(id, |conn| async move { sftp::read_text(&conn, path).await })
+            .await
     }
 
     pub async fn sftp_write_text(&self, id: i64, path: &str, content: &str) -> Result<()> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::write_text(&conn, path, content).await)
+        self.with_sftp(id, |conn| async move { sftp::write_text(&conn, path, content).await })
+            .await
+    }
+
+
+    /// Taille d'un fichier distant, sans le lire — pour dimensionner un téléchargement.
+    pub async fn sftp_file_size(&self, id: i64, path: &str) -> Result<u64> {
+        self.with_sftp(id, |conn| async move { sftp::file_size(&conn, path).await })
+            .await
+    }
+
+    /// Lit une tranche d'un fichier distant, pour un téléchargement à progression visible.
+    ///
+    /// `len` vient du frontend : il est plafonné ici, faute de quoi une valeur aberrante ferait
+    /// allouer d'un coup autant de mémoire — dans un process mobile dont la mémoire est
+    /// justement la contrainte qui a motivé le découpage.
+    pub async fn sftp_read_range(&self, id: i64, path: &str, offset: u64, len: usize) -> Result<Vec<u8>> {
+        const MAX_RANGE: usize = 8 * 1024 * 1024;
+        let len = len.clamp(1, MAX_RANGE);
+        self.with_sftp(id, |conn| async move {
+            sftp::read_range(&conn, path, offset, len).await
+        })
+        .await
     }
 
     pub async fn sftp_mkdir(&self, id: i64, path: &str) -> Result<()> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::mkdir(&conn, path).await)
+        self.with_sftp(id, |conn| async move { sftp::mkdir(&conn, path).await })
+            .await
     }
 
     pub async fn sftp_delete(&self, id: i64, path: &str, is_dir: bool) -> Result<()> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::remove(&conn, path, is_dir).await)
+        self.with_sftp(id, |conn| async move { sftp::remove(&conn, path, is_dir).await })
+            .await
     }
 
     pub async fn sftp_rename(&self, id: i64, from: &str, to: &str) -> Result<()> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(id, sftp::rename(&conn, from, to).await)
+        self.with_sftp(id, |conn| async move { sftp::rename(&conn, from, to).await })
+            .await
     }
 
     // --- SFTP « one-shot » local↔serveur (MCP) : binaire, sans event de progression --------------
@@ -1198,8 +1279,9 @@ impl Core {
     /// Télécharge un fichier distant (binaire) vers un chemin **local**. Crée le dossier parent local
     /// au besoin. Renvoie la taille écrite.
     pub async fn sftp_get_local(&self, id: i64, remote_path: &str, local_path: &str) -> Result<u64> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let data = self.drop_on_err(id, sftp::read_bytes(&conn, remote_path, MCP_TRANSFER_CAP).await)?;
+        let data = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, remote_path, MCP_TRANSFER_CAP).await })
+            .await?;
         if let Some(parent) = std::path::Path::new(local_path).parent() {
             let _ = tokio::fs::create_dir_all(parent).await;
         }
@@ -1216,8 +1298,9 @@ impl Core {
         if find.is_empty() {
             return Err(Error::Unexpected("`find` ne peut pas être vide.".into()));
         }
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let content = self.drop_on_err(id, sftp::read_text(&conn, path).await)?;
+        let content = self
+            .with_sftp(id, |conn| async move { sftp::read_text(&conn, path).await })
+            .await?;
         let count = content.matches(find).count();
         if count == 0 {
             return Err(Error::Unexpected(format!(
@@ -1225,7 +1308,9 @@ impl Core {
             )));
         }
         let updated = content.replace(find, replace);
-        self.drop_on_err(id, sftp::write_text(&conn, path, &updated).await)?;
+        let body = updated.as_str();
+        self.with_sftp(id, |conn| async move { sftp::write_text(&conn, path, body).await })
+            .await?;
         Ok(count)
     }
 
@@ -1233,12 +1318,17 @@ impl Core {
     /// réussi / correspond (le hash est vide pour un dossier). Lit le fichier pour le hash.
     pub async fn sftp_stat_info(&self, id: i64, path: &str) -> Result<(bool, u64, String)> {
         use sha2::Digest;
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let (is_dir, size) = self.drop_on_err(id, sftp::stat(&conn, path).await)?;
+        let (is_dir, size) = self
+            .with_sftp(id, |conn| async move { sftp::stat(&conn, path).await })
+            .await?;
         if is_dir {
             return Ok((true, size, String::new()));
         }
-        let data = self.drop_on_err(id, sftp::read_bytes(&conn, path, MCP_TRANSFER_CAP).await)?;
+        let data = self
+            .with_sftp(id, |conn| async move {
+                sftp::read_bytes(&conn, path, MCP_TRANSFER_CAP).await
+            })
+            .await?;
         let hash = format!("{:x}", sha2::Sha256::digest(&data));
         Ok((false, data.len() as u64, hash))
     }
@@ -1273,6 +1363,135 @@ impl Core {
         }
         .await;
         self.emit_transfer_end(tid, &name, "up", res.err());
+    }
+
+    /// Téléverse depuis un **fichier déjà ouvert** (transfert suivi, events `SftpProgress`).
+    ///
+    /// Pour les frontends sans chemin local : le mobile obtient un descripteur du système et le
+    /// convertit en `File`. Le transfert reste natif de bout en bout.
+    pub async fn run_sftp_upload_stream(
+        &self,
+        id: i64,
+        src: tokio::fs::File,
+        name: &str,
+        total: u64,
+        remote_dir: &str,
+        tid: &str,
+    ) {
+        let tx = self.events.clone();
+        let (tid_s, name_s) = (tid.to_string(), name.to_string());
+        let mut last = 0u64;
+        let mut on = move |done: u64, total: u64| {
+            if done == total || done - last >= PROGRESS_STEP {
+                last = done;
+                let _ = tx.send(CoreEvent::SftpProgress(SftpProgress {
+                    id: tid_s.clone(),
+                    name: name_s.clone(),
+                    direction: "up".into(),
+                    done,
+                    total,
+                    status: "active".into(),
+                    error: None,
+                }));
+            }
+        };
+        // Le nom vient du système hôte et n'est pas de confiance : `upload()` était protégé par
+        // `Path::file_name()`, ce chemin-ci ne l'était pas.
+        let safe = match sftp::safe_file_name(name) {
+            Ok(n) => n,
+            Err(e) => {
+                self.emit_transfer_end(tid, name, "up", Some(e));
+                return;
+            }
+        };
+        let remote = if remote_dir.ends_with('/') {
+            format!("{remote_dir}{safe}")
+        } else {
+            format!("{remote_dir}/{safe}")
+        };
+        // Drapeau d'annulation publié le temps du transfert : `cancel_transfer(tid)` le lève.
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.transfer_cancels
+            .lock()
+            .unwrap()
+            .insert(tid.to_string(), cancel.clone());
+
+        let res = self
+            .upload_with_resume(id, src, &remote, total, &mut on, &cancel)
+            .await;
+
+        self.transfer_cancels.lock().unwrap().remove(tid);
+        self.emit_transfer_end(tid, name, "up", res.err());
+    }
+
+    /// Demande l'arrêt d'un transfert en cours. Sans effet s'il est déjà terminé.
+    ///
+    /// L'arrêt est coopératif : le transfert vérifie le drapeau entre deux blocs. Un envoi bloqué
+    /// dans une lecture qui ne rend jamais la main ne s'arrêtera donc qu'à la fin de celle-ci —
+    /// mais l'interface, elle, cesse immédiatement de le présenter comme actif.
+    pub fn cancel_transfer(&self, tid: &str) {
+        if let Some(flag) = self.transfer_cancels.lock().unwrap().get(tid) {
+            flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Envoie `src` vers `remote` en **reprenant à l'offset** si la session meurt en route.
+    ///
+    /// Sans reprise, une coupure au bout de 200 Mio perd les 200 Mio. Or c'est le cas *normal*
+    /// sur mobile : l'écran s'éteint ou l'utilisateur change d'app, Android coupe le réseau, et la
+    /// session SFTP meurt en plein transfert. À chaque tentative, on redemande au serveur la
+    /// taille réellement reçue et on repart de là — ce qui évite aussi bien de renvoyer que de
+    /// dupliquer des octets, quel que soit l'endroit exact où la connexion a lâché.
+    async fn upload_with_resume(
+        &self,
+        id: i64,
+        mut src: tokio::fs::File,
+        remote: &str,
+        total: u64,
+        on: &mut impl FnMut(u64, u64),
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<()> {
+        /// Reprises successives avant d'abandonner. Au-delà, c'est que la connexion ne tient pas :
+        /// insister ne ferait que rouvrir des sessions pour rien.
+        const MAX_RESUMES: u32 = 5;
+
+        let token = self.token()?;
+        let mut start = 0u64;
+        let mut resumes = 0u32;
+
+        loop {
+            let conn = self.sftp.ensure(&self.api, &token, id).await?;
+            match sftp::upload_stream_from(&conn, &mut src, remote, start, total, on, cancel).await {
+                Ok(_) => return Ok(()),
+                // Une annulation ne se reprend pas : c'est une décision de l'utilisateur.
+                Err(e) if cancel.load(std::sync::atomic::Ordering::Relaxed) => return Err(e),
+                Err(e) if sftp::is_session_dead(&e) && resumes < MAX_RESUMES => {
+                    resumes += 1;
+                    self.sftp.drop_session(id);
+                    tracing::warn!(
+                        server = id,
+                        remote,
+                        resumes,
+                        "session SFTP perdue pendant l'envoi : reprise à l'offset"
+                    );
+                    // Source de vérité : ce que le serveur a effectivement écrit. Se fier au
+                    // compteur local surestimerait l'avancement (le dernier bloc a pu ne pas
+                    // arriver) et laisserait un trou dans le fichier.
+                    let fresh = self.sftp.ensure(&self.api, &token, id).await?;
+                    start = sftp::file_size(&fresh, remote).await.unwrap_or(0);
+                    // Le serveur n'a rien gardé : on repart de zéro plutôt que d'échouer.
+                    if start > total && total > 0 {
+                        start = 0;
+                    }
+                }
+                Err(e) => {
+                    if sftp::is_session_dead(&e) {
+                        self.sftp.drop_session(id);
+                    }
+                    return Err(e);
+                }
+            }
+        }
     }
 
     /// Télécharge un fichier distant vers `local` (transfert suivi).
@@ -1394,8 +1613,9 @@ impl Core {
     pub async fn sftp_archive_list(&self, id: i64, path: &str) -> Result<Vec<archive::ArchiveEntry>> {
         let kind = archive::kind_from_name(path)
             .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, ARCHIVE_CAP).await })
+            .await?;
         archive::list(&bytes, kind).map_err(Error::Unexpected)
     }
 
@@ -1403,8 +1623,9 @@ impl Core {
     pub async fn sftp_archive_read_text(&self, id: i64, path: &str, entry: &str) -> Result<String> {
         let kind = archive::kind_from_name(path)
             .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, ARCHIVE_CAP).await })
+            .await?;
         let raw = archive::extract(&bytes, kind, entry).map_err(Error::Unexpected)?;
         String::from_utf8(raw)
             .map_err(|_| Error::Unexpected("Entrée binaire (non affichable).".into()))
@@ -1412,8 +1633,9 @@ impl Core {
 
     /// Contenu TEXTE d'un `.gz` seul (ex. `latest.log.gz`), décompressé.
     pub async fn sftp_gz_text(&self, id: i64, path: &str) -> Result<String> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, ARCHIVE_CAP).await })
+            .await?;
         let raw = archive::gunzip(&bytes).map_err(Error::Unexpected)?;
         String::from_utf8(raw)
             .map_err(|_| Error::Unexpected("Contenu binaire (non affichable).".into()))
@@ -1425,8 +1647,9 @@ impl Core {
         use base64::Engine as _;
         let mime = image_mime(path)
             .ok_or_else(|| Error::Unexpected("Format d'image non reconnu.".into()))?;
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, IMAGE_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, IMAGE_CAP).await })
+            .await?;
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         Ok(format!("data:{mime};base64,{b64}"))
     }
@@ -1434,8 +1657,9 @@ impl Core {
     /// Décode un fichier NBT distant (`.dat`, `level.dat`, playerdata, `.nbt`/`.schem`) en arbre
     /// typé (lecture seule). Décompression gzip/zlib/brut gérée par `nbt::to_tree`.
     pub async fn sftp_nbt_tree(&self, id: i64, path: &str) -> Result<nbt::NbtNode> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, NBT_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, NBT_CAP).await })
+            .await?;
         nbt::to_tree(&bytes).map_err(Error::Unexpected)
     }
 
@@ -1447,8 +1671,9 @@ impl Core {
 
     /// Liste les chunks générés d'une région `.mca` (coordonnées de chunk GLOBALES + taille).
     pub async fn sftp_region_chunks(&self, id: i64, path: &str) -> Result<Vec<RegionChunk>> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, REGION_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, REGION_CAP).await })
+            .await?;
         let (rx, rz) = crate::world::region_coords(path);
         Ok(mca::chunks(&bytes)
             .into_iter()
@@ -1470,8 +1695,9 @@ impl Core {
         if !(0..32).contains(&lx) || !(0..32).contains(&lz) {
             return Err(Error::Unexpected("chunk hors de cette région".into()));
         }
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, REGION_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, REGION_CAP).await })
+            .await?;
         mca::chunk_nbt(&bytes, lx as usize, lz as usize).map_err(Error::Unexpected)
     }
 
@@ -1483,8 +1709,9 @@ impl Core {
 
     /// SNBT (`/data`) d'un fichier NBT distant (`.dat`…) — fidèle, pour la vue/copie.
     pub async fn sftp_nbt_snbt(&self, id: i64, path: &str) -> Result<String> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, NBT_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, NBT_CAP).await })
+            .await?;
         nbt::to_snbt(&bytes).map_err(Error::Unexpected)
     }
 
@@ -1498,8 +1725,9 @@ impl Core {
     pub async fn sftp_extract_entry(&self, id: i64, path: &str, entry: &str, local: &str) -> Result<()> {
         let kind = archive::kind_from_name(path)
             .ok_or_else(|| Error::Unexpected("Format d'archive non reconnu.".into()))?;
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, path, ARCHIVE_CAP).await)?;
+        let bytes = self
+            .with_sftp(id, |conn| async move { sftp::read_bytes(&conn, path, ARCHIVE_CAP).await })
+            .await?;
         let raw = archive::extract(&bytes, kind, entry).map_err(Error::Unexpected)?;
         tokio::fs::write(local, raw)
             .await
@@ -1509,11 +1737,10 @@ impl Core {
     /// Recherche RÉCURSIVE (bornée) de fichiers/dossiers par sous-chaîne de nom sous `root`.
     /// Renvoie `(résultats, tronqué)`.
     pub async fn sftp_search(&self, id: i64, root: &str, query: &str) -> Result<(Vec<SftpEntry>, bool)> {
-        let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-        self.drop_on_err(
-            id,
-            sftp::search(&conn, root, query, SEARCH_MAX_RESULTS, SEARCH_MAX_SCAN).await,
-        )
+        self.with_sftp(id, |conn| async move {
+            sftp::search(&conn, root, query, SEARCH_MAX_RESULTS, SEARCH_MAX_SCAN).await
+        })
+        .await
     }
 
     /// Extrait une archive distante (`.zip`/`.tar`/`.tar.gz`) DANS `dest_dir` sur le serveur (via

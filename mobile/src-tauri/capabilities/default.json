@@ -3,5 +3,20 @@
   "identifier": "default",
   "description": "Permissions de l'app mobile (webview principale)",
   "windows": ["main"],
-  "permissions": ["core:default", "core:app:default", "notification:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "core:app:default",
+    "notification:default",
+    "opener:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-open",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-seek",
+    "fs:allow-stat",
+    "core:resources:allow-close"
+  ]
 }

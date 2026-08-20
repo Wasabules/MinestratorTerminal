@@ -1,12 +1,37 @@
 <script lang="ts">
   import { api, humanizeError } from "../../ipc";
+  import { activeCount, uploadTo, downloadFrom, transferItems } from "../../stores/transfers.svelte";
+  import TransferCenter from "../TransferCenter.svelte";
   import { t } from "../../i18n";
   import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
   import CodeEditor from "../CodeEditor.svelte";
-  import type { SftpEntry } from "../../types";
+  import type { ArchiveEntry, SftpEntry } from "../../types";
 
   let { serverId, active }: { serverId: number; active: boolean } = $props();
+
+  /** Un transfert est en cours : évite d'en lancer deux à la fois depuis cette vue. */
+  const busy = $derived(activeCount() > 0);
+
+  /** Envoi : le store gère sélecteur, nom réel du fichier, lecture en flux et appels IPC. */
+  async function uploadFile() {
+    const ok = await uploadTo(serverId, cwd, t("files.upload"));
+    if (ok) {
+      await load();
+    } else {
+      // Échec : l'erreur détaillée vit dans le centre de transferts, qu'on ouvre d'emblée
+      // plutôt que de laisser l'utilisateur deviner ce qui s'est passé.
+      const last = transferItems()[0];
+      if (last?.status === "error") error = last.error;
+    }
+  }
+
+  /** Téléchargement d'une entrée distante vers l'emplacement choisi. */
+  async function downloadEntry(entry: SftpEntry) {
+    actionFor = null;
+    await downloadFrom(serverId, entry.path, entry.name, t("files.download"));
+  }
+
   let loaded = $state(false);
 
   let cwd = $state("/");
@@ -25,6 +50,54 @@
     readonly: boolean;
   } | null>(null);
   let editor: CodeEditor | undefined = $state();
+  /** Aperçu d'image (data URI fourni par le core, aucune écriture sur le téléphone). */
+  let preview = $state<{ name: string; src: string } | null>(null);
+  /** Archive ouverte en lecture : liste des entrées, plus l'entrée texte affichée. */
+  let archive = $state<{ path: string; name: string; entries: ArchiveEntry[] } | null>(null);
+  /** Recherche récursive sous le dossier courant, dépliée à la demande depuis la loupe. */
+  let searchOpen = $state(false);
+  let query = $state("");
+  let results = $state<{ entries: SftpEntry[]; truncated: boolean } | null>(null);
+  let searching = $state(false);
+
+  const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|svg)$/i;
+  const ARCHIVE_EXT = /\.(zip|tar|tar\.gz|tgz|jar)$/i;
+
+  /** Recherche par nom sous le dossier courant ; vide = on rend la main à la navigation. */
+  async function runSearch() {
+    const q = query.trim();
+    if (q.length < 2) {
+      results = null;
+      return;
+    }
+    searching = true;
+    error = null;
+    try {
+      results = await api.sftpSearch(serverId, cwd, q);
+    } catch (err) {
+      error = humanizeError(err);
+      results = null;
+    } finally {
+      searching = false;
+    }
+  }
+
+  function clearSearch() {
+    query = "";
+    results = null;
+  }
+
+  /** Ouvre/ferme le champ ; la fermeture rend la main à la navigation du dossier. */
+  function toggleSearch() {
+    searchOpen = !searchOpen;
+    if (!searchOpen) clearSearch();
+  }
+
+  /** Focus + clavier dès l'apparition du champ : sinon il faut un second appui pour saisir. */
+  function autofocus(node: HTMLInputElement) {
+    node.focus();
+  }
+
   // Feuille d'actions pour une entrée.
   let actionFor = $state<SftpEntry | null>(null);
   // Modale de saisie / confirmation.
@@ -71,12 +144,52 @@
       cd(entry.path);
       return;
     }
+    // Image : aperçu direct plutôt qu'un « fichier binaire » sans recours.
+    if (IMAGE_EXT.test(entry.name)) {
+      try {
+        preview = { name: entry.name, src: await api.sftpReadDataUri(serverId, entry.path) };
+      } catch (err) {
+        error = humanizeError(err);
+      }
+      return;
+    }
+    // Archive : on liste son contenu sans rien extraire ni télécharger.
+    if (ARCHIVE_EXT.test(entry.name)) {
+      try {
+        archive = {
+          path: entry.path,
+          name: entry.name,
+          entries: await api.sftpArchiveList(serverId, entry.path),
+        };
+      } catch (err) {
+        error = humanizeError(err);
+      }
+      return;
+    }
     const isGz = entry.name.toLowerCase().endsWith(".gz");
     try {
       const content = isGz
         ? await api.sftpGzText(serverId, entry.path)
         : await api.sftpReadText(serverId, entry.path);
       opened = { path: entry.path, name: entry.name, content, dirty: false, saving: false, readonly: isGz };
+    } catch {
+      error = t("files.binary");
+    }
+  }
+
+  /** Ouvre une entrée d'archive dans l'éditeur, en lecture seule (rien n'est réécrit). */
+  async function openArchiveEntry(entryPath: string) {
+    if (!archive) return;
+    try {
+      const content = await api.sftpArchiveReadText(serverId, archive.path, entryPath);
+      opened = {
+        path: `${archive.path}!${entryPath}`,
+        name: entryPath.split("/").pop() ?? entryPath,
+        content,
+        dirty: false,
+        saving: false,
+        readonly: true,
+      };
     } catch {
       error = t("files.binary");
     }
@@ -133,15 +246,74 @@
     <button class="ic" onclick={() => (modal = { kind: "mkdir", value: "" })} aria-label={t("files.newFolder")}>
       <Icon name="folderPlus" size={18} />
     </button>
+    <button class="ic" onclick={uploadFile} disabled={busy} aria-label={t("files.upload")}>
+      <Icon name="up" size={18} />
+    </button>
+    <TransferCenter />
+    <button
+      class="ic"
+      class:on={searchOpen}
+      onclick={toggleSearch}
+      aria-label={t("files.search")}
+      aria-expanded={searchOpen}
+    >
+      <Icon name="search" size={18} />
+    </button>
     <button class="ic" onclick={load} aria-label={t("servers.refresh")}>
       <Icon name="refresh" size={18} />
     </button>
   </div>
 
+  <!-- Recherche dépliée depuis la loupe : sur mobile, un champ permanent occupe une ligne
+       entière pour une action ponctuelle. -->
+  {#if searchOpen}
+    <div class="searchbar">
+      <Icon name="search" size={16} />
+      <input
+        type="search"
+        bind:value={query}
+        use:autofocus
+        placeholder={t("files.search")}
+        onkeydown={(e) => e.key === "Enter" && runSearch()}
+      />
+      {#if results}
+        <button class="ic" onclick={clearSearch} aria-label={t("files.searchClear")}>
+          <Icon name="close" size={16} />
+        </button>
+      {:else}
+        <button class="ic" onclick={runSearch} disabled={searching || query.trim().length < 2}>
+          <Icon name="send" size={16} />
+        </button>
+      {/if}
+    </div>
+  {/if}
+
   {#if notice}<p class="ok">{notice}</p>{/if}
   {#if error}<p class="err selectable">{error}</p>{/if}
 
-  {#if loading}
+  {#if searching}
+    <p class="dim pad">…</p>
+  {:else if results}
+    {#if results.entries.length === 0}
+      <p class="dim pad">{t("files.searchNone")}</p>
+    {:else}
+      {#if results.truncated}<p class="dim pad">{t("files.searchTruncated")}</p>{/if}
+      <ul>
+        {#each results.entries as e (e.path)}
+          <li>
+            <button class="row" onclick={() => openEntry(e)}>
+              <Icon name={e.is_dir ? "folder" : "file"} size={20} />
+              <span class="meta">
+                <span class="name">{e.name}</span>
+                <!-- Le chemin compte plus que la taille ici : il situe le résultat. -->
+                <small class="dim selectable">{e.path}</small>
+              </span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {:else if loading}
     <p class="dim pad">…</p>
   {:else if entries.length === 0}
     <p class="dim pad">{t("files.empty")}</p>
@@ -164,6 +336,52 @@
   {/if}
 </div>
 
+<!-- Aperçu d'image : le core renvoie un data URI, rien n'est écrit sur le téléphone. -->
+{#if preview}
+  <div class="scrim" use:portal role="button" tabindex="-1" onclick={() => (preview = null)} onkeydown={() => {}}>
+    <div class="imgbox" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+      <header class="obar">
+        <span class="oname">{preview.name}</span>
+        <button class="ic" onclick={() => (preview = null)} aria-label={t("files.close")}>
+          <Icon name="close" size={18} />
+        </button>
+      </header>
+      <img src={preview.src} alt={preview.name} />
+    </div>
+  </div>
+{/if}
+
+<!-- Contenu d'archive, en lecture seule. -->
+{#if archive}
+  <div class="scrim" use:portal role="button" tabindex="-1" onclick={() => (archive = null)} onkeydown={() => {}}>
+    <div class="sheet tall" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+      <header class="obar">
+        <span class="oname">{archive.name}</span>
+        <button class="ic" onclick={() => (archive = null)} aria-label={t("files.close")}>
+          <Icon name="close" size={18} />
+        </button>
+      </header>
+      {#if archive.entries.length === 0}
+        <p class="dim pad">{t("files.empty")}</p>
+      {:else}
+        <ul class="arc">
+          {#each archive.entries.slice(0, 300) as a (a.path)}
+            <li>
+              <button class="row" onclick={() => openArchiveEntry(a.path)} disabled={a.is_dir}>
+                <Icon name={a.is_dir ? "folder" : "file"} size={18} />
+                <span class="meta">
+                  <span class="name">{a.path}</span>
+                  {#if !a.is_dir}<small class="dim">{fmtSize(a.size)}</small>{/if}
+                </span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </div>
+  </div>
+{/if}
+
 <!-- Feuille d'actions par entrée -->
 {#if actionFor}
   <div
@@ -176,6 +394,12 @@
   ></div>
   <div class="sheet" use:portal>
     <div class="sheet-title selectable">{actionFor.name}</div>
+    {#if !actionFor.is_dir}
+      <!-- Dossiers exclus : le téléchargement récursif (zip) est une capacité desktop. -->
+      <button onclick={() => downloadEntry(actionFor!)} disabled={busy}>
+        <Icon name="save" size={18} /> {t("files.download")}
+      </button>
+    {/if}
     <button
       onclick={() => {
         modal = { kind: "rename", value: actionFor!.name, target: actionFor! };
@@ -260,6 +484,74 @@
 {/if}
 
 <style>
+  .ic.on {
+    color: var(--brand-primary);
+  }
+  .searchbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 12px 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface);
+    color: var(--text-dim);
+  }
+  .searchbar input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 15px;
+    outline: none;
+  }
+  .searchbar .ic:disabled {
+    opacity: 0.4;
+  }
+  .imgbox {
+    width: min(92vw, 560px);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    border-radius: 14px;
+    background: var(--surface);
+    overflow: hidden;
+  }
+  .imgbox img {
+    max-width: 100%;
+    max-height: 74vh;
+    object-fit: contain;
+    /* Damier discret : sans lui, un PNG transparent est illisible en thème sombre. */
+    background:
+      repeating-conic-gradient(color-mix(in srgb, var(--text) 8%, transparent) 0% 25%, transparent 0% 50%)
+      50% / 16px 16px;
+  }
+  .obar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .oname {
+    font-size: 14px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sheet.tall {
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  .arc .name {
+    word-break: break-all;
+  }
+
   .sftp {
     display: flex;
     flex-direction: column;
