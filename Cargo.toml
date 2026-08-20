@@ -12,7 +12,14 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 authors = ["Geoffrey Lecoq"]
 license = "GPL-3.0-or-later"
+
+# Les symboles de débogage de la lib Rust pesaient 253 Mio à eux seuls dans l'APK Android debug
+# (503 Mio au total), au point de faire échouer l'installation par `adb`. Les retirer ramène
+# l'APK à quelques dizaines de Mio et rend les allers-retours de développement tenables.
+# Contrepartie assumée : les backtraces Rust en debug perdent leurs noms de fonctions.
+[profile.dev]
+strip = "debuginfo"
