@@ -6,21 +6,29 @@
 use std::io::Read;
 
 /// Nœud d'un arbre NBT typé, sérialisé vers l'UI (inspecteur repliable).
+///
+/// Les champs vides sont **omis** du JSON (pas `null`) : ils sont donc optionnels (`?:`) côté
+/// TypeScript (`ts(optional)`, que ts-rs ne déduit pas d'un `skip_serializing_if` sans `default`).
 #[derive(serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct NbtNode {
     /// Clé dans le compound parent ; absent pour la racine et les éléments de liste.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub name: Option<String>,
     /// Type NBT : `Byte|Short|Int|Long|Float|Double|String|ByteArray|IntArray|LongArray|List|Compound`.
     pub tag: &'static str,
     /// Valeur affichable (scalaires + aperçu des tableaux) ; absent pour List/Compound.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub value: Option<String>,
     /// Nombre d'enfants (List/Compound) ou d'éléments (tableaux).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
     pub len: Option<usize>,
     /// Sous-nœuds (List/Compound uniquement).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<NbtNode>>", optional))]
     pub children: Vec<NbtNode>,
 }
 

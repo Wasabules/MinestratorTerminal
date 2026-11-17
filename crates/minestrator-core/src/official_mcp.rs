@@ -104,8 +104,9 @@ fn parse_tools(result: &Value) -> Vec<ToolSpec> {
 }
 
 /// Extrait le texte d'un `result` de `tools/call` (`content[].text` concaténé ; sinon JSON brut).
-/// Pur : testable sans réseau.
-fn parse_call_result(result: &Value) -> String {
+/// `isError: true` (échec de l'OUTIL, distinct d'une erreur JSON-RPC) → `Err` : sans cela, l'échec
+/// remontait au modèle comme un succès textuel. Pur : testable sans réseau.
+fn parse_call_result(result: &Value) -> Result<String, String> {
     let text = result
         .get("content")
         .and_then(|c| c.as_array())
@@ -117,10 +118,15 @@ fn parse_call_result(result: &Value) -> String {
                 .join("\n")
         })
         .unwrap_or_default();
-    if text.trim().is_empty() {
-        return result.to_string(); // pas de bloc texte → JSON brut (ex. structuredContent)
+    let text = if text.trim().is_empty() {
+        result.to_string() // pas de bloc texte → JSON brut (ex. structuredContent)
+    } else {
+        text
+    };
+    if result.get("isError").and_then(Value::as_bool) == Some(true) {
+        return Err(text);
     }
-    text
+    Ok(text)
 }
 
 /// Catalogue d'outils de gestion exposé par l'officiel, mappé pour le LLM. `readonly` restreint aux
@@ -134,7 +140,7 @@ pub async fn list_tools(token: &str, readonly: bool) -> Result<Vec<ToolSpec>, St
 /// du `list_tools` (même surface d'outils pour la connexion).
 pub async fn call_tool(token: &str, readonly: bool, name: &str, args: Value) -> Result<String, String> {
     let result = rpc(token, readonly, "tools/call", json!({ "name": name, "arguments": args })).await?;
-    Ok(parse_call_result(&result))
+    parse_call_result(&result)
 }
 
 #[cfg(test)]
@@ -174,9 +180,20 @@ mod tests {
     #[test]
     fn extracts_call_text_or_raw() {
         let with_text = json!({ "content": [{ "type": "text", "text": "ligne 1" }, { "type": "text", "text": "ligne 2" }] });
-        assert_eq!(parse_call_result(&with_text), "ligne 1\nligne 2");
+        assert_eq!(parse_call_result(&with_text).unwrap(), "ligne 1\nligne 2");
         // Pas de content textuel → JSON brut renvoyé (non vide).
         let structured = json!({ "structuredContent": { "id": 42 } });
-        assert!(parse_call_result(&structured).contains("42"));
+        assert!(parse_call_result(&structured).unwrap().contains("42"));
+    }
+
+    #[test]
+    fn tool_failure_is_an_error_not_a_success() {
+        let failed = json!({
+            "isError": true,
+            "content": [{ "type": "text", "text": "Serveur introuvable" }]
+        });
+        assert_eq!(parse_call_result(&failed).unwrap_err(), "Serveur introuvable");
+        let ok = json!({ "isError": false, "content": [{ "type": "text", "text": "ok" }] });
+        assert_eq!(parse_call_result(&ok).unwrap(), "ok");
     }
 }

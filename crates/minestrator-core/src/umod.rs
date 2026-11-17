@@ -74,7 +74,11 @@ pub async fn mod_versions(reference: &str) -> Result<Vec<MarketModVersion>> {
         &[],
     )
     .await?;
+    Ok(versions_from_manifest(&v))
+}
 
+/// Versions trouvées dans le manifeste CDN d'un plugin, quelle que soit sa forme.
+fn versions_from_manifest(v: &serde_json::Value) -> Vec<MarketModVersion> {
     let mut out: Vec<MarketModVersion> = Vec::new();
     let push = |out: &mut Vec<MarketModVersion>, ver: &str| {
         let ver = ver.trim_start_matches('v').trim();
@@ -120,7 +124,7 @@ pub async fn mod_versions(reference: &str) -> Result<Vec<MarketModVersion>> {
             push(&mut out, s);
         }
     }
-    Ok(out)
+    out
 }
 
 /// Nom de plugin (TitleCase) à partir de l'URL de download `.../Vanish.cs`, repli sur `fallback`.
@@ -131,4 +135,84 @@ fn ref_from_url(url: &str, fallback: &str) -> String {
         .filter(|s| !s.is_empty())
         .map(str::to_string)
         .unwrap_or_else(|| fallback.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn versions(v: serde_json::Value) -> Vec<String> {
+        versions_from_manifest(&v).into_iter().map(|m| m.version).collect()
+    }
+
+    #[test]
+    fn reference_comes_from_the_download_url() {
+        assert_eq!(ref_from_url("https://umod.org/plugins/Vanish.cs", "vanish"), "Vanish");
+        assert_eq!(
+            ref_from_url("https://umod.org/plugins/BetterChat.cs", "better-chat"),
+            "BetterChat"
+        );
+        // Pas de `.cs` exploitable → repli sur le nom de l'API.
+        assert_eq!(ref_from_url("", "vanish"), "vanish");
+        assert_eq!(ref_from_url("https://umod.org/plugins/", "vanish"), "vanish");
+        assert_eq!(ref_from_url("https://umod.org/plugins/.cs", "vanish"), "vanish");
+        assert_eq!(ref_from_url("https://umod.org/plugins/Vanish.zip", "vanish"), "vanish");
+    }
+
+    #[test]
+    fn versions_from_an_array() {
+        let v = json!({
+            "name": "Vanish",
+            "versions": [
+                { "version": "v2.1.0", "released_at": "2026-01-01" },
+                { "formatted": "2.0.0" },
+                { "version": "   " },
+                { "autre": "x" }
+            ]
+        });
+        // Préfixe `v` retiré ; entrées vides ou sans version ignorées.
+        assert_eq!(versions(v), ["2.1.0", "2.0.0"]);
+    }
+
+    #[test]
+    fn versions_from_a_map_and_several_keys() {
+        let mut found = versions(json!({
+            "branches": { "master": { "version": "1.4.0" }, "beta": { "formatted": "1.5.0-beta" } }
+        }));
+        found.sort();
+        assert_eq!(found, ["1.4.0", "1.5.0-beta"]);
+
+        // Plusieurs formes présentes : tout est collecté, dans l'ordre versions → branches → releases.
+        assert_eq!(
+            versions(json!({
+                "versions": [{ "version": "3.0.0" }],
+                "releases": [{ "version": "2.9.0" }]
+            })),
+            ["3.0.0", "2.9.0"]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_the_latest_version_field() {
+        assert_eq!(
+            versions(json!({ "latest_release_version": "v1.0.3", "version": "0.9" })),
+            ["1.0.3"]
+        );
+        assert_eq!(versions(json!({ "version": "0.9" })), ["0.9"]);
+        // Le repli ne sert QUE si aucune version n'a été trouvée ailleurs.
+        assert_eq!(
+            versions(json!({ "versions": [{ "version": "2.0" }], "latest_release_version": "9.9" })),
+            ["2.0"]
+        );
+        assert!(versions(json!({})).is_empty());
+        assert!(versions(json!({ "versions": [] })).is_empty());
+    }
+
+    #[test]
+    fn versions_carry_no_game_version_nor_dependencies() {
+        let v = versions_from_manifest(&json!({ "version": "1.0" }));
+        assert_eq!(v[0].game_version, "");
+        assert!(v[0].dependencies.is_empty());
+    }
 }

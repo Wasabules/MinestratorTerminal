@@ -1,0 +1,18 @@
+# Alias du workspace. Voir CLAUDE.md (« Chaînes de fichiers ») et crates/minestrator-core/src/bindings.rs.
+
+[alias]
+# Régénère les types TypeScript des frontends depuis les structures Rust (ts-rs, feature `ts`) :
+# desktop/src/lib/bindings/core.ts, mobile/src/lib/bindings/{core,mobile}.ts. À commiter.
+bindings = [
+    "test", "--lib",
+    "-p", "minestrator-core", "-p", "minestrator-terminal-mobile",
+    "--features", "minestrator-core/ts,minestrator-terminal-mobile/ts",
+    "--", "--ignored", "regenerate_bindings",
+]
+# Échoue si un fichier de bindings versionné ne correspond plus au Rust (CI).
+bindings-check = [
+    "test", "--lib",
+    "-p", "minestrator-core", "-p", "minestrator-terminal-mobile",
+    "--features", "minestrator-core/ts,minestrator-terminal-mobile/ts",
+    "--", "bindings_are",
+]

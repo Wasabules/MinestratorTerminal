@@ -7,29 +7,34 @@
 //!
 //! Les payloads sont `Serialize` pour être transmis tels quels par n'importe quel frontend.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConsoleOutput {
     pub conn_id: String,
     pub line: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConsoleStatus {
     pub conn_id: String,
     pub state: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConsoleConnection {
     pub conn_id: String,
-    /// connecting | open | reconnecting | closed | hibernated
+    /// connecting | open | reconnecting | closed | hibernated | suspended (terminal : serveur
+    /// suspendu ou expiré, plus de reconnexion)
     pub phase: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ConsoleStats {
     pub conn_id: String,
     pub cpu_absolute: f64,
@@ -51,7 +56,11 @@ pub struct ConsoleLog {
 }
 
 /// Alerte émise par le superviseur (crash, seuils, expiration…).
-#[derive(Debug, Clone, Serialize)]
+///
+/// `Deserialize` : le service d'arrière-plan transmet ses alertes à l'app par IPC
+/// (voir [`crate::service`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Alert {
     /// ID serveur, ou ID MyBox pour une alerte d'expiration.
     pub server_id: i64,
@@ -67,6 +76,7 @@ pub struct Alert {
 /// Une action concrète proposée par le Copilote, applicable via la couche d'outils.
 /// L'exécution dépend du niveau d'autonomie choisi (jamais exécutée en mode « suggérer »).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ProposedAction {
     /// Nom d'outil (`power_action`, `send_command`, `write_file`, …).
     pub tool: String,
@@ -81,6 +91,7 @@ pub struct ProposedAction {
 /// Émis au **lancement** d'un diagnostic (avant l'appel LLM) : permet à l'UI d'afficher un
 /// indicateur « analyse en cours ». L'`id` correspond à celui du [`Diagnosis`] final.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CopilotStarted {
     pub id: String,
     pub server_id: i64,
@@ -92,6 +103,7 @@ pub struct CopilotStarted {
 /// Étape d'avancement d'une analyse en cours (pour le log/détail dans l'UI). `id` = celui du
 /// [`CopilotStarted`]/[`Diagnosis`] correspondant.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CopilotProgress {
     pub id: String,
     pub phase: String,
@@ -101,6 +113,7 @@ pub struct CopilotProgress {
 /// (id d'onglet). Le front accumule ces fragments dans la bulle en cours ; la réponse finale
 /// (renvoyée par `chat_send`) reste la source d'autorité.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatDelta {
     pub id: String,
     pub text: String,
@@ -108,6 +121,7 @@ pub struct ChatDelta {
 
 /// Rapport de diagnostic produit par le Copilote (agent Claude) suite à un incident.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Diagnosis {
     /// Identifiant unique (`{server_id}-{ts}`).
     pub id: String,
@@ -131,6 +145,7 @@ pub struct Diagnosis {
 /// Progression d'un transfert SFTP (upload / download / zip), pour le gestionnaire de transferts.
 /// `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SftpProgress {
     pub id: String,
     /// Nom lisible (fichier, ou nom du .zip pour un téléchargement groupé).
@@ -149,6 +164,7 @@ pub struct SftpProgress {
 /// (généré côté front). `phase` ∈ {resolving, downloading, stopping, uploading, restarting, done,
 /// error}. `done`/`total` = nombre d'artefacts (mod + SML + dépendances).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ModInstallProgress {
     pub id: String,
     pub phase: String,

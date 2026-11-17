@@ -2,17 +2,25 @@
 //!
 //! L'API ne fournit AUCUN historique — le cœur l'accumule lui-même. C'est l'un des
 //! avantages structurels d'une app persistante par rapport au panel web.
+//!
+//! La même base garde aussi un **journal des alertes** (table `alerts`) : le service
+//! d'arrière-plan y consigne ce qu'il détecte pendant que l'app est fermée, et l'app le relit
+//! par IPC (voir [`crate::service`]).
 
 use crate::error::{Error, Result};
+use crate::events::Alert;
 use rusqlite::Connection;
 use std::path::Path;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Un échantillon de métriques (renvoyé au frontend pour les graphes).
-#[derive(Debug, Clone, Serialize)]
+///
+/// `Deserialize` : l'historique collecté par le service d'arrière-plan transite par IPC.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MetricSample {
     pub ts: i64,
     pub cpu: f64,
@@ -20,6 +28,14 @@ pub struct MetricSample {
     pub mem_limit: i64,
     pub disk: i64,
     pub state: String,
+}
+
+/// Une alerte consignée, avec son identifiant croissant (curseur de lecture côté app).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredAlert {
+    pub id: i64,
+    #[serde(flatten)]
+    pub alert: Alert,
 }
 
 pub struct MetricsStore {
@@ -62,8 +78,74 @@ impl MetricsStore {
                 disk      INTEGER NOT NULL,
                 state     TEXT    NOT NULL
              );
-             CREATE INDEX IF NOT EXISTS idx_metrics_server_ts ON metrics(server_id, ts);",
+             CREATE INDEX IF NOT EXISTS idx_metrics_server_ts ON metrics(server_id, ts);
+             CREATE TABLE IF NOT EXISTS alerts (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id   INTEGER NOT NULL,
+                server_name TEXT    NOT NULL,
+                kind        TEXT    NOT NULL,
+                severity    TEXT    NOT NULL,
+                message     TEXT    NOT NULL,
+                ts          INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_alerts_ts ON alerts(ts);",
         );
+    }
+
+    /// Consigne une alerte ; renvoie son identifiant (strictement croissant).
+    pub fn insert_alert(&self, a: &Alert) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO alerts (server_id, server_name, kind, severity, message, ts)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![a.server_id, a.server_name, a.kind, a.severity, a.message, a.ts],
+        )
+        .map_err(db_err)?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Alertes consignées, par identifiant croissant : celles d'identifiant `> after_id` et de
+    /// date `>= since_ts`, au plus `limit`. Renvoie aussi le plus grand identifiant existant
+    /// (0 si aucun), dont l'app se sert comme curseur.
+    pub fn alerts(
+        &self,
+        after_id: Option<i64>,
+        since_ts: Option<i64>,
+        limit: u32,
+    ) -> Result<(Vec<StoredAlert>, i64)> {
+        let conn = self.conn.lock().unwrap();
+        let last_id: i64 = conn
+            .query_row("SELECT COALESCE(MAX(id), 0) FROM alerts", [], |r| r.get(0))
+            .map_err(db_err)?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, server_id, server_name, kind, severity, message, ts FROM alerts
+                 WHERE id > ?1 AND ts >= ?2 ORDER BY id ASC LIMIT ?3",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(
+                rusqlite::params![after_id.unwrap_or(0), since_ts.unwrap_or(i64::MIN), limit],
+                |r| {
+                    Ok(StoredAlert {
+                        id: r.get(0)?,
+                        alert: Alert {
+                            server_id: r.get(1)?,
+                            server_name: r.get(2)?,
+                            kind: r.get(3)?,
+                            severity: r.get(4)?,
+                            message: r.get(5)?,
+                            ts: r.get(6)?,
+                        },
+                    })
+                },
+            )
+            .map_err(db_err)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(db_err)?);
+        }
+        Ok((out, last_id))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -115,11 +197,16 @@ impl MetricsStore {
         Ok(out)
     }
 
-    /// Supprime les échantillons antérieurs à `older_than_ts`.
+    /// Supprime les échantillons et les alertes antérieurs à `older_than_ts`.
     pub fn prune(&self, older_than_ts: i64) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "DELETE FROM metrics WHERE ts < ?1",
+            rusqlite::params![older_than_ts],
+        )
+        .map_err(db_err)?;
+        conn.execute(
+            "DELETE FROM alerts WHERE ts < ?1",
             rusqlite::params![older_than_ts],
         )
         .map_err(db_err)?;
@@ -132,4 +219,192 @@ pub fn now_secs() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Dossier temporaire unique, supprimé à la fin du test (après fermeture de la base).
+    struct TempDir(PathBuf);
+
+    impl TempDir {
+        fn new() -> Self {
+            static SEQ: AtomicUsize = AtomicUsize::new(0);
+            let n = SEQ.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!("mst-test-store-{}-{n}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn sample(store: &MetricsStore, server_id: i64, ts: i64) {
+        store
+            .insert(server_id, ts, ts as f64 / 10.0, ts * 1000, 4096, ts * 10, "running")
+            .unwrap();
+    }
+
+    fn timestamps(samples: &[MetricSample]) -> Vec<i64> {
+        samples.iter().map(|s| s.ts).collect()
+    }
+
+    #[test]
+    fn query_is_chronological_and_filtered_by_server_and_time() {
+        let dir = TempDir::new();
+        let store = MetricsStore::open(&dir.0);
+        for ts in [300, 100, 200] {
+            sample(&store, 1, ts);
+        }
+        sample(&store, 2, 150);
+
+        let all = store.query(1, 0).unwrap();
+        assert_eq!(timestamps(&all), [100, 200, 300]);
+        let first = &all[0];
+        assert_eq!(first.cpu, 10.0);
+        assert_eq!((first.mem, first.mem_limit, first.disk), (100_000, 4096, 1000));
+        assert_eq!(first.state, "running");
+
+        // Borne `since` incluse.
+        assert_eq!(timestamps(&store.query(1, 200).unwrap()), [200, 300]);
+        assert_eq!(timestamps(&store.query(2, 0).unwrap()), [150]);
+        assert!(store.query(3, 0).unwrap().is_empty());
+        assert!(dir.0.join("metrics.db").exists());
+    }
+
+    #[test]
+    fn prune_drops_only_older_samples_of_every_server() {
+        let dir = TempDir::new();
+        let store = MetricsStore::open(&dir.0);
+        for ts in [100, 200, 300] {
+            sample(&store, 1, ts);
+            sample(&store, 2, ts);
+        }
+        store.prune(200).unwrap();
+        // Borne stricte : l'échantillon à 200 est conservé.
+        assert_eq!(timestamps(&store.query(1, 0).unwrap()), [200, 300]);
+        assert_eq!(timestamps(&store.query(2, 0).unwrap()), [200, 300]);
+    }
+
+    #[test]
+    fn history_survives_a_reopen() {
+        let dir = TempDir::new();
+        {
+            let store = MetricsStore::open(&dir.0);
+            sample(&store, 1, 100);
+        }
+        let store = MetricsStore::open(&dir.0);
+        assert_eq!(timestamps(&store.query(1, 0).unwrap()), [100]);
+    }
+
+    #[test]
+    fn falls_back_to_memory_when_the_file_cannot_be_opened() {
+        let dir = TempDir::new();
+        // Dossier inexistant : `metrics.db` ne peut pas y être créé.
+        let missing = dir.0.join("absent");
+        let store = MetricsStore::open(&missing);
+        sample(&store, 1, 100);
+        assert_eq!(timestamps(&store.query(1, 0).unwrap()), [100]);
+        assert!(!missing.exists());
+    }
+
+    #[test]
+    fn metric_sample_serializes_with_front_keys() {
+        let s = MetricSample {
+            ts: 1,
+            cpu: 2.5,
+            mem: 3,
+            mem_limit: 4,
+            disk: 5,
+            state: "offline".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&s).unwrap(),
+            serde_json::json!({
+                "ts": 1, "cpu": 2.5, "mem": 3, "mem_limit": 4, "disk": 5, "state": "offline"
+            })
+        );
+    }
+
+    #[test]
+    fn now_secs_is_a_unix_timestamp() {
+        let now = now_secs();
+        assert!(now > 1_700_000_000, "{now}");
+        assert!(now_secs() >= now);
+    }
+
+
+    fn temp_store(tag: &str) -> (MetricsStore, std::path::PathBuf) {
+        let dir = std::env::temp_dir().join(format!(
+            "mnstr-store-{tag}-{}-{}",
+            std::process::id(),
+            now_secs()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        (MetricsStore::open(&dir), dir)
+    }
+
+    fn alert(id: i64, kind: &str, ts: i64) -> Alert {
+        Alert {
+            server_id: id,
+            server_name: format!("srv{id}"),
+            kind: kind.into(),
+            severity: "critical".into(),
+            message: "test".into(),
+            ts,
+        }
+    }
+
+    #[test]
+    fn alertes_curseur_et_fenetre() {
+        let (store, dir) = temp_store("alerts");
+        assert_eq!(store.alerts(None, None, 10).unwrap().1, 0);
+        let a = store.insert_alert(&alert(1, "crash", 100)).unwrap();
+        let b = store.insert_alert(&alert(2, "cpu", 200)).unwrap();
+        let c = store.insert_alert(&alert(3, "ram", 300)).unwrap();
+        assert!(a < b && b < c);
+
+        // Curseur : seulement les alertes postérieures, dans l'ordre.
+        let (after, last) = store.alerts(Some(a), None, 10).unwrap();
+        assert_eq!(last, c);
+        assert_eq!(after.iter().map(|s| s.id).collect::<Vec<_>>(), vec![b, c]);
+        assert_eq!(after[0].alert.kind, "cpu");
+
+        // Fenêtre temporelle + limite.
+        let (since, _) = store.alerts(None, Some(250), 10).unwrap();
+        assert_eq!(since.len(), 1);
+        assert_eq!(since[0].alert.server_id, 3);
+        let (limited, _) = store.alerts(None, None, 2).unwrap();
+        assert_eq!(limited.len(), 2);
+
+        // `limit = 0` sert à ne lire que le curseur.
+        let (none, last) = store.alerts(None, None, 0).unwrap();
+        assert!(none.is_empty());
+        assert_eq!(last, c);
+
+        // La rétention purge aussi les alertes.
+        store.prune(250).unwrap();
+        let (left, _) = store.alerts(None, None, 10).unwrap();
+        assert_eq!(left.len(), 1);
+        drop(store);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn alerte_stockee_serialisee_a_plat() {
+        let s = StoredAlert { id: 7, alert: alert(42, "crash", 10) };
+        let v = serde_json::to_value(&s).unwrap();
+        assert_eq!(v["id"], 7);
+        assert_eq!(v["server_id"], 42);
+        assert_eq!(v["kind"], "crash");
+        let back: StoredAlert = serde_json::from_value(v).unwrap();
+        assert_eq!(back.alert.server_name, "srv42");
+    }
 }

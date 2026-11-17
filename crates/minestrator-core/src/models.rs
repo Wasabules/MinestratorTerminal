@@ -65,6 +65,7 @@ pub struct UserNotificationRaw {
 
 /// Notification exposée aux frontends.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UserNotification {
     pub id: String,
     /// Catégorie donnée par l'hébergeur (`Information`, `Erreur`, `StratorAI`…).
@@ -120,6 +121,7 @@ pub struct UserDatas {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UserProfile {
     pub id: i64,
     pub pseudo: String,
@@ -248,12 +250,14 @@ struct ServerRaw {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ServersOverview {
     pub myboxes: Vec<MyBoxSummary>,
     pub servers: Vec<ServerListItem>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MyBoxSummary {
     pub id: i64,
     pub name: String,
@@ -273,6 +277,7 @@ pub struct MyBoxSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ServerListItem {
     pub id: i64,
     pub name: String,
@@ -437,6 +442,7 @@ impl From<WsCredentialsData> for WsCredentials {
 /// `GET /server/{id}/live/light`, la réponse ne porte QUE les joueurs — ni CPU, ni disque, ni
 /// statut. C'est une vue de liste, pas un remplaçant du `live_light` complet.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LivePlayers {
     pub server_id: i64,
     pub current: i64,
@@ -471,6 +477,7 @@ pub struct PlayersRaw {
 /// `GET /server/{id}` (qui n'a que date/ip/is_staff/action) : elle nomme l'auteur, distingue
 /// la catégorie et le résultat, et porte un contexte — la commande tapée, par exemple.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActivityEntry {
     pub id: i64,
     /// Identifiant d'action : `power.restart`, `console.command`, `sftp.write`…
@@ -497,6 +504,7 @@ pub struct ActivityEntry {
 /// Page de journal d'audit. `total` peut être très grand (2 173 entrées sur un serveur de test) :
 /// l'appelant pagine avec `limit`/`offset`.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ActivityPage {
     pub items: Vec<ActivityEntry>,
     pub total: i64,
@@ -591,6 +599,7 @@ fn context_summary(v: &serde_json::Value) -> Option<String> {
 /// Entrée du catalogue d'eggs de l'hébergeur (37 au 2026-08-19) : la table de référence qui
 /// relie un `id_egg` à un jeu, sans passer par des mots-clés dans un nom.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Egg {
     pub id: i64,
     pub name: String,
@@ -674,6 +683,7 @@ struct WsRaw {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ServerDetails {
     pub id: i64,
     pub name: String,
@@ -706,14 +716,16 @@ pub struct StartupData {
 pub struct StartupSettings {
     #[serde(default)]
     pub startup: String,
+    /// `null` pour un egg sans JAR (doc OpenAPI) — `default` ne couvre que l'ABSENCE du champ.
     #[serde(default)]
-    pub startup_file: String,
+    pub startup_file: Option<String>,
     #[serde(default)]
     pub java_memory: i64,
     #[serde(default)]
     pub image: String,
+    /// `null` si l'image n'est pas reconnue (doc OpenAPI).
     #[serde(default)]
-    pub id_java_version: i64,
+    pub id_java_version: Option<i64>,
 }
 
 /// Configuration de démarrage d'un serveur (commande Java + contexte).
@@ -735,10 +747,11 @@ impl From<StartupData> for Startup {
     fn from(d: StartupData) -> Self {
         Startup {
             command: d.settings.startup,
-            jar_file: d.settings.startup_file,
+            // Egg sans JAR / image non reconnue : chaîne vide / 0, comme avant (`null` côté API).
+            jar_file: d.settings.startup_file.unwrap_or_default(),
             java_memory: d.settings.java_memory,
             image: d.settings.image,
-            java_version: d.settings.id_java_version,
+            java_version: d.settings.id_java_version.unwrap_or_default(),
         }
     }
 }
@@ -746,6 +759,7 @@ impl From<StartupData> for Startup {
 // --- GET /server/{id}/live/light ------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LiveLight {
     #[serde(default)]
     pub status: Option<String>,
@@ -766,6 +780,7 @@ pub struct LiveLight {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CpuLimits {
     #[serde(default)]
     pub dedicated: i64,
@@ -776,12 +791,14 @@ pub struct CpuLimits {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct LimitMb {
     #[serde(default)]
     pub limit: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Players {
     #[serde(default)]
     pub current: i64,
@@ -789,6 +806,298 @@ pub struct Players {
     pub limit: i64,
     #[serde(default)]
     pub list: Vec<String>,
+}
+
+// --- Désérialisation tolérante ---------------------------------------------
+//
+// Pour les endpoints décrits par l'OpenAPI officielle mais jamais observés au banc : l'API (PHP)
+// peut sérialiser un entier documenté en flottant ou en chaîne, et un drapeau en `0/1` ou en
+// booléen. Une valeur inattendue retombe sur le défaut au lieu de faire échouer TOUTE la réponse.
+
+fn lenient_f64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
+        serde_json::Value::String(s) => s.trim().parse().unwrap_or(0.0),
+        serde_json::Value::Bool(b) => f64::from(u8::from(b)),
+        _ => 0.0,
+    })
+}
+
+fn lenient_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    lenient_f64(d).map(|f| f.round() as i64)
+}
+
+fn lenient_opt_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Null => None,
+        serde_json::Value::Number(n) => n.as_f64().map(|f| f.round() as i64),
+        serde_json::Value::String(s) => s.trim().parse::<f64>().ok().map(|f| f.round() as i64),
+        _ => None,
+    })
+}
+
+fn lenient_bool<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::Bool(b) => b,
+        serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        serde_json::Value::String(s) => matches!(s.trim(), "1" | "true"),
+        _ => false,
+    })
+}
+
+// --- GET /server/{id}/live (OpenAPI `ServerLiveData`) -----------------------
+//
+// Complète `live/light` : consommation INSTANTANÉE (CPU dont FlexCore, RAM, disque), compteurs
+// réseau et uptime — sans ouvrir de WebSocket. Les blocs de consommation sont absents d'un serveur
+// éteint ; ceux du jeu (joueurs, version…) n'existent que serveur `online`, et selon le jeu.
+
+/// État temps réel complet d'un serveur.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct ServerLive {
+    /// `online` | `starting` | `stopping` | `offline`.
+    #[serde(default)]
+    pub state: String,
+    /// Statut interne de l'hôte (`null` si éteint sans état remonté).
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub stats: LiveStats,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LiveStats {
+    /// Absent si le serveur est éteint (de même pour `memory`, `disk`, `network`).
+    #[serde(default)]
+    pub cpu: Option<LiveCpu>,
+    #[serde(default)]
+    pub memory: Option<LiveUsage>,
+    #[serde(default)]
+    pub disk: Option<LiveUsage>,
+    #[serde(default)]
+    pub network: Option<LiveNetwork>,
+    /// Présent seulement serveur `online`.
+    #[serde(default)]
+    pub uptime: Option<LiveUptime>,
+    /// Présents seulement serveur `online`, et selon le jeu.
+    #[serde(default)]
+    pub players: Option<Players>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub motd: Option<String>,
+    #[serde(default)]
+    pub hostname: Option<String>,
+}
+
+/// CPU en **centièmes de cœur** (100 = 1 cœur).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LiveCpu {
+    /// Consommation instantanée.
+    #[serde(default, deserialize_with = "lenient_f64")]
+    pub current: f64,
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub dedicated: i64,
+    /// CPU partagé supplémentaire de l'offre.
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub flexcore: i64,
+    /// Total disponible (dédié + FlexCore).
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub limit: i64,
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub percent: i64,
+    /// La consommation dépasse le CPU dédié : le serveur puise dans le FlexCore.
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub is_bursting: bool,
+}
+
+/// RAM ou disque, en **Mo**.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LiveUsage {
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub current: i64,
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub limit: i64,
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub percent: i64,
+}
+
+/// Compteurs réseau **cumulés** (octets) remontés par le daemon de l'hôte.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LiveNetwork {
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub rx_bytes: i64,
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub tx_bytes: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct LiveUptime {
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub total_seconds: i64,
+}
+
+// --- GET/PATCH /server/{id}/properties ---------------------------------------
+
+/// Réglages du serveur (`server.properties` pour Minecraft), lus via l'API : ni SFTP ni droit de
+/// fichier requis (permission `settings_view`). Modification une clé à la fois, effet au prochain
+/// démarrage.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[serde(from = "ServerPropertiesRaw")]
+pub struct ServerProperties {
+    /// Type de réglages renvoyé par l'hôte (`server_properties`).
+    pub kind: String,
+    /// Clé → valeur, triées par clé ; valeurs en texte, telles qu'écrites dans le fichier.
+    pub properties: std::collections::BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct ServerPropertiesRaw {
+    #[serde(default)]
+    properties_type: String,
+    /// Objet `clé → valeur` ; un PHP sans réglage le sérialise en `[]`, d'où `Value`.
+    #[serde(default)]
+    properties: serde_json::Value,
+}
+
+impl From<ServerPropertiesRaw> for ServerProperties {
+    fn from(r: ServerPropertiesRaw) -> Self {
+        let properties = match r.properties {
+            serde_json::Value::Object(map) => map
+                .into_iter()
+                .map(|(k, v)| {
+                    let v = match v {
+                        serde_json::Value::String(s) => s,
+                        serde_json::Value::Null => String::new(),
+                        other => other.to_string(),
+                    };
+                    (k, v)
+                })
+                .collect(),
+            _ => Default::default(),
+        };
+        ServerProperties {
+            kind: r.properties_type,
+            properties,
+        }
+    }
+}
+
+/// Réglages au contenu secret : jamais renvoyés tels quels à un modèle (outil MCP).
+pub fn is_secret_property(key: &str) -> bool {
+    let k = key.to_ascii_lowercase();
+    ["password", "secret", "token"].iter().any(|s| k.contains(s))
+}
+
+// --- GET /mybox/{id} (OpenAPI `MyBoxData`) -------------------------------------
+
+/// Détail d'une MyBox : abonnement, ressources restantes, offre et serveurs. Les noms de champs
+/// de l'API sont normalisés (`rename(deserialize)` : n'agit qu'à la lecture, le JSON exposé garde
+/// nos noms ; l'offre porte à la fois `disk` et `disk_total`, d'où pas d'`alias`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct MyBoxDetails {
+    pub mybox: MyBoxInfo,
+    #[serde(default)]
+    pub offer: MyBoxOffer,
+    #[serde(default)]
+    pub servers: Vec<MyBoxServer>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct MyBoxInfo {
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub id: i64,
+    #[serde(default)]
+    pub name: String,
+    /// Échéance brute (`AAAA-MM-JJ hh:mm:ss`).
+    #[serde(default, rename(deserialize = "tend"))]
+    pub expires_at: String,
+    /// Jours avant l'échéance (0 si expirée).
+    #[serde(default, rename(deserialize = "tend_days"), deserialize_with = "lenient_i64")]
+    pub days_left: i64,
+    /// Jours avant la **suppression** — seulement pour une MyBox expirée.
+    #[serde(default, deserialize_with = "lenient_opt_i64")]
+    pub deletion_days: Option<i64>,
+    /// Faux pour un sous-utilisateur.
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub owner: bool,
+    /// Renouvellement automatique actif : l'échéance n'est pas une menace.
+    #[serde(default, rename(deserialize = "subscription"), deserialize_with = "lenient_bool")]
+    pub auto_renew: bool,
+    #[serde(default, rename(deserialize = "is_free"), deserialize_with = "lenient_bool")]
+    pub free: bool,
+    #[serde(default, rename(deserialize = "is_trial"), deserialize_with = "lenient_bool")]
+    pub trial: bool,
+    #[serde(default, rename(deserialize = "is_pro"), deserialize_with = "lenient_bool")]
+    pub pro: bool,
+    #[serde(default, rename(deserialize = "is_expired"), deserialize_with = "lenient_bool")]
+    pub expired: bool,
+    #[serde(default, rename(deserialize = "is_suspended"), deserialize_with = "lenient_bool")]
+    pub suspended: bool,
+    /// Cœurs CPU encore allouables à un serveur.
+    #[serde(default, deserialize_with = "lenient_f64")]
+    pub cpu_remaining: f64,
+    /// RAM (Go) encore allouable.
+    #[serde(default, deserialize_with = "lenient_f64")]
+    pub ram_remaining: f64,
+}
+
+/// Offre de la MyBox (ressources totales).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct MyBoxOffer {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default, deserialize_with = "lenient_f64")]
+    pub price: f64,
+    /// Cœurs CPU.
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub cpu: i64,
+    /// RAM (Go).
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub ram: i64,
+    /// Disque total, extensions comprises (Go).
+    #[serde(default, rename(deserialize = "disk_total"), deserialize_with = "lenient_i64")]
+    pub disk: i64,
+    /// Nombre de bases de données autorisées.
+    #[serde(default, rename(deserialize = "dbnb"), deserialize_with = "lenient_i64")]
+    pub databases: i64,
+    /// Taille maximale par base (Go).
+    #[serde(default, rename(deserialize = "dbsize"), deserialize_with = "lenient_i64")]
+    pub database_size: i64,
+    /// IP dédiées disponibles.
+    #[serde(default, rename(deserialize = "pods"), deserialize_with = "lenient_i64")]
+    pub dedicated_ips: i64,
+}
+
+/// Serveur d'une MyBox, avec les ressources qui lui sont allouées.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct MyBoxServer {
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub id: i64,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub egg_name: String,
+    /// Cœurs CPU alloués.
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub cpu: i64,
+    /// RAM allouée (Go).
+    #[serde(default, deserialize_with = "lenient_i64")]
+    pub ram: i64,
+    #[serde(default, deserialize_with = "lenient_bool")]
+    pub disabled: bool,
+    #[serde(default)]
+    pub location: String,
 }
 
 // --- GET /server/{id}/console/logs ----------------------------------------
@@ -822,6 +1131,7 @@ fn default_sftp_port() -> u16 {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SftpEntry {
     pub name: String,
     pub path: String,
@@ -900,6 +1210,7 @@ pub struct MarketItemRaw {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketItem {
     /// Identifiant natif de la source (slug Modrinth via `slug`, id numérique CF/Spigot).
     pub id: String,
@@ -946,6 +1257,7 @@ impl From<MarketItemRaw> for MarketItem {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketPage {
     pub items: Vec<MarketItem>,
     pub total_hits: Option<i64>,
@@ -991,6 +1303,7 @@ pub struct MarketVersionRaw {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketVersion {
     pub id: String,
     pub version_number: String,
@@ -1046,6 +1359,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct InstalledItem {
     pub name: String,
     pub filename: String,
@@ -1069,6 +1383,7 @@ impl From<InstalledItemRaw> for InstalledItem {
 /// Un backup **quotidien automatique** d'un serveur (`GET /server/{id}/backups`, récents d'abord).
 /// On ne peut que les lister et les restaurer (pas de création à la demande côté API).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Backup {
     pub id: i64,
     /// Taille en octets.
@@ -1085,29 +1400,78 @@ pub struct BackupsData {
 
 /// Un **snapshot** créé à la demande (`GET /user/{id}/snapshots`). Point de sauvegarde rapide —
 /// le bon filet AVANT une correction risquée (il est plus rapide à produire qu'un backup).
+///
+/// Désérialisé via [`SnapshotRaw`] : l'API (doc OpenAPI officielle) renvoie l'id sous forme de
+/// **chaîne `job_{job_id}`** pendant une création, et la taille en **Ko**.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "SnapshotRaw")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Snapshot {
-    pub id: i64,
-    #[serde(default)]
+    /// Id du snapshot ; `None` tant qu'il est en cours de création (pas encore restaurable ni
+    /// supprimable) — `job_id` est alors renseigné.
+    pub id: Option<i64>,
     pub name: String,
     /// Type d'univers (« Minecraft »). Champ `type` de l'API, renommé (mot réservé).
-    #[serde(rename = "type", default)]
     pub kind: String,
-    #[serde(default)]
+    /// Taille en **octets** (convertie depuis les Ko de l'API).
     pub size: i64,
-    #[serde(default)]
     pub date: String,
-    /// État brut renvoyé par l'API (1 = prêt d'après les données observées).
-    #[serde(default)]
+    /// État (doc OpenAPI) : 0 = en attente, 1 = disponible, 2 = en création.
     pub status: i64,
-    #[serde(default)]
     pub is_legacy: bool,
     /// Présents pour une création EN COURS de traitement (permet le suivi par polling) ; absents
     /// pour un snapshot déjà prêt.
-    #[serde(default)]
     pub progress: Option<i64>,
-    #[serde(default)]
     pub job_id: Option<i64>,
+}
+
+/// Forme brute de l'API, avant normalisation en [`Snapshot`].
+#[derive(Deserialize)]
+struct SnapshotRaw {
+    /// Entier, ou chaîne `job_{job_id}` pour une création en cours.
+    id: serde_json::Value,
+    #[serde(default)]
+    name: String,
+    #[serde(rename = "type", default)]
+    kind: String,
+    /// En Ko.
+    #[serde(default)]
+    size: i64,
+    #[serde(default)]
+    date: String,
+    #[serde(default)]
+    status: i64,
+    #[serde(default)]
+    is_legacy: bool,
+    #[serde(default)]
+    progress: Option<i64>,
+    #[serde(default)]
+    job_id: Option<i64>,
+}
+
+impl From<SnapshotRaw> for Snapshot {
+    fn from(r: SnapshotRaw) -> Self {
+        let (id, job_from_id) = match &r.id {
+            serde_json::Value::Number(n) => (n.as_i64(), None),
+            serde_json::Value::String(s) => match s.strip_prefix("job_") {
+                Some(job) => (None, job.parse().ok()),
+                // Id numérique sérialisé en chaîne : on l'accepte.
+                None => (s.parse().ok(), None),
+            },
+            _ => (None, None),
+        };
+        Snapshot {
+            id,
+            name: r.name,
+            kind: r.kind,
+            size: r.size.saturating_mul(1024),
+            date: r.date,
+            status: r.status,
+            is_legacy: r.is_legacy,
+            progress: r.progress,
+            job_id: r.job_id.or(job_from_id),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1120,6 +1484,143 @@ pub struct SnapshotsData {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn snapshot_list_survives_a_creation_in_progress() {
+        // Doc OpenAPI : pendant une création, `id` est la chaîne `job_{job_id}` ; la taille est
+        // en Ko. Avant le correctif, ce seul élément faisait échouer TOUTE la liste.
+        let data: SnapshotsData = serde_json::from_value(json!({ "snapshots": [
+            { "id": 321, "name": "Avant MAJ", "type": "Minecraft Java", "size": 2, "status": 1 },
+            { "id": "job_987", "name": "En cours", "status": 2, "progress": 40 }
+        ]}))
+        .unwrap();
+        let [ready, pending] = data.snapshots.as_slice() else {
+            panic!("2 snapshots attendus");
+        };
+        assert_eq!(ready.id, Some(321));
+        assert_eq!(ready.size, 2048, "Ko → octets");
+        assert_eq!(ready.kind, "Minecraft Java");
+        assert_eq!(pending.id, None);
+        assert_eq!(pending.job_id, Some(987));
+        assert_eq!(pending.progress, Some(40));
+    }
+
+    #[test]
+    fn server_live_online_with_all_blocks() {
+        let live: ServerLive = serde_json::from_value(json!({
+            "state": "online", "status": "running",
+            "stats": {
+                "state": "online",
+                "cpu": { "current": 152.4, "dedicated": 100, "flexcore": 100, "limit": 200,
+                         "percent": 152, "is_bursting": true },
+                "memory": { "current": 3072, "limit": 4096, "percent": 75 },
+                "disk": { "current": 10240, "limit": 20480, "percent": 50 },
+                "network": { "rx_bytes": 123456789, "tx_bytes": 987654 },
+                "uptime": { "days": 1, "hours": 2, "minutes": 3, "total_seconds": 93780 },
+                "players": { "current": 2, "limit": 20, "list": ["Alex", "Steve"] },
+                "version": "1.21.4", "motd": "Bienvenue", "hostname": "play.example.net"
+            }
+        }))
+        .unwrap();
+        assert_eq!(live.state, "online");
+        let cpu = live.stats.cpu.unwrap();
+        assert!(cpu.is_bursting);
+        assert_eq!((cpu.limit, cpu.percent), (200, 152));
+        assert_eq!(live.stats.memory.unwrap().current, 3072);
+        assert_eq!(live.stats.network.unwrap().rx_bytes, 123_456_789);
+        assert_eq!(live.stats.uptime.unwrap().total_seconds, 93_780);
+        assert_eq!(live.stats.players.unwrap().list, ["Alex", "Steve"]);
+    }
+
+    #[test]
+    fn server_live_offline_and_loose_numbers() {
+        // Éteint : ni consommation ni infos de jeu.
+        let off: ServerLive =
+            serde_json::from_value(json!({ "state": "offline", "status": null, "stats": { "state": "offline" } }))
+                .unwrap();
+        assert!(off.stats.cpu.is_none() && off.stats.players.is_none());
+        // Entiers sérialisés en flottant/chaîne, drapeau en 0/1 : tolérés.
+        let loose: ServerLive = serde_json::from_value(json!({
+            "state": "starting",
+            "stats": { "cpu": { "current": "12.5", "limit": 100.0, "percent": "13", "is_bursting": 0 },
+                       "memory": { "current": 512.6 } }
+        }))
+        .unwrap();
+        let cpu = loose.stats.cpu.unwrap();
+        assert_eq!((cpu.current, cpu.limit, cpu.percent, cpu.is_bursting), (12.5, 100, 13, false));
+        assert_eq!(loose.stats.memory.unwrap().current, 513);
+    }
+
+    #[test]
+    fn server_properties_are_sorted_strings() {
+        let p: ServerProperties = serde_json::from_value(json!({
+            "properties_type": "server_properties",
+            "properties": { "pvp": "true", "max-players": 20, "difficulty": "easy", "motd": null }
+        }))
+        .unwrap();
+        assert_eq!(p.kind, "server_properties");
+        let keys: Vec<&str> = p.properties.keys().map(String::as_str).collect();
+        assert_eq!(keys, ["difficulty", "max-players", "motd", "pvp"]);
+        assert_eq!(p.properties["max-players"], "20", "nombre → texte");
+        assert_eq!(p.properties["motd"], "");
+        // PHP sérialise un tableau associatif vide en `[]`.
+        let empty: ServerProperties =
+            serde_json::from_value(json!({ "properties_type": "x", "properties": [] })).unwrap();
+        assert!(empty.properties.is_empty());
+        assert!(is_secret_property("rcon.password"));
+        assert!(!is_secret_property("max-players"));
+    }
+
+    #[test]
+    fn mybox_details_normalized() {
+        let d: MyBoxDetails = serde_json::from_value(json!({
+            "mybox": { "id": 42, "name": "Principale", "tend": "2026-12-01 00:00:00", "tend_days": 14,
+                       "owner": 1, "subscription": 1, "is_free": 0, "is_trial": 0, "is_pro": 1,
+                       "is_expired": 0, "is_suspended": 0, "cpu_remaining": 1.5, "ram_remaining": 4 },
+            // L'offre porte `disk` ET `disk_total` : c'est le total qui est retenu.
+            "offer": { "id": 7, "name": "MyBox L", "price": 12.99, "cpu": 4, "ram": 16, "disk": 100,
+                       "disk_total": 150, "dbsize": 5, "dbnb": 3, "pods": 1 },
+            "servers": [{ "id": 1, "name": "Survie", "egg": 3, "egg_name": "Paper", "ip": "203.0.113.1",
+                          "cpu": 2, "ram": 8, "disabled": 0, "location": "Gravelines" }]
+        }))
+        .unwrap();
+        assert!(d.mybox.auto_renew && d.mybox.pro && d.mybox.owner);
+        assert_eq!((d.mybox.days_left, d.mybox.deletion_days), (14, None));
+        assert_eq!(d.mybox.expires_at, "2026-12-01 00:00:00");
+        assert_eq!(d.mybox.ram_remaining, 4.0);
+        assert_eq!((d.offer.disk, d.offer.databases, d.offer.dedicated_ips), (150, 3, 1));
+        assert_eq!(d.servers[0].ram, 8);
+        // Le JSON exposé garde NOS noms, pas ceux de l'API.
+        let out = serde_json::to_value(&d).unwrap();
+        assert_eq!(out["mybox"]["auto_renew"], true);
+        assert!(out["mybox"].get("subscription").is_none());
+
+        let expired: MyBoxDetails = serde_json::from_value(json!({
+            "mybox": { "id": 1, "tend_days": 0, "deletion_days": "5", "is_expired": true }
+        }))
+        .unwrap();
+        assert!(expired.mybox.expired);
+        assert_eq!(expired.mybox.deletion_days, Some(5));
+    }
+
+    #[test]
+    fn snapshot_job_id_field_wins_over_the_id_string() {
+        let s: Snapshot =
+            serde_json::from_value(json!({ "id": "job_1", "job_id": 2, "status": 2 })).unwrap();
+        assert_eq!((s.id, s.job_id), (None, Some(2)));
+    }
+
+    #[test]
+    fn startup_accepts_null_jar_and_java_version() {
+        let d: StartupData = serde_json::from_value(json!({ "settings": {
+            "startup": "./bedrock_server", "startup_file": null, "id_java_version": null,
+            "java_memory": 0, "image": "ghcr.io/pterodactyl/yolks:debian"
+        }}))
+        .unwrap();
+        let s = Startup::from(d);
+        assert_eq!(s.jar_file, "");
+        assert_eq!(s.java_version, 0);
+    }
 
     #[test]
     fn safe_file_name_keeps_only_the_last_segment() {

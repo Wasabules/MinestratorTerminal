@@ -32,6 +32,7 @@ static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
 
 /// Un mod du catalogue.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FicsitMod {
     pub id: String,
     pub mod_reference: String,
@@ -46,6 +47,7 @@ pub struct FicsitMod {
 
 /// Page de résultats de recherche.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FicsitModPage {
     pub mods: Vec<FicsitMod>,
     pub count: i64,
@@ -53,6 +55,7 @@ pub struct FicsitModPage {
 
 /// Artefact d'une version pour une cible donnée (Windows / WindowsServer / LinuxServer).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FicsitTarget {
     #[serde(rename(deserialize = "targetName"))]
     pub target_name: String,
@@ -65,6 +68,7 @@ pub struct FicsitTarget {
 
 /// Dépendance d'une version (`mod_id` = mod_reference de la dépendance ; `SML` pour le loader).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FicsitDep {
     pub mod_id: String,
     pub condition: String,
@@ -74,6 +78,7 @@ pub struct FicsitDep {
 
 /// Une version publiée d'un mod.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FicsitVersion {
     pub id: String,
     pub version: String,
@@ -93,6 +98,7 @@ pub struct FicsitVersion {
 
 /// Artefact SML pour une cible (le lien pointe vers une release GitHub).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SmlTarget {
     #[serde(rename(deserialize = "targetName"))]
     pub target_name: String,
@@ -101,6 +107,7 @@ pub struct SmlTarget {
 
 /// Une version du Satisfactory Mod Loader.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SmlVersion {
     pub id: String,
     pub version: String,
@@ -112,6 +119,7 @@ pub struct SmlVersion {
 
 /// Un mod présent dans le dossier `Mods/` du serveur (déduit du listing SFTP).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FicsitInstalledMod {
     /// Référence du mod = nom du dossier (ex. `RefinedPower`).
     pub reference: String,
@@ -122,6 +130,7 @@ pub struct FicsitInstalledMod {
 
 /// Un mod à installer (référence + version choisie) — élément d'une installation par lot.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "camelCase")]
 pub struct FicsitInstallItem {
     pub reference: String,

@@ -126,6 +126,7 @@ fn resolve_key(cfg: &CopilotConfig) -> Result<String, String> {
 
 /// Niveau d'autonomie du Copilote (choisi dans les réglages).
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Autonomy {
     /// Diagnostique et propose, n'exécute jamais.
@@ -140,6 +141,7 @@ pub enum Autonomy {
 /// Effort de raisonnement demandé au modèle. Mappé par fournisseur : niveau natif `--effort`
 /// pour Claude Code (CLI), indice de prompt pour l'API HTTP.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Effort {
     Low,
@@ -179,6 +181,7 @@ fn with_effort(system: &str, effort: Effort) -> String {
 
 /// Réglages du Copilote (persistés dans `copilot.json`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CopilotConfig {
     pub enabled: bool,
     pub provider: Provider,
@@ -680,6 +683,8 @@ fn friendly_tool(name: &str, input: Option<&Value>) -> String {
         "server_status" => "État du serveur".into(),
         "list_servers" => "Liste des serveurs".into(),
         "read_startup" => "Commande de démarrage".into(),
+        "read_properties" => "Réglages du serveur".into(),
+        "mybox_info" => "Infos MyBox".into(),
         other => format!("Outil : {other}"),
     }
 }
@@ -806,10 +811,12 @@ async fn diagnose_http(
                 }));
                 let out = match api_token.as_deref() {
                     Some(tok) => {
+                        // Succès comme échec sont redactés : un échec d'outil (`isError`) porte
+                        // aussi du contenu venu du serveur.
                         crate::official_mcp::call_tool(tok, true, &call.name, call.input.clone())
                             .await
                             .map(|o| core.redact_ai(&o))
-                            .unwrap_or_else(|e| format!("Erreur outil : {e}"))
+                            .unwrap_or_else(|e| format!("Erreur outil : {}", core.redact_ai(&e)))
                     }
                     None => "Clé API MineStrator indisponible.".to_string(),
                 };
@@ -1261,6 +1268,7 @@ const CHAT_MARK: &str = "===ACTIONS===";
 
 /// Réponse d'un tour de chat : texte + actions proposées (vides en mode autonome, où l'agent agit).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ChatReply {
     pub text: String,
     pub actions: Vec<ProposedAction>,
@@ -1387,7 +1395,7 @@ async fn chat_http(
                         crate::official_mcp::call_tool(tok, readonly, &call.name, call.input.clone())
                             .await
                             .map(|out| core.redact_ai(&out))
-                            .unwrap_or_else(|e| format!("Erreur outil : {e}"))
+                            .unwrap_or_else(|e| format!("Erreur outil : {}", core.redact_ai(&e)))
                     }
                     None => "Clé API MineStrator indisponible pour le MCP officiel.".to_string(),
                 }
@@ -1483,14 +1491,15 @@ async fn ensure_persistent_spawn(
             official_mcp: cfg.use_official_mcp.then_some(!autonomous),
         },
     )?;
-    let mut args = plan.args;
+    let crate::cli_agent::RunPlan { mut args, cwd, env, dir } = plan;
     args.push("--input-format".to_string());
     args.push("stream-json".to_string());
     session.persistent = Some(crate::cli_session::PersistentCli::spawn(
         cli_command(cfg),
         &args,
-        plan.cwd.as_deref(),
-        &plan.env,
+        cwd.as_deref(),
+        &env,
+        dir,
         restore.is_some(),
     )?);
     session.persistent_autonomous = autonomous;
