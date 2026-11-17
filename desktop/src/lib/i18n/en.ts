@@ -657,6 +657,8 @@ export const en: Dict = {
     rate_limited: 'Too many attempts. Try again in a moment.',
     network: 'Cannot reach the API. Check your connection.',
     no_key: 'No key stored.',
+    sftp_auth:
+      'The SFTP server rejected the credentials provided by MineStrator. Check your SFTP access in the panel (SFTP password), then try again.',
   },
   // Background service (machine-wide supervision) — dedicated namespace, see docs/SERVICE.md.
   service: {

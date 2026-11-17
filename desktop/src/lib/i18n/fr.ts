@@ -657,6 +657,8 @@ export const fr = {
     rate_limited: 'Trop de tentatives. Réessaie dans un instant.',
     network: 'Impossible de joindre l’API. Vérifie ta connexion.',
     no_key: 'Aucune clé enregistrée.',
+    sftp_auth:
+      'Le serveur SFTP a refusé les identifiants fournis par MineStrator. Vérifie ton accès SFTP dans le panel (mot de passe SFTP), puis réessaie.',
   },
   // Service d'arrière-plan (supervision machine) — espace de noms dédié, voir docs/SERVICE.md.
   service: {

@@ -114,7 +114,10 @@ fn extract_all_zip(bytes: &[u8], max_entries: usize, max_total: u64) -> Result<V
         if f.is_dir() {
             continue;
         }
-        let name = f.name().to_string();
+        // Nom non décodable (ni UTF-8 ni CP437) : entrée ignorée, comme un chemin dangereux.
+        let Ok(name) = f.name().map(|n| n.into_owned()) else {
+            continue;
+        };
         if !safe_entry(&name) {
             continue;
         }
@@ -159,7 +162,10 @@ fn list_zip(bytes: &[u8]) -> Result<Vec<ArchiveEntry>, String> {
     for i in 0..ar.len() {
         let f = ar.by_index(i).map_err(|e| format!("zip (entrée {i}) : {e}"))?;
         out.push(ArchiveEntry {
-            name: f.name().to_string(),
+            name: f
+                .name()
+                .map(|n| n.into_owned())
+                .unwrap_or_else(|_| String::from_utf8_lossy(f.name_raw()).into_owned()),
             size: f.size(),
             is_dir: f.is_dir(),
         });

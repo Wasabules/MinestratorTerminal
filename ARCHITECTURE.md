@@ -380,9 +380,10 @@ menu Afficher/Quitter + clic gauche = réafficher. Notifications natives pour al
 
 **`minestrator-core`** — `serde`/`serde_json` ; `reqwest` (`rustls-tls`, sans OpenSSL) + `base64` ;
 `tokio` (rt/sync/macros/time/fs/io-util/**io-std**/**process**) ; `tokio-tungstenite`
-(`rustls-tls-webpki-roots`) + `futures-util` ; **`russh` 0.45 / `russh-sftp` 2.0** (+ `async-trait`) ;
-**`rusqlite` *bundled*** + `directories` ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip`
-(deflate **pur Rust**) ; **`fastnbt`** ; `thiserror` ; `tracing`. **`keyring` 3** par OS
+(`rustls-tls-webpki-roots`) + `futures-util` ; **`russh` 0.65** (backend `ring`, clés d'hôte RSA ;
+pas `aws-lc-rs`, qui exige CMake/NASM) **/ `russh-sftp` 2** ; **`rusqlite` 0.43 *bundled*** +
+`directories` ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip` 9 (deflate **pur Rust**) ;
+**`fastnbt`** ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 3** par OS
 (`windows-native` / `apple-native` / `sync-secret-service`). **`ts-rs` 12** *optionnel* (feature `ts`,
 génération des bindings TypeScript uniquement).
 

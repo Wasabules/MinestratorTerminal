@@ -33,6 +33,11 @@ pub enum Error {
     #[error("Erreur API ({code}).")]
     Api { code: String },
 
+    /// Le serveur SFTP a refusé les identifiants transmis par l'API (distinct d'une clé API
+    /// invalide : l'API a répondu, c'est l'authentification SSH qui échoue).
+    #[error("Le serveur SFTP a refusé les identifiants fournis par MineStrator.")]
+    SftpAuth,
+
     /// Service d'arrière-plan (IPC, installation, élévation). `code` est un identifiant stable
     /// (`unreachable`, `forbidden`, `elevation_cancelled`…) que l'UI traduit via `service.errors.*`.
     #[error("Service d'arrière-plan ({code}) : {detail}")]
@@ -63,6 +68,7 @@ pub enum ErrorKind {
     Unexpected,
     Keyring,
     Api,
+    SftpAuth,
     /// Service d'arrière-plan : le sous-cas est dans `code` (cf. [`ErrorPayload::code`]).
     Service,
 }
@@ -79,6 +85,7 @@ impl ErrorKind {
             ErrorKind::Unexpected => "unexpected",
             ErrorKind::Keyring => "keyring",
             ErrorKind::Api => "api",
+            ErrorKind::SftpAuth => "sftp_auth",
             ErrorKind::Service => "service",
         }
     }
@@ -111,6 +118,7 @@ impl Error {
             Error::Unexpected(_) => ErrorKind::Unexpected,
             Error::Keyring(_) => ErrorKind::Keyring,
             Error::Api { .. } => ErrorKind::Api,
+            Error::SftpAuth => ErrorKind::SftpAuth,
             Error::Service { .. } => ErrorKind::Service,
         }
     }
@@ -174,6 +182,11 @@ mod tests {
                 "Erreur du trousseau système : accès refusé",
             ),
             (Error::Api { code: "SERVER_NOT_FOUND".into() }, "api", "Erreur API (SERVER_NOT_FOUND)."),
+            (
+                Error::SftpAuth,
+                "sftp_auth",
+                "Le serveur SFTP a refusé les identifiants fournis par MineStrator.",
+            ),
         ]
     }
 

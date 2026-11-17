@@ -179,6 +179,7 @@ const fr: Dict = {
   "error.rate_limited": "Trop de requêtes, réessaie dans un instant.",
   "error.network": "Problème de réseau.",
   "error.no_key": "Aucune clé API enregistrée.",
+  "error.sftp_auth": "Le serveur SFTP a refusé les identifiants fournis par MineStrator. Vérifie ton accès SFTP dans le panel.",
   "logout": "Se déconnecter",
 };
 
@@ -339,6 +340,7 @@ const en: Dict = {
   "error.rate_limited": "Too many requests, try again shortly.",
   "error.network": "Network problem.",
   "error.no_key": "No API key stored.",
+  "error.sftp_auth": "The SFTP server rejected the credentials provided by MineStrator. Check your SFTP access in the panel.",
   "logout": "Log out",
 };
 

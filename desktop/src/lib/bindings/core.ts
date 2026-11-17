@@ -25,7 +25,7 @@ export type AppError = {
  * Discriminant d'une [`Error`], tel qu'il part dans le champ `kind` du JSON (type TypeScript
  * `AppErrorKind`). Un variant d'[`Error`] ajouté doit être rattaché ici via [`Error::error_kind`].
  */
-export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "service";
+export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "service";
 
 // --- Compte, serveurs, journal (models.rs, games.rs) ---
 

@@ -14,13 +14,12 @@ const MAX_EDIT_BYTES: u64 = 2 * 1024 * 1024;
 
 struct Handler;
 
-#[async_trait::async_trait]
 impl client::Handler for Handler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::key::PublicKey,
+        _server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> std::result::Result<bool, Self::Error> {
         Ok(true)
     }
@@ -102,12 +101,12 @@ async fn open(creds: SftpCreds) -> Result<SftpConn> {
         .await
         .map_err(|e| Error::Network(format!("SSH: {e}")))?;
 
-    let ok = handle
+    let auth = handle
         .authenticate_password(&creds.user, &creds.password)
         .await
         .map_err(|e| Error::Network(format!("SSH auth: {e}")))?;
-    if !ok {
-        return Err(Error::Unauthorized);
+    if !auth.success() {
+        return Err(Error::SftpAuth);
     }
 
     let channel = handle
