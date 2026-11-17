@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import { fmtBytes } from '$lib/copilot/format';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { fmtBytes } from '#lib/copilot/format.ts';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import type {
     InstalledItem,
     MarketItem,
     MarketKind,
     MarketSource,
     MarketVersion,
-  } from '$lib/types';
+  } from '#lib/types.ts';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();

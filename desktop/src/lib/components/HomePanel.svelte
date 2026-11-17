@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import { rememberCaps } from '$lib/games/capabilities.svelte';
-  import type { MyBoxDetails, MyBoxSummary, ServerListItem, ServersOverview } from '$lib/types';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { rememberCaps } from '#lib/games/capabilities.svelte.ts';
+  import type { MyBoxDetails, MyBoxSummary, ServerListItem, ServersOverview } from '#lib/types.ts';
   import ServerCard from './ServerCard.svelte';
 
   let data = $state<ServersOverview | null>(null);

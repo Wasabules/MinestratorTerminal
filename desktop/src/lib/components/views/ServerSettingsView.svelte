@@ -6,9 +6,9 @@
    * bandeau propose de redémarrer une fois quelque chose enregistré.
    */
   import { onMount } from 'svelte';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();

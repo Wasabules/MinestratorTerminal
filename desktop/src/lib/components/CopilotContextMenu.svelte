@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { t } from '$lib/i18n';
-  import { api } from '$lib/ipc';
-  import { copilotMenu, closeCopilotMenu } from '$lib/copilot/menu.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import { api } from '#lib/ipc.ts';
+  import { copilotMenu, closeCopilotMenu } from '#lib/copilot/menu.svelte.ts';
   import Icon from './Icon.svelte';
 
   const menu = copilotMenu();

@@ -9,12 +9,12 @@
   import { onDestroy, onMount, untrack } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { confirm } from '@tauri-apps/plugin-dialog';
-  import { api, humanizeError } from '$lib/ipc';
-  import { modEvents } from '$lib/events';
-  import { t } from '$lib/i18n';
-  import { serverCaps } from '$lib/games/capabilities.svelte';
-  import { isDebug } from '$lib/debug.svelte';
-  import { uid } from '$lib/util/id';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { modEvents } from '#lib/events.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { serverCaps } from '#lib/games/capabilities.svelte.ts';
+  import { isDebug } from '#lib/debug.svelte.ts';
+  import { uid } from '#lib/util/id.ts';
   import {
     addToCart,
     removeFromCart,
@@ -23,9 +23,9 @@
     inCart,
     hasActiveRun,
     startRun,
-  } from '$lib/mods/installs.svelte';
-  import type { MarketInstalledMod, MarketMod, MarketModVersion } from '$lib/types';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
+  } from '#lib/mods/installs.svelte.ts';
+  import type { MarketInstalledMod, MarketMod, MarketModVersion } from '#lib/types.ts';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();

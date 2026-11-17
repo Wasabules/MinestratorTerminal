@@ -6,18 +6,18 @@
   import '@xterm/xterm/css/xterm.css';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { api, humanizeError } from '$lib/ipc';
-  import { consoleEvents } from '$lib/events';
-  import { openCopilotMenu } from '$lib/copilot/menu.svelte';
-  import { PASTE_SERVICES, pasteExport } from '$lib/paste';
-  import { redactLine } from '$lib/redact';
-  import { t } from '$lib/i18n';
-  import { isRunning } from '$lib/status';
-  import { serverCaps, serverItem } from '$lib/games/capabilities.svelte';
-  import { isFake, fakeText } from '$lib/fake.svelte';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { consoleEvents } from '#lib/events.ts';
+  import { openCopilotMenu } from '#lib/copilot/menu.svelte.ts';
+  import { PASTE_SERVICES, pasteExport } from '#lib/paste.ts';
+  import { redactLine } from '#lib/redact.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { isRunning } from '#lib/status.ts';
+  import { serverCaps, serverItem } from '#lib/games/capabilities.svelte.ts';
+  import { isFake, fakeText } from '#lib/fake.svelte.ts';
   import PowerControl from '../PowerControl.svelte';
   import Icon from '../Icon.svelte';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);

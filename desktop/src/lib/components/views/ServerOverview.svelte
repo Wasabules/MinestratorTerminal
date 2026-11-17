@@ -2,13 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { api } from '$lib/ipc';
-  import { consoleEvents } from '$lib/events';
-  import { t } from '$lib/i18n';
-  import { runtimeMeta, isRunning } from '$lib/status';
-  import { fmtBytes } from '$lib/copilot/format';
-  import { tabs, type ServerTab, type ServerView } from '$lib/tabs/tabs.svelte';
-  import { serverCaps, availableViews } from '$lib/games/capabilities.svelte';
+  import { api } from '#lib/ipc.ts';
+  import { consoleEvents } from '#lib/events.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { runtimeMeta, isRunning } from '#lib/status.ts';
+  import { fmtBytes } from '#lib/copilot/format.ts';
+  import { tabs, type ServerTab, type ServerView } from '#lib/tabs/tabs.svelte.ts';
+  import { serverCaps, availableViews } from '#lib/games/capabilities.svelte.ts';
   import type {
     ConsoleStats,
     LiveLight,
@@ -16,7 +16,7 @@
     ActivityEntry,
     ServerListItem,
     ServerLive,
-  } from '$lib/types';
+  } from '#lib/types.ts';
   import Gauge from '../Gauge.svelte';
   import PowerControl from '../PowerControl.svelte';
   import StatusDot from '../StatusDot.svelte';

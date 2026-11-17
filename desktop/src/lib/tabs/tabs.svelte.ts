@@ -11,7 +11,7 @@
  * (une console garde sa connexion WS quand on change d'onglet).
  */
 
-import { uid } from '$lib/util/id';
+import { uid } from '#lib/util/id.ts';
 
 export type ServerView =
   | 'overview'

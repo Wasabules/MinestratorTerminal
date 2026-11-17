@@ -1,7 +1,7 @@
 /** Centre d'alertes : accumule les alertes reçues du superviseur (rune `$state`). */
 
-import type { Alert } from '$lib/types';
-import { uid } from '$lib/util/id';
+import type { Alert } from '#lib/types.ts';
+import { uid } from '#lib/util/id.ts';
 
 export interface AlertItem extends Alert {
   id: string;

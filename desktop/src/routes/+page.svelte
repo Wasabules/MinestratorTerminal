@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { authStore } from '$lib/stores/auth.svelte';
-  import { tabs } from '$lib/tabs/tabs.svelte';
-  import { readDetachSpec } from '$lib/windows';
-  import Workspace from '$lib/components/Workspace.svelte';
+  import { authStore } from '#lib/stores/auth.svelte.ts';
+  import { tabs } from '#lib/tabs/tabs.svelte.ts';
+  import { readDetachSpec } from '#lib/windows.ts';
+  import Workspace from '#lib/components/Workspace.svelte';
 
   const auth = $derived(authStore.value);
 

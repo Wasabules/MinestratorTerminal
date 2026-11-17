@@ -1,15 +1,15 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
-  import { tabs } from '$lib/tabs/tabs.svelte';
-  import { t } from '$lib/i18n';
-  import { alertEvents, copilotEvents, sftpEvents, consoleEvents, modEvents } from '$lib/events';
-  import { addAlert, addBacklog } from '$lib/alerts/alerts.svelte';
-  import { api, humanizeError } from '$lib/ipc';
-  import { addDiagnosis, startRun, progressRun } from '$lib/copilot/diagnoses.svelte';
-  import { applyProgress } from '$lib/transfers/transfers.svelte';
-  import { applyInstallProgress } from '$lib/mods/installs.svelte';
-  import { setServerRuntime } from '$lib/servers/runtime.svelte';
+  import { tabs } from '#lib/tabs/tabs.svelte.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { alertEvents, copilotEvents, sftpEvents, consoleEvents, modEvents } from '#lib/events.ts';
+  import { addAlert, addBacklog } from '#lib/alerts/alerts.svelte.ts';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { addDiagnosis, startRun, progressRun } from '#lib/copilot/diagnoses.svelte.ts';
+  import { applyProgress } from '#lib/transfers/transfers.svelte.ts';
+  import { applyInstallProgress } from '#lib/mods/installs.svelte.ts';
+  import { setServerRuntime } from '#lib/servers/runtime.svelte.ts';
   import TabBar from './TabBar.svelte';
   import UserMenu from './UserMenu.svelte';
   import AlertCenter from './AlertCenter.svelte';

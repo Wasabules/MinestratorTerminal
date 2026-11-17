@@ -2,19 +2,19 @@
   import { onMount, onDestroy } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import type { Update } from '@tauri-apps/plugin-updater';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t, getLocale, setLocale, LOCALES } from '$lib/i18n';
-  import { toggleTheme } from '$lib/theme';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t, getLocale, setLocale, LOCALES } from '#lib/i18n/index.ts';
+  import { toggleTheme } from '#lib/theme.ts';
   import {
     checkForUpdate,
     applyUpdate,
     isAutoUpdateEnabled,
     setAutoUpdateEnabled,
-  } from '$lib/updater';
-  import { isCompactTabs, setCompactTabs } from '$lib/tabs/mode.svelte';
-  import { closeBehavior, setCloseBehavior, type CloseBehavior } from '$lib/close.svelte';
-  import { isDebug, setDebug } from '$lib/debug.svelte';
-  import { isFake, setFake } from '$lib/fake.svelte';
+  } from '#lib/updater.ts';
+  import { isCompactTabs, setCompactTabs } from '#lib/tabs/mode.svelte.ts';
+  import { closeBehavior, setCloseBehavior, type CloseBehavior } from '#lib/close.svelte.ts';
+  import { isDebug, setDebug } from '#lib/debug.svelte.ts';
+  import { isFake, setFake } from '#lib/fake.svelte.ts';
   import type {
     Autonomy,
     CliStatus,
@@ -26,7 +26,7 @@
     PrivacyConfig,
     ServerListItem,
     SupervisorConfig,
-  } from '$lib/types';
+  } from '#lib/types.ts';
   import Icon from '../Icon.svelte';
   import ServiceSection from '../settings/ServiceSection.svelte';
 

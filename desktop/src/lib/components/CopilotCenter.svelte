@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { t } from '$lib/i18n';
-  import { tabs } from '$lib/tabs/tabs.svelte';
-  import { trigIcon } from '$lib/copilot/format';
+  import { t } from '#lib/i18n/index.ts';
+  import { tabs } from '#lib/tabs/tabs.svelte.ts';
+  import { trigIcon } from '#lib/copilot/format.ts';
   import Icon from './Icon.svelte';
   import {
     diagnosisItems,
@@ -9,7 +9,7 @@
     markDiagnosesRead,
     activeRuns,
     activeCount,
-  } from '$lib/copilot/diagnoses.svelte';
+  } from '#lib/copilot/diagnoses.svelte.ts';
 
   let open = $state(false);
 

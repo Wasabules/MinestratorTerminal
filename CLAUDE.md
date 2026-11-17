@@ -7,7 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commandes
 
-Il n'y a **pas de projet npm à la racine** : `desktop/` et `mobile/` ont chacun le leur.
+Il n'y a **pas de projet npm à la racine** : `desktop/` et `mobile/` ont chacun le leur
+(SvelteKit 3 : **Node ≥ 22.17**, config dans `vite.config.js` — plus de `svelte.config.js` —,
+imports internes via l'alias `#lib/…` avec extension, ex. `#lib/ipc.ts`).
 Les commandes Cargo se lancent depuis la **racine** (le workspace couvre tout le monorepo).
 
 ```bash

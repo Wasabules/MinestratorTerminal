@@ -138,7 +138,7 @@ docs/                 Documentation additionnelle.
 
 ### Prérequis
 - [Rust](https://rustup.rs) (stable) + les [prérequis Tauri](https://v2.tauri.app/start/prerequisites/) de ta plateforme (Windows : MSVC Build Tools + WebView2 ; Linux : `webkit2gtk`, `librsvg`, etc.).
-- [Node.js](https://nodejs.org) 20+ et npm.
+- [Node.js](https://nodejs.org) 22.17+ (LTS 24 recommandée ; exigé par SvelteKit 3) et npm.
 
 ### Lancer en développement
 Les commandes **frontend** se lancent depuis `desktop/` (le projet npm y vit désormais) ;

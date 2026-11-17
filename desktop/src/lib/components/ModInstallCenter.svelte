@@ -5,13 +5,13 @@
    * `installs.svelte.ts` (event `mods://install-progress` centralisé dans Workspace). Calqué sur
    * AlertCenter. Masqué tant qu'aucune installation n'a eu lieu.
    */
-  import { t } from '$lib/i18n';
+  import { t } from '#lib/i18n/index.ts';
   import {
     runItems,
     activeRunCount,
     clearFinishedRuns,
     type InstallRun,
-  } from '$lib/mods/installs.svelte';
+  } from '#lib/mods/installs.svelte.ts';
   import Icon from './Icon.svelte';
 
   let open = $state(false);

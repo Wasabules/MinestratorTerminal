@@ -1,6 +1,6 @@
 /** Helpers d'affichage partagés par les surfaces Copilote (icône, onglet, chat) et alertes. */
 
-import { t } from '$lib/i18n';
+import { t } from '#lib/i18n/index.ts';
 
 /** Couleur d'un niveau de risque d'action (`safe`/`caution`/`danger`). */
 export function riskColor(risk: string): string {

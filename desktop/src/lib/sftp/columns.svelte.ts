@@ -3,7 +3,7 @@
  * La colonne « Nom » est toujours affichée ; les autres sont optionnelles.
  */
 
-import type { SftpEntry } from '$lib/types';
+import type { SftpEntry } from '#lib/types.ts';
 
 export type SftpColumnId = 'size' | 'type' | 'modified';
 export type SftpSortKey = 'name' | 'size' | 'type' | 'modified';

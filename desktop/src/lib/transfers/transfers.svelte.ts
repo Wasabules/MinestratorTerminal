@@ -3,7 +3,7 @@
  * alimenté par l'event `sftp://progress`. Global (survit aux changements de vue et d'onglet).
  */
 
-import type { SftpProgress } from '$lib/types';
+import type { SftpProgress } from '#lib/types.ts';
 
 /**
  * Un transfert suivi. `direction` (`up` | `down`) et `status` (`active` | `done` | `error`) sont

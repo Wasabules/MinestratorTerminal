@@ -1,16 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
-  import { api, humanizeError } from '$lib/ipc';
-  import { copilotEvents } from '$lib/events';
-  import { t } from '$lib/i18n';
-  import { serverCaps } from '$lib/games/capabilities.svelte';
-  import { renderMarkdown } from '$lib/markdown';
-  import { uid } from '$lib/util/id';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { copilotEvents } from '#lib/events.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { serverCaps } from '#lib/games/capabilities.svelte.ts';
+  import { renderMarkdown } from '#lib/markdown.ts';
+  import { uid } from '#lib/util/id.ts';
   import ActionList from '../ActionList.svelte';
   import Icon from '../Icon.svelte';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
-  import type { ProposedAction } from '$lib/types';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
+  import type { ProposedAction } from '#lib/types.ts';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);

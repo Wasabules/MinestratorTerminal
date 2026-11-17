@@ -2,19 +2,19 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { page } from '$app/stores';
-  import { authStore, setAuth } from '$lib/stores/auth.svelte';
-  import { api } from '$lib/ipc';
-  import { applyInitialTheme } from '$lib/theme';
-  import { initLocale, t } from '$lib/i18n';
-  import { initColors } from '$lib/servers/colors.svelte';
-  import { initSftpView } from '$lib/sftp/columns.svelte';
-  import { initTabMode } from '$lib/tabs/mode.svelte';
-  import { initCloseBehavior } from '$lib/close.svelte';
-  import { initDebug } from '$lib/debug.svelte';
-  import { initFake, isFake } from '$lib/fake.svelte';
-  import UpdateBanner from '$lib/components/UpdateBanner.svelte';
-  import CloseDialog from '$lib/components/CloseDialog.svelte';
+  import { page } from '$app/state';
+  import { authStore, setAuth } from '#lib/stores/auth.svelte.ts';
+  import { api } from '#lib/ipc.ts';
+  import { applyInitialTheme } from '#lib/theme.ts';
+  import { initLocale, t } from '#lib/i18n/index.ts';
+  import { initColors } from '#lib/servers/colors.svelte.ts';
+  import { initSftpView } from '#lib/sftp/columns.svelte.ts';
+  import { initTabMode } from '#lib/tabs/mode.svelte.ts';
+  import { initCloseBehavior } from '#lib/close.svelte.ts';
+  import { initDebug } from '#lib/debug.svelte.ts';
+  import { initFake, isFake } from '#lib/fake.svelte.ts';
+  import UpdateBanner from '#lib/components/UpdateBanner.svelte';
+  import CloseDialog from '#lib/components/CloseDialog.svelte';
 
   let { children } = $props();
 
@@ -31,7 +31,7 @@
     initDebug();
     initFake();
     try {
-      if (!(await api.hasStoredKey())) {
+      if (!await api.hasStoredKey()) {
         setAuth({ status: 'signed_out' });
         return;
       }
@@ -46,7 +46,7 @@
 
   // Garde de navigation centralisée.
   $effect(() => {
-    const path = $page.url.pathname;
+    const path = page.url.pathname;
     if (auth.status === 'signed_out' && path !== '/onboarding') {
       goto('/onboarding');
     } else if (auth.status === 'signed_in' && path === '/onboarding') {
