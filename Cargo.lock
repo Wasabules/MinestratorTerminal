@@ -2827,7 +2827,7 @@ checksum = "d5848f5a9e8117cf94f2f90faac24a87ff81600ff8628c1e3deaab572e76bfa1"
 
 [[package]]
 name = "minestrator-core"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "base64 0.23.1",
  "directories",
@@ -2863,7 +2863,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-daemon"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "directories",
  "libc",
@@ -2880,7 +2880,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-mcp"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "minestrator-core",
  "tokio",
@@ -2890,7 +2890,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-terminal"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "minestrator-core",
  "serde_json",
@@ -2909,7 +2909,7 @@ dependencies = [
 
 [[package]]
 name = "minestrator-terminal-mobile"
-version = "0.5.2"
+version = "0.6.0"
 dependencies = [
  "base64 0.23.1",
  "minestrator-core",
