@@ -22,12 +22,13 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 
 # Client SFTP natif.
-russh = "0.45"
+# Backend crypto `ring` (pas `aws-lc-rs`, qui exige CMake/NASM et complique la compilation croisée
+# Android) ; `rsa` : clés d'hôte RSA des serveurs Wings anciens.
+russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "2.0"
-async-trait = "0.1"
 
 # Stockage local de l'historique de métriques (SQLite embarqué, sans dépendance système).
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 directories = "5"
 
 # Parsing du rapport de profiler Spark (protobuf `x-spark-sampler`) — structs à la main, sans protoc.
@@ -43,7 +44,7 @@ tracing-appender = "0.2.3"
 # (zlib-rs / zopfli), sans dépendance système.
 flate2 = "1.1.9"
 tar = "0.4.46"
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.7", default-features = false, features = ["deflate"] }
 
 # Décodage NBT (`.dat` Minecraft : level.dat, playerdata, structures) → JSON lisible. Pur Rust.
 fastnbt = "2"

@@ -490,6 +490,7 @@ export function humanizeError(value: unknown): string {
     rate_limited: 'errors.rate_limited',
     network: 'errors.network',
     no_key: 'errors.no_key',
+    sftp_auth: 'errors.sftp_auth',
   };
   const key = known[value.kind];
   return key ? t(key) : value.message;
