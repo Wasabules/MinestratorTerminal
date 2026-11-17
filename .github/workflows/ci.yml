@@ -1,0 +1,103 @@
+name: CI
+
+# Garde-fou de chaque modification : lint + tests Rust sur les 3 OS, typecheck des deux fronts.
+# Aussi appelé par release.yml (`workflow_call`) : aucune release ne se construit sur un code rouge.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # Les 3 OS : le code a des branches par plateforme (trousseau natif, service système…)
+        # qu'un seul runner ne compilerait pas.
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace
+
+      # Types TS des fronts générés depuis Rust (ts-rs) et versionnés : échoue s'ils ont dérivé.
+      # Une seule plateforme suffit (génération déterministe).
+      - name: Bindings TypeScript à jour
+        if: runner.os == 'Linux'
+        run: cargo bindings-check
+
+      - name: Clippy (feature ts)
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets --features minestrator-core/ts,minestrator-terminal-mobile/ts -- -D warnings
+
+  frontend:
+    name: Typecheck (${{ matrix.app }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [desktop, mobile]
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck (svelte-check)
+        run: npm run check
+
+      # Les dépendances embarquées dans l'app : une faille haute ou critique bloque.
+      - name: Audit des dépendances de production
+        run: npm audit --omit=dev --audit-level=high

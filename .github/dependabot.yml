@@ -1,0 +1,34 @@
+# Mises à jour de dépendances : PR hebdomadaires, groupées pour limiter le bruit. Les mises à jour
+# de sécurité passent hors groupe et hors calendrier (comportement par défaut de Dependabot).
+#
+# Volontairement absent : l'écosystème gradle de mobile/src-tauri/gen/android, projet généré puis
+# personnalisé (cf. mobile/README.md) — ses versions suivent celles de Tauri, à la main.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      rust-mineures:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directories:
+      - /desktop
+      - /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      front-mineures:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
