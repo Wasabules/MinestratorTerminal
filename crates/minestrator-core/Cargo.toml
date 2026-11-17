@@ -18,7 +18,7 @@ base64 = "0.22"
 # `io-std` : transport stdio du serveur MCP (`mcp::serve_stdio`). `net` : canal IPC local avec le
 # service d'arrière-plan (socket Unix / canal nommé Windows, voir `service.rs`).
 tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util", "io-std", "process", "net"] }
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 
 # Client SFTP natif.
