@@ -15,6 +15,7 @@ use std::time::Duration;
 
 /// Réglages du serveur MCP (modifiables depuis l'UI, persistés dans `mcp.json`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct McpConfig {
     pub enabled: bool,
     /// Autorise les actions modifiantes (power, commandes, modération, écriture de fichiers).
@@ -112,6 +113,8 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "download_file",
     "file_stat",
     "read_startup",
+    "read_properties",
+    "mybox_info",
     "list_installed_mods",
     "list_installed_plugins",
     "list_backups",
@@ -125,6 +128,9 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "diagnose_startup",
     "inspect_region",
 ];
+
+/// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
+const SECRET_MASK: &str = "[SECRET]";
 
 /// Outils **modifiants** (soumis à `allow_writes`). Sert aux listes d'autorisation/schémas ;
 /// la garde de sécurité, elle, repose sur le complément de [`READ_TOOLS`] (default-deny).
@@ -140,6 +146,7 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "rename_path",
     "extract_archive",
     "set_startup_params",
+    "set_property",
     "install_mod",
     "install_ficsit_mod",
     // Snapshot = additif/sans risque → l'agent peut le créer (filet avant une intervention).
@@ -164,6 +171,8 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "list_installed_plugins",
     "read_startup",
     "set_startup_params",
+    "read_properties",
+    "set_property",
     "analyze_performance",
     "parse_spark_report",
     "diagnose_startup",
@@ -210,6 +219,12 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "diagnose_startup",
     "analyze_performance",
     "parse_spark_report",
+    // Historique local (SQLite) : l'API n'a aucun historique, l'officiel non plus.
+    "server_metrics",
+    // Mods Satisfactory (ficsit.app) : hors catalogue de l'officiel.
+    "ficsit_search",
+    "ficsit_versions",
+    "install_ficsit_mod",
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -396,7 +411,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // Archives / gz : téléchargent + décompressent → on évite de re-télécharger dans la foulée.
         "list_archive" | "read_archive_entry" | "read_gz" => 30,
         // Config / fichiers / arborescence : purgés après toute écriture, donc sûrs à cacher un instant.
-        "list_files" | "read_file" | "read_startup" | "search_files" => 15,
+        "list_files" | "read_file" | "read_startup" | "read_properties" | "search_files" => 15,
+        "mybox_info" => 30,
         "list_servers" => 10,
         "server_status" => 5,
         // Volontairement absents : server_metrics (local, déjà rapide), read_console (live),
@@ -412,10 +428,50 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
 
         "server_status" => {
             let id = req_i64(&args, "server_id")?;
-            // Lectures indépendantes → concurrentes : recouvre le RTT du GET « live » sous l'attente
-            // d'échantillon (`sample_stats` ouvre un WS et patiente jusqu'à quelques secondes).
-            let (live, stats) = tokio::join!(core.live_light(id), core.sample_stats(id));
-            json_pretty(&json!({ "live": live.map_err(es)?, "stats": stats.map_err(es)? }))
+            // `/live` : tout en un GET (consommation instantanée dont FlexCore, réseau, uptime,
+            // joueurs). Repli sur l'ancien couple live/light + échantillon WebSocket si l'endpoint
+            // échoue (lectures concurrentes : le RTT du GET se recouvre sous l'attente du WS).
+            match core.server_live(id).await {
+                Ok(live) => json_pretty(&live),
+                Err(_) => {
+                    let (live, stats) = tokio::join!(core.live_light(id), core.sample_stats(id));
+                    json_pretty(&json!({ "live": live.map_err(es)?, "stats": stats.map_err(es)? }))
+                }
+            }
+        }
+
+        "read_properties" => {
+            let id = req_i64(&args, "server_id")?;
+            let mut props = core.server_properties(id).await.map_err(es)?;
+            // Secrets (`rcon.password`…) jamais renvoyés au modèle.
+            for (key, value) in props.properties.iter_mut() {
+                if crate::models::is_secret_property(key) && !value.is_empty() {
+                    *value = SECRET_MASK.to_string();
+                }
+            }
+            json_pretty(&props)
+        }
+
+        "set_property" => {
+            let id = req_i64(&args, "server_id")?;
+            let property = req_str(&args, "property")?;
+            let value = opt_str(&args, "value", "");
+            // Le modèle ne voit que le masque : le réécrire écraserait le vrai secret.
+            if value == SECRET_MASK {
+                return Err(format!(
+                    "« {property} » est masqué ({SECRET_MASK}) : sa valeur réelle n'est pas \
+                     connue, ne pas la réécrire."
+                ));
+            }
+            core.set_server_property(id, &property, &value).await.map_err(es)?;
+            Ok(format!(
+                "Réglage « {property} » modifié sur le serveur {id} ; effet au prochain démarrage."
+            ))
+        }
+
+        "mybox_info" => {
+            let id = req_i64(&args, "mybox_id")?;
+            json_pretty(&core.mybox_details(id).await.map_err(es)?)
         }
 
         "server_metrics" => {
@@ -774,7 +830,8 @@ pub fn tool_list() -> &'static Value {
 fn build_tool_list() -> Value {
     json!([
         tool("list_servers", "Liste tous les serveurs : id, nom, statut, adresse, MyBox. À appeler en premier pour obtenir les `server_id`.", obj(&[], &[])),
-        tool("server_status", "État détaillé d'un serveur : joueurs, version, MOTD, limites et consommation instantanée (échantillon live).", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("server_status", "État temps réel d'un serveur : état, consommation instantanée (CPU en centièmes de cœur dont FlexCore/`is_bursting`, RAM et disque en Mo), réseau cumulé, uptime, joueurs, version, MOTD.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("mybox_info", "Détail d'une MyBox (`mybox_id` via list_servers) : échéance, renouvellement automatique, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
         tool("server_metrics", "Historique de consommation (CPU/RAM/disque) + résumé (moyennes/max) — pour analyser la charge et optimiser.", obj(&[("server_id", prop_int("ID du serveur")), ("since_secs", prop_int("Fenêtre en secondes (défaut 3600, max 14 j)"))], &["server_id"])),
         tool("power_action", "Démarre/redémarre/arrête un serveur. `action` ∈ start|restart|restart10|stop|stop10|kill.", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start|restart|restart10|stop|stop10|kill"))], &["server_id", "action"])),
         tool("send_command", "Envoie une commande à la console (n'a d'effet que serveur en ligne).", obj(&[("server_id", prop_int("ID du serveur")), ("command", prop_str("Commande console"))], &["server_id", "command"])),
@@ -796,6 +853,8 @@ fn build_tool_list() -> Value {
         tool("edit_file", "Édition PARTIELLE d'un fichier texte distant : remplace toutes les occurrences EXACTES de `find` par `replace`. Ne renvoie jamais le contenu → SÛR même si le fichier contient des secrets (contrairement à read_file+write_file, qui réécrirait `[SECRET]` par-dessus le vrai secret). Erreur si `find` est absent (aucun remplacement). À préférer à write_file pour patcher une config sans la réécrire en entier. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("find", prop_str("Texte exact à trouver (respecte casse/espaces)")), ("replace", prop_str("Texte de remplacement"))], &["server_id", "path", "find", "replace"])),
         tool("file_stat", "Métadonnées d'un fichier distant : taille (octets) + empreinte sha256 — pour vérifier qu'un upload_file a réussi / que le fichier distant correspond au local. Le sha256 est vide pour un dossier.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant"))], &["server_id", "path"])),
         tool("read_startup", "Lit la commande de démarrage (flags JVM : -Xmx, GC, Aikar…), le JAR, la mémoire et l'image.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("read_properties", "Lit les réglages du serveur (server.properties : max-players, difficulty, pvp, view-distance, white-list…) via l'API, sans SFTP. Les valeurs secrètes (rcon.password…) sont masquées.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("set_property", "Modifie UN réglage EXISTANT de server.properties (clé exacte, telle que renvoyée par read_properties). Valeur vide = vide le réglage. Effet au prochain démarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("property", prop_str("Clé exacte (ex. max-players)")), ("value", prop_str("Nouvelle valeur, en texte"))], &["server_id", "property", "value"])),
         tool("set_startup_params", "Modifie la commande de démarrage Java (optimiser les flags JVM). Garder `{{SERVER_JARFILE}}`. Effet au prochain démarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("parameters", prop_str("Commande Java COMPLÈTE"))], &["server_id", "parameters"])),
         tool("list_installed_mods", "Mods installés (nom + version, format compact ; loaders résumés en en-tête). Sur un gros modpack, utilise `query` pour filtrer par sous-chaîne de nom (ex. « est-ce que Sodium est installé ? ») plutôt que de tout lister.", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Filtre optionnel : sous-chaîne du nom (insensible à la casse)"))], &["server_id"])),
         tool("list_installed_plugins", "Plugins installés (nom + version, format compact). `query` filtre par sous-chaîne du nom (insensible à la casse).", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Filtre optionnel : sous-chaîne du nom"))], &["server_id"])),

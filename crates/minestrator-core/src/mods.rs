@@ -14,6 +14,7 @@ use std::sync::LazyLock;
 /// Réglages par jeu (partie **non-secrète**, persistée `game_settings.json`). Les secrets (token
 /// Factorio) vont au trousseau (voir `secrets::store_game_secret`). Extensible : un champ par jeu.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GameSettings {
     #[serde(default)]
     pub factorio: FactorioSettings,
@@ -21,6 +22,7 @@ pub struct GameSettings {
 
 /// Réglages Factorio : le `username` du compte factorio.com (le token de download va au trousseau).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FactorioSettings {
     #[serde(default)]
     pub username: String,
@@ -56,7 +58,7 @@ pub(crate) async fn get_json<T: serde::de::DeserializeOwned>(
 
 /// Exécute une requête de téléchargement binaire, plafonnée (garde-fou OOM), en **capturant le corps
 /// d'erreur** (les API expliquent souvent le refus dedans → diagnostic exploitable au lieu d'un « 403 »
-/// muet). Extrait ~300 caractères, espaces normalisés.
+/// muet). Extrait ~400 caractères, espaces normalisés (voir [`http_error_message`]).
 async fn fetch_bytes(req: reqwest::RequestBuilder, max: u64) -> Result<Vec<u8>> {
     let resp = req
         .send()
@@ -65,14 +67,7 @@ async fn fetch_bytes(req: reqwest::RequestBuilder, max: u64) -> Result<Vec<u8>> 
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        // Les pages d'erreur sont souvent en HTML → on retire les balises pour exposer le texte lisible.
-        let text = strip_tags(&body);
-        let snippet: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(400).collect();
-        return Err(Error::Unexpected(if snippet.is_empty() {
-            format!("HTTP {}", status.as_u16())
-        } else {
-            format!("HTTP {} — {snippet}", status.as_u16())
-        }));
+        return Err(Error::Unexpected(http_error_message(status.as_u16(), &body)));
     }
     if resp.content_length().is_some_and(|l| l > max) {
         return Err(Error::Unexpected("fichier trop volumineux.".into()));
@@ -85,6 +80,19 @@ async fn fetch_bytes(req: reqwest::RequestBuilder, max: u64) -> Result<Vec<u8>> 
         return Err(Error::Unexpected("fichier trop volumineux.".into()));
     }
     Ok(bytes.to_vec())
+}
+
+/// Message d'un téléchargement refusé : le statut, suivi du début du texte lisible du corps (espaces
+/// normalisés, 400 caractères au plus) s'il y en a un.
+fn http_error_message(status: u16, body: &str) -> String {
+    // Les pages d'erreur sont souvent en HTML → on retire les balises pour exposer le texte lisible.
+    let text = strip_tags(body);
+    let snippet: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(400).collect();
+    if snippet.is_empty() {
+        format!("HTTP {status}")
+    } else {
+        format!("HTTP {status} — {snippet}")
+    }
 }
 
 /// Retire grossièrement les balises HTML (`<…>`) pour extraire le message lisible d'une page d'erreur.
@@ -116,6 +124,7 @@ pub(crate) async fn get_bytes_bearer(url: &str, bearer: &str, max: u64) -> Resul
 
 /// Un mod du catalogue, quelle que soit la source.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketMod {
     /// Référence stable, source-spécifique (sert à récupérer les versions / installer).
     pub reference: String,
@@ -129,6 +138,7 @@ pub struct MarketMod {
 
 /// Page de résultats.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketModPage {
     pub mods: Vec<MarketMod>,
     pub count: i64,
@@ -137,6 +147,7 @@ pub struct MarketModPage {
 
 /// Une version publiée d'un mod (normalisée).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketModVersion {
     pub version: String,
     /// Contrainte/compatibilité de version de jeu (SML, `factorio_version`…), ou vide.
@@ -147,6 +158,7 @@ pub struct MarketModVersion {
 
 /// Un mod installé sur le serveur (normalisé), avec son état activé.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct MarketInstalledMod {
     pub reference: String,
     pub name: String,
@@ -155,6 +167,7 @@ pub struct MarketInstalledMod {
 
 /// Un mod à installer (référence + version voulue ; version vide = dernière).
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ModInstallItem {
     pub reference: String,
     #[serde(default)]
@@ -187,5 +200,114 @@ pub async fn mod_versions(source: &str, reference: &str) -> Result<Vec<MarketMod
         "factorio" => crate::factorio::mod_versions(reference).await,
         "umod" => crate::umod::mod_versions(reference).await,
         other => Err(Error::Unexpected(format!("source de mods inconnue : « {other} »"))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn strip_tags_keeps_only_text() {
+        assert_eq!(
+            strip_tags("<html><body><h1>403</h1><p>Forbidden</p></body></html>"),
+            "403Forbidden"
+        );
+        assert_eq!(strip_tags("pas de balise"), "pas de balise");
+        assert_eq!(strip_tags("a <b>gras</b> é"), "a gras é");
+        assert_eq!(strip_tags(""), "");
+    }
+
+    #[test]
+    fn http_error_message_exposes_the_readable_body() {
+        // Page HTML : balises retirées, espaces/retours à la ligne normalisés.
+        assert_eq!(
+            http_error_message(
+                403,
+                "<html>\n  <body>\n    <h1>Accès refusé</h1>\n    <p>Token   invalide.</p>\n  </body>\n</html>"
+            ),
+            "HTTP 403 — Accès refusé Token invalide."
+        );
+        // Balises collées sans blanc : les textes se touchent (retrait « grossier » assumé).
+        assert_eq!(http_error_message(403, "<b>Accès</b><i>refusé</i>"), "HTTP 403 — Accèsrefusé");
+        // Corps JSON : conservé tel quel.
+        assert_eq!(
+            http_error_message(401, r#"{"message":"Bad credentials"}"#),
+            r#"HTTP 401 — {"message":"Bad credentials"}"#
+        );
+        // Corps vide ou sans texte → statut seul.
+        assert_eq!(http_error_message(404, ""), "HTTP 404");
+        assert_eq!(http_error_message(500, "<html> <br/> </html>"), "HTTP 500");
+    }
+
+    #[test]
+    fn http_error_message_is_capped_at_400_characters() {
+        let msg = http_error_message(502, &"é".repeat(1000));
+        let snippet = msg.strip_prefix("HTTP 502 — ").unwrap();
+        assert_eq!(snippet.chars().count(), 400);
+    }
+
+    #[test]
+    fn game_settings_tolerate_missing_fields() {
+        let s: GameSettings = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(s.factorio.username, "");
+        let s: GameSettings = serde_json::from_value(json!({ "factorio": {} })).unwrap();
+        assert_eq!(s.factorio.username, "");
+        let s: GameSettings =
+            serde_json::from_value(json!({ "factorio": { "username": "steve" }, "autre": 1 })).unwrap();
+        assert_eq!(s.factorio.username, "steve");
+    }
+
+    #[test]
+    fn install_item_version_defaults_to_latest() {
+        let items: Vec<ModInstallItem> = serde_json::from_value(json!([
+            { "reference": "Azumatt/AzuCraftyBoxes" },
+            { "reference": "Vanish", "version": "1.2.3" }
+        ]))
+        .unwrap();
+        assert_eq!(items[0].version, "", "version vide = dernière");
+        assert_eq!(items[1].reference, "Vanish");
+        assert_eq!(items[1].version, "1.2.3");
+        assert!(serde_json::from_value::<ModInstallItem>(json!({ "version": "1" })).is_err());
+    }
+
+    #[test]
+    fn normalized_models_serialize_with_stable_keys() {
+        let page = MarketModPage {
+            mods: vec![MarketMod {
+                reference: "ns/name".into(),
+                name: "name".into(),
+                description: "d".into(),
+                downloads: 12,
+                icon_url: "https://x/i.png".into(),
+                source: "thunderstore".into(),
+            }],
+            count: 1,
+            has_more: false,
+        };
+        assert_eq!(
+            serde_json::to_value(&page).unwrap(),
+            json!({
+                "mods": [{
+                    "reference": "ns/name", "name": "name", "description": "d",
+                    "downloads": 12, "icon_url": "https://x/i.png", "source": "thunderstore"
+                }],
+                "count": 1,
+                "has_more": false
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_source_is_rejected_without_network() {
+        match search("nexus", "", "", "popular", 1).await {
+            Err(Error::Unexpected(m)) => assert_eq!(m, "source de mods inconnue : « nexus »"),
+            other => panic!("{other:?}"),
+        }
+        match mod_versions("nexus", "x").await {
+            Err(Error::Unexpected(m)) => assert_eq!(m, "source de mods inconnue : « nexus »"),
+            other => panic!("{other:?}"),
+        }
     }
 }

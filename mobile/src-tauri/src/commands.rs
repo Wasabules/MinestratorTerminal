@@ -193,6 +193,7 @@ pub async fn sftp_mkdir(
 /// Résultat de recherche : le tuple `(entrées, tronqué)` du core se sérialiserait en tableau
 /// anonyme côté JS, illisible. La couche d'adaptation lui donne des noms.
 #[derive(serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "SftpSearchResult"))]
 pub struct SftpSearchOut {
     entries: Vec<SftpEntry>,
     /// La recherche s'est arrêtée avant d'avoir tout parcouru (garde-fou du core).
@@ -337,6 +338,12 @@ pub async fn restore_snapshot(
     server_id: i64,
 ) -> Result<i64, Error> {
     core.restore_snapshot(snapshot_id, server_id).await
+}
+
+/// Journaux récents **anonymisés**, à joindre à un rapport de bug (le front les copie).
+#[tauri::command]
+pub fn export_logs() -> String {
+    minestrator_core::logs::export_recent(minestrator_core::logs::EXPORT_MAX_BYTES)
 }
 
 #[tauri::command]

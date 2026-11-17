@@ -43,21 +43,22 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (39)
+## 5. Capacités — catalogue d'outils (42)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **21 outils de lecture**
-> + **11 modifiants**.
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **27 outils de lecture**
+> + **15 modifiants**.
 
 #### Découverte & état
 
 | Outil | | Entrées | Renvoie |
 |---|---|---|---|
 | `list_servers` | | — | Serveurs (id, nom, statut, adresse, MyBox). **Point d'entrée** pour les `server_id`. |
-| `server_status` | | `server_id` | Joueurs, version, MOTD, limites **+ consommation instantanée** (échantillon live CPU/RAM/disque). |
+| `server_status` | | `server_id` | État temps réel (`GET /server/{id}/live`) : consommation instantanée — CPU en centièmes de cœur dont **FlexCore** (`is_bursting`), RAM/disque en Mo —, réseau cumulé, uptime, joueurs, version, MOTD. Repli sur un échantillon WebSocket si l'endpoint échoue. |
+| `mybox_info` | | `mybox_id` | Détail d'une MyBox (`GET /mybox/{id}`) : échéance, **renouvellement automatique**, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées. |
 | `server_metrics` | | `server_id`, `since_secs?` | **Historique** CPU/RAM/disque + **résumé** (moyennes/max) sur la fenêtre (défaut 1 h, max 14 j). |
 
 #### Contrôle & console
@@ -95,6 +96,8 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 |---|---|---|---|
 | `read_startup` | | `server_id` | Commande de démarrage (flags JVM `-Xmx`/GC/Aikar…), JAR, mémoire, image. |
 | `set_startup_params` | ✎ | `server_id`, `parameters` | Modifie la commande Java (optimiser les flags JVM). Garder `{{SERVER_JARFILE}}` ; effet au prochain démarrage. |
+| `read_properties` | | `server_id` | Réglages `server.properties` via l'API (`GET /server/{id}/properties`), **sans SFTP**. Valeurs secrètes (`rcon.password`…) masquées en `[SECRET]`. Minecraft. |
+| `set_property` | ✎ | `server_id`, `property`, `value` | Modifie **un** réglage existant (`PATCH`) ; effet au prochain démarrage. Refuse de réécrire le masque `[SECRET]`. Minecraft. |
 
 #### Mods & plugins (marketplace + installés)
 
@@ -133,7 +136,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 ### Couverture par domaine
 
-- **Découverte & état** : `list_servers`, `server_status`
+- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`
 - **Consommation & optimisation** : `server_metrics` (historique + résumé), `server_status` (live),
   `analyze_performance` (Spark : TPS/MSPT/GC/points chauds), `parse_spark_report`
 - **Contrôle** : `power_action`, `send_command`
@@ -147,6 +150,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 - **Logs & archives** : `read_gz` (logs gzippés tournés), `list_archive` + `read_archive_entry`
   (fouiller un `.zip`/`.tar.gz` sans extraire) — utile pour diagnostiquer sur des logs/backups archivés
 - **Démarrage / JVM** : `read_startup`, `set_startup_params` (mémoire, GC, Aikar…)
+- **Réglages du serveur** : `read_properties`, `set_property` (`server.properties` via l'API, sans SFTP)
 - **Mods & plugins** : `market_search`, `list_mod_versions`, `install_mod`, `list_installed_mods`,
   `list_installed_plugins` (chercher → choisir une version → installer ; inventaire)
 - **Mods Satisfactory** : `ficsit_search`, `ficsit_versions`, `install_ficsit_mod` (ficsit.app / SMR)
@@ -161,7 +165,7 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 - **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé.
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
   (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
-  `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `install_mod`,
+  `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `set_property`, `install_mod`,
   `install_ficsit_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
   lecture/diagnostic restent disponibles. Idéal pour donner un accès *observation* sans risque.
 
@@ -220,13 +224,14 @@ Build du binaire autonome : `cargo build -p minestrator-mcp --release`
   **crée** (`create_snapshot`), mais la **restauration** n'est pas exposée à l'agent (voir §6).
 - Pas d'endpoint de **listing** des bans/ops côté API — on les lit néanmoins via `read_file`
   (`banned-players.json` / `ops.json`) ; la modération (`player_action`) reste disponible.
-- Stats **live** obtenues via une connexion WebSocket éphémère à la demande (~quelques secondes).
+- Stats **live** : `GET /server/{id}/live` (un appel) ; la connexion WebSocket éphémère ne sert plus que de
+  repli. Les blocs de consommation sont absents d'un serveur éteint.
 - L'historique de `server_metrics` n'existe que si l'app desktop (superviseur) a tourné.
 - Le marketplace ignore les projets **premium/external** (non installables → `install_mod` renvoie 403).
 
 ## 9. Extensions prévues (scope futur)
 
-- **`resources`** : exposer `server.properties`, logs, listes de fichiers comme ressources MCP
+- **`resources`** : exposer logs et listes de fichiers comme ressources MCP
   (lecture contextuelle sans appel d'outil).
 - **`prompts`** : modèles prêts (« diagnostiquer un crash », « optimiser la RAM »).
 - **Automatisation** : planificateur (tâches programmées), règles (event→action).

@@ -9,6 +9,7 @@ use std::borrow::Cow;
 
 /// Réglages de confidentialité (persistés dans `privacy.json`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct PrivacyConfig {
     /// Masque les données sensibles AVANT de les envoyer aux agents IA (Copilote, Assistant,
     /// clients MCP externes). Activé par défaut : rien de sensible ne part vers un LLM sans le vouloir.

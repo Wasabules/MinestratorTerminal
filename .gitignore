@@ -15,6 +15,8 @@ vite.config.ts.timestamp-*
 **/src-tauri/target
 # Schémas de capabilities générés
 **/src-tauri/gen/schemas
+# Binaire du service d'arrière-plan (sidecar), produit par desktop/scripts/build-daemon-sidecar.mjs
+**/src-tauri/binaries/
 # Projet iOS généré (à re-init sur macOS le moment venu)
 **/src-tauri/gen/apple/
 # --- Signature Android : NE JAMAIS committer les secrets ---

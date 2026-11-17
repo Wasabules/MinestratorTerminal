@@ -1,6 +1,6 @@
 [package]
 name = "minestrator-daemon"
-description = "Daemon Linux : surveille les serveurs via minestrator-core et pousse des notifications FCM (alertes app fermée sur mobile)"
+description = "Service d'arrière-plan multiplateforme : supervise les serveurs via minestrator-core (app fermée), consigne les alertes, les sert à l'app par IPC et les pousse en FCM"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -11,13 +11,28 @@ name = "minestrator-daemon"
 path = "src/main.rs"
 
 [dependencies]
-# Réutilise TOUTE la logique métier (superviseur, alertes, API) — comme le desktop.
+# Réutilise TOUTE la logique métier (superviseur, alertes, API, protocole IPC) — comme le desktop.
 minestrator-core = { path = "../minestrator-core" }
 
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "sync"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "sync", "net", "io-util"] }
 # Envoi HTTP FCM v1 (rustls, pas d'OpenSSL — cohérent avec le core).
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Dossier de données par utilisateur quand le daemon tourne au premier plan sans privilège.
+directories = "5"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Service Windows (SCM) + ACL du canal nommé et du dossier de données.
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.8"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+] }
+
+# uid effectif (privilèges, contrôle d'accès au socket).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

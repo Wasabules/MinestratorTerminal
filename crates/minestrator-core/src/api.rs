@@ -8,7 +8,8 @@ use crate::error::{Error, Result};
 use crate::models::{
     ActivityData, ActivityEntry, ActivityPage, Backup, BackupsData, ConsoleLogs, Egg, EggsData, Envelope, InstalledItem, InstalledRaw,
     LiveBulkData, LiveLight, LivePlayers, MarketListRaw, MarketPage, MarketVersion,
-    MarketVersionsRaw, McVersionsData, ServerDetails, ServerFullData, ServersData, ServersOverview,
+    MarketVersionsRaw, McVersionsData, MyBoxDetails, ServerDetails, ServerFullData, ServerLive,
+    ServerProperties, ServersData, ServersOverview,
     SftpCreds, SftpData, Snapshot, SnapshotsData, Startup, StartupData, UserData,
     UserNotification, UserProfile,
     WsCredentials, WsCredentialsData,
@@ -243,6 +244,34 @@ impl ApiClient {
 
     pub async fn get_live_light(&self, token: &str, id: i64) -> Result<LiveLight> {
         self.get(token, &format!("/server/{id}/live/light")).await
+    }
+
+    /// État temps réel complet (OpenAPI `getServerLiveData`) : consommation instantanée (dont
+    /// FlexCore), réseau, uptime — sans WebSocket. Blocs absents d'un serveur éteint.
+    pub async fn get_server_live(&self, token: &str, id: i64) -> Result<ServerLive> {
+        self.get(token, &format!("/server/{id}/live")).await
+    }
+
+    /// Réglages du serveur (`server.properties`) — permission `settings_view`, sans SFTP.
+    pub async fn get_properties(&self, token: &str, id: i64) -> Result<ServerProperties> {
+        self.get(token, &format!("/server/{id}/properties")).await
+    }
+
+    /// Modifie **un** réglage existant (valeur vide acceptée : vide le réglage). Effet au prochain
+    /// démarrage. `enable-rcon`/`rcon.*` exigent en plus la permission `command`,
+    /// `op-permission-level` la permission `players_operator`.
+    pub async fn set_property(&self, token: &str, id: i64, property: &str, value: &str) -> Result<()> {
+        self.patch_ok(
+            token,
+            &format!("/server/{id}/properties"),
+            &serde_json::json!({ "property": property, "value": value }),
+        )
+        .await
+    }
+
+    /// Détail d'une MyBox (OpenAPI `getMyBox`) : abonnement, ressources restantes, offre, serveurs.
+    pub async fn get_mybox(&self, token: &str, id: i64) -> Result<MyBoxDetails> {
+        self.get(token, &format!("/mybox/{id}")).await
     }
 
     /// Identifiants WebSocket seuls — réponse ~1 Kio, contre plusieurs Kio pour `get_server`
@@ -583,5 +612,144 @@ fn job_id(data: &Option<Value>) -> i64 {
 impl Default for ApiClient {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_tungstenite::tungstenite::http;
+
+    /// Réponse HTTP construite en mémoire (aucune E/S réseau).
+    fn response(status: u16, body: &str) -> Response {
+        http::Response::builder()
+            .status(status)
+            .body(body.to_string())
+            .unwrap()
+            .into()
+    }
+
+    async fn envelope(status: u16, body: &str) -> Result<Option<Value>> {
+        ApiClient::read_envelope(response(status, body)).await
+    }
+
+    fn unexpected_message(r: Result<Option<Value>>) -> String {
+        match r {
+            Err(Error::Unexpected(m)) => m,
+            other => panic!("Error::Unexpected attendu, obtenu {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn success_returns_the_data_field() {
+        let data = envelope(
+            200,
+            r#"{"api":{"code":200,"endpoint":"/user","data":{"user":{"id":7,"pseudo":"Steve"}}}}"#,
+        )
+        .await
+        .unwrap();
+        assert_eq!(data, Some(json!({ "user": { "id": 7, "pseudo": "Steve" } })));
+    }
+
+    #[tokio::test]
+    async fn success_without_data_is_none() {
+        // Actions (commande, power action…) : l'enveloppe n'a pas de `data`.
+        let data = envelope(200, r#"{"api":{"code":200,"endpoint":"/server/1/command"}}"#)
+            .await
+            .unwrap();
+        assert_eq!(data, None);
+        let data = envelope(200, r#"{"api":{"data":null}}"#).await.unwrap();
+        assert_eq!(data, None);
+    }
+
+    #[tokio::test]
+    async fn auth_and_rate_limit_statuses_win_over_the_body() {
+        let valid = r#"{"api":{"code":200,"data":{"x":1}}}"#;
+        assert!(matches!(envelope(401, valid).await, Err(Error::Unauthorized)));
+        assert!(matches!(envelope(403, valid).await, Err(Error::Forbidden)));
+        assert!(matches!(envelope(429, valid).await, Err(Error::RateLimited)));
+        // Corps illisible (page HTML d'un proxy) : le statut suffit.
+        assert!(matches!(envelope(401, "<html>401</html>").await, Err(Error::Unauthorized)));
+        assert!(matches!(envelope(429, "").await, Err(Error::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn api_error_code_is_surfaced_whatever_the_status() {
+        for status in [200, 400, 404, 500] {
+            match envelope(status, r#"{"api":{"code":404,"endpoint":"/server/9","error":"SERVER_NOT_FOUND"}}"#)
+                .await
+            {
+                Err(Error::Api { code }) => assert_eq!(code, "SERVER_NOT_FOUND"),
+                other => panic!("HTTP {status} : Error::Api attendu, obtenu {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn http_failure_without_error_code_is_unexpected() {
+        let msg = unexpected_message(envelope(500, r#"{"api":{"code":500}}"#).await);
+        assert_eq!(msg, "HTTP 500");
+        // Même avec des données : un statut d'échec n'est jamais un succès.
+        let msg = unexpected_message(envelope(502, r#"{"api":{"data":{"x":1}}}"#).await);
+        assert_eq!(msg, "HTTP 502");
+    }
+
+    #[tokio::test]
+    async fn unreadable_json_reports_a_truncated_excerpt() {
+        let html = format!("<html><body>{}</body></html>", "x".repeat(400));
+        let msg = unexpected_message(envelope(200, &html).await);
+        assert!(msg.starts_with("JSON illisible ("), "{msg}");
+        let excerpt = msg.split_once("— début: ").expect("extrait du corps").1;
+        assert!(excerpt.starts_with("<html><body>xxx"), "{excerpt}");
+        assert!(excerpt.ends_with('…'), "{excerpt}");
+        assert_eq!(excerpt.len(), 180 + '…'.len_utf8());
+
+        // Coupe sur une frontière de caractère (pas de panique sur l'UTF-8 multi-octets).
+        let msg = unexpected_message(envelope(200, &"é".repeat(200)).await);
+        let excerpt = msg.split_once("— début: ").unwrap().1;
+        assert_eq!(excerpt, format!("{}…", "é".repeat(90)));
+
+        // JSON valide mais sans enveloppe `api` → illisible aussi.
+        let msg = unexpected_message(envelope(200, r#"{"data":{"x":1}}"#).await);
+        assert!(msg.starts_with("JSON illisible ("), "{msg}");
+        // Une passerelle en panne (502 HTML) remonte comme JSON illisible, pas comme « HTTP 502 ».
+        let msg = unexpected_message(envelope(502, "<html>Bad Gateway</html>").await);
+        assert!(msg.contains("Bad Gateway"), "{msg}");
+    }
+
+    #[test]
+    fn job_id_is_read_from_data() {
+        assert_eq!(job_id(&Some(json!({ "job_id": 4242 }))), 4242);
+        assert_eq!(job_id(&Some(json!({ "job_id": "4242" }))), 0);
+        assert_eq!(job_id(&Some(json!({}))), 0);
+        assert_eq!(job_id(&None), 0);
+    }
+
+    #[test]
+    fn bearer_header_trims_the_token() {
+        assert_eq!(ApiClient::bearer("  abc123\n"), "Bearer abc123");
+        assert_eq!(ApiClient::bearer("abc"), "Bearer abc");
+    }
+
+    #[tokio::test]
+    async fn unknown_player_action_or_market_source_fail_without_network() {
+        let api = ApiClient::new();
+        match api.player_action("t", 1, "teleport", "Steve").await {
+            Err(Error::Unexpected(m)) => assert_eq!(m, "action joueur inconnue : teleport"),
+            other => panic!("{other:?}"),
+        }
+        match api.market_list("t", "mods", "nexus", 1, "", "", "").await {
+            Err(Error::Unexpected(m)) => assert_eq!(m, "source marketplace inconnue : nexus"),
+            other => panic!("{other:?}"),
+        }
+        match api.market_versions("t", "nexus", "x", "", "").await {
+            Err(Error::Unexpected(m)) => assert_eq!(m, "source marketplace inconnue : nexus"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn bulk_players_with_no_ids_skips_the_request() {
+        assert!(ApiClient::new().live_players_bulk("t", &[]).await.unwrap().is_empty());
     }
 }

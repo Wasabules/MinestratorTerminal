@@ -41,4 +41,10 @@ serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Génération des types TypeScript propres à l'adaptation mobile (`mobile/src/lib/bindings/mobile.ts`).
+# Optionnelle, comme dans le core : seulement pour `cargo bindings` / `cargo bindings-check`.
+ts-rs = { version = "12", optional = true }
+
+[features]
+ts = ["dep:ts-rs", "minestrator-core/ts"]

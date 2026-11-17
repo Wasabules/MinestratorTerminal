@@ -82,7 +82,7 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
   - **Multi-fournisseur** : Anthropic (Claude) et tout service compatible OpenAI (GPT, Gemini, Mistral, Groq, DeepSeek, OpenRouter, Ollama / LM Studio locaux…).
   - **Agents CLI** : Claude Code, OpenCode, Gemini CLI (utilisent l'abonnement déjà configuré sur la machine, **sans clé API**), avec détection automatique de leur présence.
   - Outils de réparation : **docteur démarrage** (crash-loop), **maps corrompues** (`.mca`), **analyse de performance** (Spark).
-- **Serveur MCP intégré** (**39 outils**) : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Console, fichiers/SFTP, **transfert binaire local ↔ serveur** (`upload_file`/`download_file` : déployer jars & configs sans passer par le panel), **édition find/replace sûre** (`edit_file` — n'expose jamais les secrets au modèle), `file_stat` (sha256), métriques, mods, sauvegardes, diagnostic. Gating **par jeu** + **deny-by-default** sur les écritures. Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
+- **Serveur MCP intégré** (**42 outils**) : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Console, fichiers/SFTP, **transfert binaire local ↔ serveur** (`upload_file`/`download_file` : déployer jars & configs sans passer par le panel), **édition find/replace sûre** (`edit_file` — n'expose jamais les secrets au modèle), `file_stat` (sha256), métriques, mods, sauvegardes, diagnostic. Gating **par jeu** + **deny-by-default** sur les écritures. Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
 
 ### ⚙️ Confort & sécurité
 - **Adaptation par jeu** : détection du jeu (Minecraft Java/Bedrock, Satisfactory, Factorio, Valheim, Rust…) → vues, autocomplétion et coloration de la console, prompts/outils du Copilote ajustés. **Réglages par jeu** (ex. compte factorio.com, stocké au trousseau) et **mode debug** (données d'egg / capacités détectées).
@@ -119,7 +119,8 @@ crates/
   minestrator-core/   Logique métier UI-agnostique : client API, WebSocket, SFTP,
                       NBT/.mca, superviseur, Copilote (LLM + agents CLI), serveur MCP.
   minestrator-mcp/    Serveur MCP autonome (headless), bâti sur le core.
-  minestrator-daemon/ Daemon Linux : surveillance + push FCM (alertes mobile app fermée).
+  minestrator-daemon/ Service d'arrière-plan Windows/Linux/macOS : supervision app fermée,
+                      alertes, push FCM (voir docs/SERVICE.md).
 desktop/              App desktop Tauri (Windows/macOS/Linux) :
   src-tauri/          couche d'adaptation : commandes IPC, tray, pont d'events, notifications.
   src/                Frontend SvelteKit / Svelte 5 (runes) + TypeScript.

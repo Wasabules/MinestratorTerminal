@@ -8,6 +8,7 @@ use serde::Serialize;
 /// Ce qu'un serveur d'un jeu donné sait faire, du point de vue de l'app. Source unique : tout
 /// (vues, console, IA) dérive de cette structure.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct GameCapabilities {
     /// Famille de jeu : `"minecraft"` | `"satisfactory"` | `"generic"`.
     pub family: String,
@@ -23,6 +24,9 @@ pub struct GameCapabilities {
     pub mods: String,
     /// Sauvegardes/snapshots (true partout aujourd'hui ; champ prévu pour le futur).
     pub backups: bool,
+    /// Vue Paramètres : réglages du serveur (`server.properties`) lus et modifiés via l'API, sans
+    /// SFTP. Minecraft (Java et Bedrock) : le seul jeu dont l'hôte expose ce fichier.
+    pub properties: bool,
 }
 
 /// Mots-clés d'egg identifiant la famille Minecraft (loaders, forks, proxys). ⚠️ PAS de « vanilla »
@@ -51,6 +55,7 @@ fn caps(
         players,
         mods: mods.into(),
         backups: true,
+        properties: family == "minecraft",
     }
 }
 

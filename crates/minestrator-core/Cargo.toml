@@ -15,8 +15,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 base64 = "0.22"
 
 # Async + console WebSocket (Wings). `process` : agent CLI local (Copilote sans clé API).
-# `io-std` : transport stdio du serveur MCP (`mcp::serve_stdio`).
-tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util", "io-std", "process"] }
+# `io-std` : transport stdio du serveur MCP (`mcp::serve_stdio`). `net` : canal IPC local avec le
+# service d'arrière-plan (socket Unix / canal nommé Windows, voir `service.rs`).
+tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util", "io-std", "process", "net"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 
@@ -34,6 +35,9 @@ prost = "0.13"
 
 thiserror = "2"
 tracing = "0.1"
+# Journaux fichier à rotation quotidienne (`logs.rs`), partagés par l'app desktop, mobile et le daemon.
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2.3"
 
 # Archives SFTP : ouverture .zip/.tar/.tar.gz/.gz + zip de téléchargement. Deflate PUR RUST
 # (zlib-rs / zopfli), sans dépendance système.
@@ -50,9 +54,36 @@ sha2 = "0.10"
 sha1 = "0.10"
 semver = "1"
 
+# Génération des types TypeScript des frontends (`desktop/src/lib/bindings`, `mobile/src/lib/bindings`)
+# depuis les structures sérialisées. Optionnelle : jamais compilée dans les binaires livrés, seulement
+# par `cargo bindings` / `cargo bindings-check` (voir `.cargo/config.toml` et `src/bindings.rs`).
+# `no-serde-warnings` : ts-rs signale les attributs serde qu'il ignore — à raison pour
+# `#[serde(from = …)]` (désérialisation seule ; le type TS décrit la forme SÉRIALISÉE).
+ts-rs = { version = "12", optional = true, features = ["serde-json-impl", "no-serde-warnings"] }
+
+[features]
+# Dérive `ts_rs::TS` sur les types qui traversent l'IPC et active le module `bindings`.
+ts = ["dep:ts-rs"]
+
 # Trousseau natif de l'OS (fonctionne aussi headless).
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "3", features = ["windows-native"] }
+# Service d'arrière-plan : état du service (SCM), SID de l'utilisateur, élévation UAC.
+windows-service = "0.8"
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# Service d'arrière-plan : uid de l'utilisateur (propriétaire autorisé sur le socket).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

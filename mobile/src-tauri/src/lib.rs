@@ -13,6 +13,8 @@
 
 mod apk_installer;
 mod background;
+#[cfg(all(test, feature = "ts"))]
+mod bindings;
 mod commands;
 mod files;
 mod update;
@@ -25,8 +27,8 @@ use tokio::sync::broadcast::error::RecvError;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    init_tracing();
-
+    // Journaux : initialisés dans `setup`, une fois le dossier privé de l'app connu (le fichier
+    // y est écrit). Ce qui précède `setup` n'est que l'enregistrement des plugins.
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
@@ -42,6 +44,7 @@ pub fn run() {
                 let _ = std::fs::create_dir_all(&dir);
                 std::env::set_var("MINESTRATOR_DATA_DIR", &dir);
             }
+            init_tracing();
 
             // 2. Core + abonnement aux events + superviseur.
             let core = Arc::new(Core::new());
@@ -90,6 +93,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::export_logs,
             commands::validate_and_store_key,
             commands::has_stored_key,
             commands::get_user,
@@ -276,10 +280,8 @@ fn forward(handle: &tauri::AppHandle, ev: CoreEvent) {
     }
 }
 
+/// Journaux : fichier tournant dans le dossier privé de l'app (cf. `core::logs`) — la sortie
+/// standard native n'est pas reliée à logcat, sans fichier tout serait perdu.
 fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new("minestrator_core=info,minestrator_terminal_mobile_lib=info,warn")
-    });
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    minestrator_core::logs::init("minestrator_core=info,minestrator_terminal_mobile_lib=info,warn");
 }

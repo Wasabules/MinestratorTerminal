@@ -19,15 +19,20 @@ pub(crate) struct PersistentCli {
     /// Le system prompt a-t-il déjà été injecté ? Faux au démarrage à froid, vrai si lancé avec
     /// `--resume` (la session restaurée le contient déjà).
     pub(crate) primed: bool,
+    /// Dossier de la config MCP du process : effacé quand la session est détruite. Déclaré APRÈS
+    /// `child` → détruit après lui (les champs sont détruits dans l'ordre de déclaration).
+    _dir: crate::cli_agent::RunDir,
 }
 
 impl PersistentCli {
-    /// Démarre le process. `resumed` = lancé avec `--resume` (session déjà amorcée).
+    /// Démarre le process. `resumed` = lancé avec `--resume` (session déjà amorcée). `dir` est le
+    /// dossier de config du plan de lancement : il vit aussi longtemps que le process.
     pub(crate) fn spawn(
         command: &str,
         args: &[String],
         cwd: Option<&std::path::Path>,
         env: &[(String, String)],
+        dir: crate::cli_agent::RunDir,
         resumed: bool,
     ) -> Result<Self, String> {
         let mut cmd = crate::cli::build_command(command, args, cwd, env);
@@ -64,6 +69,7 @@ impl PersistentCli {
             stdin,
             stdout: BufReader::new(stdout).lines(),
             primed: resumed,
+            _dir: dir,
         })
     }
 

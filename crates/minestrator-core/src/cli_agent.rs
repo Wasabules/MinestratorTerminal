@@ -2,29 +2,34 @@
 //! multi-LLM HTTP (`llm.rs`). Chaque agent a ses propres flags, son format de config MCP et son
 //! schéma de sortie. On isole ces différences ici pour que `copilot.rs` reste agnostique.
 //!
-//! Sécurité : notre serveur MCP est lancé avec la liste blanche d'outils dans son env
-//! (`MCP_ALLOWED_TOOLS_ENV`) → un agent en mode suggestion ne PEUT PAS appeler un outil d'écriture
-//! MCP (l'outil n'existe même pas côté serveur). Claude Code est en plus borné par `--allowedTools`.
+//! Sécurité, sur deux niveaux :
+//! - **Outils MCP** : notre serveur MCP est lancé avec la liste blanche d'outils dans son env
+//!   (`MCP_ALLOWED_TOOLS_ENV`) → un agent en mode suggestion ne PEUT PAS appeler un outil
+//!   d'écriture MCP (l'outil n'existe même pas côté serveur).
+//! - **Outils natifs** de l'agent (shell, disque local, web) : l'agent lit du contenu non fiable
+//!   (console d'un joueur, crash-report, config), donc une injection de prompt pourrait lui faire
+//!   exécuter une commande sur la machine de l'admin. Chaque agent les retire par son propre
+//!   mécanisme (schémas vérifiés dans les docs officielles, cf. `plan_run`) : Claude Code
+//!   `--tools` + `--strict-mcp-config`, OpenCode règles `permission: deny` (respectées par
+//!   `--auto`), Gemini mode `default` (confirmations refusées en non-interactif) + `tools.exclude`.
 //!
-//! ⚠ LIMITE : cette liste blanche ne borne QUE notre serveur MCP, **pas** les outils NATIFS de
-//! l'agent (shell, lecture/écriture fichier local, web). Claude Code restreint ses outils natifs via
-//! `--allowedTools`, mais OpenCode (`--auto`) et Gemini (`--approval-mode yolo`) sont lancés en
-//! auto-approbation TOTALE de leurs outils natifs → un contenu injecté que l'agent lit (console d'un
-//! joueur, crash-report, config) peut lui faire exécuter une commande shell sur la machine de l'admin.
-//! Claude Code (le défaut) n'est PAS concerné. Fix propre = restreindre leurs outils natifs via leur
-//! config (schéma à VÉRIFIER avant de l'écrire — ne pas deviner) ; en attendant, préférer Claude Code.
+//! La config de l'agent (avec la clé API si le MCP officiel est branché) vit dans un [`RunDir`]
+//! privé, effacé à la fin du processus.
 //!
 //! Robustesse : le parsing Claude Code (éprouvé) reste dans `copilot.rs` et est réutilisé tel
 //! quel ; OpenCode/Gemini ont un parsing **défensif** (chaque champ optionnel, dégradation propre).
 
 use crate::config::{MCP_ALLOWED_TOOLS_ENV, MCP_FORCE_ENABLED_ENV};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Once;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Agent CLI sélectionné. Le binaire concret vient de `cli_command` (surchargeable) ; l'enum
 /// détermine flags, config MCP et parsing.
 #[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum CliAgent {
     #[default]
@@ -46,6 +51,7 @@ impl CliAgent {
 
 /// Statut de disponibilité d'un agent CLI (exposé à l'UI Réglages → Copilote).
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct CliStatus {
     pub agent: CliAgent,
     /// Binaire sondé (commande par défaut de l'agent).
@@ -103,22 +109,143 @@ pub struct RunPlan {
     pub args: Vec<String>,
     pub cwd: Option<PathBuf>,
     pub env: Vec<(String, String)>,
+    /// Dossier de la config de l'agent. **À garder vivant tant que le processus tourne** : sa
+    /// destruction efface le dossier (et la clé API qu'il peut contenir).
+    pub dir: RunDir,
 }
+
+/// Préfixe des dossiers éphémères d'agent dans le répertoire temporaire du système.
+const RUN_DIR_PREFIX: &str = "minestrator-cli-";
+
+/// Âge au-delà duquel un dossier d'agent orphelin (crash, arrêt brutal, anciennes versions qui ne
+/// nettoyaient pas) est purgé. Largement au-dessus de la durée d'un tour d'agent ; une session
+/// persistante a lu sa config au démarrage et n'en dépend plus ensuite.
+const STALE_RUN_DIR: Duration = Duration::from_secs(24 * 3600);
 
 static RUN_SEQ: AtomicU64 = AtomicU64::new(0);
+static PURGE_ONCE: Once = Once::new();
 
-/// Répertoire temporaire unique par lancement (pour y déposer la config de l'agent sans polluer
-/// la config globale de l'utilisateur).
-fn unique_temp_dir() -> Result<PathBuf, String> {
-    let n = RUN_SEQ.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!("minestrator-cli-{}-{}", std::process::id(), n));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("dossier temporaire : {e}"))?;
-    Ok(dir)
+/// Dossier éphémère d'un lancement d'agent : il reçoit la config MCP de l'agent, qui contient la
+/// clé API quand le MCP officiel est branché.
+///
+/// - Créé **neuf** (jamais réutilisé : un dossier pré-existant au même nom est refusé) et, sous
+///   Unix, en `0700` : le répertoire temporaire est partagé entre utilisateurs (`/tmp`).
+/// - **Effacé à la destruction** : le guard suit la durée de vie du processus de l'agent.
+/// - Les orphelins (processus tué avant nettoyage, anciennes versions) sont purgés au premier
+///   lancement d'agent de la session.
+pub struct RunDir {
+    path: PathBuf,
 }
 
-fn write_json(path: &std::path::Path, v: &Value) -> Result<(), String> {
+impl RunDir {
+    fn create() -> Result<Self, String> {
+        let base = std::env::temp_dir();
+        PURGE_ONCE.call_once(|| purge_stale_run_dirs(&base, SystemTime::now(), STALE_RUN_DIR));
+        Self::create_in(&base)
+    }
+
+    fn create_in(base: &Path) -> Result<Self, String> {
+        let mut last_err = None;
+        for _ in 0..8 {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.subsec_nanos())
+                .unwrap_or(0);
+            let name = format!(
+                "{RUN_DIR_PREFIX}{}-{}-{nanos:08x}",
+                std::process::id(),
+                RUN_SEQ.fetch_add(1, Ordering::Relaxed)
+            );
+            let path = base.join(name);
+            match private_dir_builder().create(&path) {
+                Ok(()) => return Ok(Self { path }),
+                // Nom déjà pris (collision, ou dossier planté par un tiers) : on n'y écrit jamais.
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last_err = Some(e),
+                Err(e) => return Err(format!("dossier temporaire de l'agent : {e}")),
+            }
+        }
+        Err(format!(
+            "dossier temporaire de l'agent : aucun nom libre ({})",
+            last_err.map(|e| e.to_string()).unwrap_or_default()
+        ))
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for RunDir {
+    fn drop(&mut self) {
+        match std::fs::remove_dir_all(&self.path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            // Typiquement Windows, si le processus n'est pas encore sorti : la purge des
+            // orphelins le rattrapera.
+            Err(e) => tracing::warn!(
+                "dossier temporaire de l'agent non supprimé ({}) : {e}",
+                self.path.display()
+            ),
+        }
+    }
+}
+
+/// `DirBuilder` non récursif (échoue si le dossier existe), privé au propriétaire sous Unix.
+fn private_dir_builder() -> std::fs::DirBuilder {
+    #[allow(unused_mut)]
+    let mut b = std::fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        b.mode(0o700);
+    }
+    b
+}
+
+/// Supprime les dossiers d'agent de `base` plus vieux que `max_age` (à la date `now`).
+fn purge_stale_run_dirs(base: &Path, now: SystemTime, max_age: Duration) {
+    let Ok(entries) = std::fs::read_dir(base) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_name().to_string_lossy().starts_with(RUN_DIR_PREFIX) {
+            continue;
+        }
+        // `symlink_metadata` : on ne suit pas un lien planté sous notre préfixe.
+        let Ok(meta) = entry.path().symlink_metadata() else {
+            continue;
+        };
+        if !meta.is_dir() {
+            continue;
+        }
+        let stale = meta
+            .modified()
+            .ok()
+            .and_then(|m| now.duration_since(m).ok())
+            .is_some_and(|age| age > max_age);
+        if stale {
+            if let Err(e) = std::fs::remove_dir_all(entry.path()) {
+                tracing::debug!("purge {} : {e}", entry.path().display());
+            }
+        }
+    }
+}
+
+/// Écrit la config de l'agent, lisible par le seul propriétaire sous Unix (elle peut porter la
+/// clé API).
+fn write_json(path: &Path, v: &Value) -> Result<(), String> {
+    use std::io::Write;
     let s = serde_json::to_string_pretty(v).map_err(|e| format!("config JSON : {e}"))?;
-    std::fs::write(path, s).map_err(|e| format!("écriture config ({}) : {e}", path.display()))
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)
+        .and_then(|mut f| f.write_all(s.as_bytes()))
+        .map_err(|e| format!("écriture config ({}) : {e}", path.display()))
 }
 
 /// Env du serveur MCP (embarqué dans le fichier de config de l'agent) : force l'activation +
@@ -138,7 +265,7 @@ fn push_flag(args: &mut Vec<String>, flag: &str, value: &str) {
 
 /// URL + en-tête d'auth du MCP OFFICIEL pour un agent (toolsets de gestion, `readonly` optionnel).
 /// `None` si aucune clé au trousseau (on ne branche alors pas l'officiel). La clé est écrite dans le
-/// fichier de config TEMPORAIRE de l'agent (dossier éphémère `unique_temp_dir`), jamais persistée.
+/// fichier de config de l'agent, dans son [`RunDir`] : privé, et effacé à la fin du processus.
 fn official_url_auth(readonly: bool) -> Option<(String, String)> {
     let key = crate::secrets::read_key().ok().flatten()?;
     let ro = if readonly { "&readonly=1" } else { "" };
@@ -150,13 +277,67 @@ fn official_url_auth(readonly: bool) -> Option<(String, String)> {
     Some((url, format!("Bearer {key}")))
 }
 
+/// Outils natifs d'OpenCode **refusés** dans `opencode.json` (`permission`). Indispensable : `--auto`
+/// approuve toute demande qui n'est pas explicitement refusée, et une règle `deny` reste appliquée
+/// en mode `--auto` (doc OpenCode, « Permissions »). `edit` couvre aussi `write` et `patch`.
+/// L'agent n'a besoin que de nos outils MCP : ni shell, ni disque local, ni sous-agents.
+const OPENCODE_DENIED: &[&str] = &[
+    "bash",
+    "edit",
+    "read",
+    "glob",
+    "grep",
+    "lsp",
+    "task",
+    "skill",
+    "question",
+    "external_directory",
+];
+
+/// Outils web natifs d'OpenCode : autorisés seulement si la recherche web est activée.
+const OPENCODE_WEB: &[&str] = &["webfetch", "websearch"];
+
+/// Outils natifs de Gemini CLI **exclus** (`tools.exclude`) : exécution, écriture, lecture du
+/// disque local, mémoire globale (`save_memory` écrit dans `~/.gemini`). Noms internes de la doc
+/// Gemini CLI ; `search_file_content` est l'ancien nom de `grep_search` (un nom inconnu est ignoré).
+const GEMINI_EXCLUDED: &[&str] = &[
+    "run_shell_command",
+    "write_file",
+    "replace",
+    "read_file",
+    "read_many_files",
+    "list_directory",
+    "glob",
+    "grep_search",
+    "search_file_content",
+    "save_memory",
+];
+
+/// Outils web natifs de Gemini CLI : exclus, ou autorisés sans confirmation si la recherche web
+/// est activée.
+const GEMINI_WEB: &[&str] = &["web_fetch", "google_web_search"];
+
+/// Outils natifs de Claude Code rendus disponibles (`--tools`) : aucun, sauf le web si activé.
+fn claude_builtin_tools(web_search: bool) -> String {
+    if web_search {
+        "WebSearch,WebFetch".to_string()
+    } else {
+        String::new()
+    }
+}
+
 /// Prépare le lancement de l'agent : écrit la config MCP adaptée et construit les arguments.
+///
+/// Sécurité, commune aux trois agents : l'agent lit du contenu non fiable (console où écrivent
+/// les joueurs, crash-reports, fichiers de config), donc une injection de prompt est possible. Ses
+/// outils **natifs** (shell, disque local) sont retirés ; seuls restent nos outils MCP (déjà bornés
+/// par la liste blanche passée au serveur) et, sur option, le web.
 pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
-    let dir = unique_temp_dir()?;
+    let dir = RunDir::create()?;
     let exe = ctx.exe.to_string_lossy().to_string();
     match agent {
         CliAgent::ClaudeCode => {
-            let cfg = dir.join("mcp.json");
+            let cfg = dir.path().join("mcp.json");
             let mut servers = serde_json::Map::new();
             servers.insert(
                 "minestrator".into(),
@@ -171,10 +352,16 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
                 );
             }
             write_json(&cfg, &json!({ "mcpServers": servers }))?;
+            // `--allowedTools` ne fait qu'AJOUTER des autorisations : un `Bash` autorisé dans les
+            // réglages de l'utilisateur resterait utilisable. `--tools` retire les outils natifs
+            // eux-mêmes, et `--strict-mcp-config` écarte les autres serveurs MCP de l'utilisateur.
             let mut args = vec![
                 "-p".to_string(),
                 "--mcp-config".to_string(),
                 cfg.to_string_lossy().to_string(),
+                "--strict-mcp-config".to_string(),
+                "--tools".to_string(),
+                claude_builtin_tools(ctx.web_search),
                 "--allowedTools".to_string(),
                 claude_allowed_tools(ctx.allowed_tools, ctx.web_search, official.is_some()),
                 "--output-format".to_string(),
@@ -191,12 +378,12 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
             if let Some(sid) = ctx.resume {
                 push_flag(&mut args, "--resume", sid);
             }
-            Ok(RunPlan { args, cwd: None, env: vec![] })
+            Ok(RunPlan { args, cwd: None, env: vec![], dir })
         }
         CliAgent::OpenCode => {
-            // OpenCode lit `opencode.json` du répertoire projet (= CWD). Sécurité via la liste
-            // blanche d'env côté serveur MCP + `--auto` (auto-approuve les appels).
-            let cfg = dir.join("opencode.json");
+            // OpenCode lit `opencode.json` du répertoire projet (= CWD). `--auto` approuve les
+            // appels, SAUF ceux refusés explicitement par `permission`.
+            let cfg = dir.path().join("opencode.json");
             let mut mcp = serde_json::Map::new();
             mcp.insert(
                 "minestrator".into(),
@@ -210,7 +397,19 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
                             "headers": { "Authorization": auth }, "enabled": true }),
                 );
             }
-            write_json(&cfg, &json!({ "$schema": "https://opencode.ai/config.json", "mcp": mcp }))?;
+            let mut permission = serde_json::Map::new();
+            for tool in OPENCODE_DENIED {
+                permission.insert((*tool).into(), json!("deny"));
+            }
+            let web = if ctx.web_search { "allow" } else { "deny" };
+            for tool in OPENCODE_WEB {
+                permission.insert((*tool).into(), json!(web));
+            }
+            write_json(
+                &cfg,
+                &json!({ "$schema": "https://opencode.ai/config.json",
+                         "mcp": mcp, "permission": permission }),
+            )?;
             let mut args = vec![
                 "run".to_string(),
                 "--format".to_string(),
@@ -223,14 +422,20 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
             if let Some(sid) = ctx.resume {
                 push_flag(&mut args, "--session", sid);
             }
-            Ok(RunPlan { args, cwd: Some(dir), env: vec![] })
+            let cwd = Some(dir.path().to_path_buf());
+            Ok(RunPlan { args, cwd, env: vec![], dir })
         }
         CliAgent::Gemini => {
-            // Gemini lit `.gemini/settings.json` du répertoire projet (= CWD). `trust:true` débloque
-            // les outils MCP en headless ; `--approval-mode yolo` auto-approuve. Clé `GEMINI_API_KEY`
+            // Gemini lit `.gemini/settings.json` du répertoire projet (= CWD). Clé `GEMINI_API_KEY`
             // attendue dans l'environnement de l'utilisateur (héritée par le sous-processus).
-            let gdir = dir.join(".gemini");
-            std::fs::create_dir_all(&gdir).map_err(|e| format!("dossier .gemini : {e}"))?;
+            // Mode d'approbation `default` (et non `yolo`) : en non-interactif, toute demande de
+            // confirmation est refusée (doc Gemini CLI, « Policy engine »). Nos serveurs MCP sont
+            // `trust: true` → leurs outils passent sans confirmation ; les outils natifs à risque
+            // sont en plus exclus explicitement, au cas où un réglage utilisateur les autoriserait.
+            let gdir = dir.path().join(".gemini");
+            private_dir_builder()
+                .create(&gdir)
+                .map_err(|e| format!("dossier .gemini : {e}"))?;
             let mut servers = serde_json::Map::new();
             servers.insert(
                 "minestrator".into(),
@@ -243,12 +448,23 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
                     json!({ "httpUrl": url, "headers": { "Authorization": auth }, "trust": true }),
                 );
             }
-            write_json(&gdir.join("settings.json"), &json!({ "mcpServers": servers }))?;
+            let mut exclude: Vec<&str> = GEMINI_EXCLUDED.to_vec();
+            let mut tools = serde_json::Map::new();
+            if ctx.web_search {
+                tools.insert("allowed".into(), json!(GEMINI_WEB));
+            } else {
+                exclude.extend_from_slice(GEMINI_WEB);
+            }
+            tools.insert("exclude".into(), json!(exclude));
+            write_json(
+                &gdir.join("settings.json"),
+                &json!({ "mcpServers": servers, "tools": tools }),
+            )?;
             let mut args = vec![
                 "--output-format".to_string(),
                 "stream-json".to_string(),
                 "--approval-mode".to_string(),
-                "yolo".to_string(),
+                "default".to_string(),
             ];
             if !ctx.model.trim().is_empty() {
                 push_flag(&mut args, "-m", ctx.model.trim());
@@ -256,7 +472,8 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
             if let Some(sid) = ctx.resume {
                 push_flag(&mut args, "-r", sid);
             }
-            Ok(RunPlan { args, cwd: Some(dir), env: vec![] })
+            let cwd = Some(dir.path().to_path_buf());
+            Ok(RunPlan { args, cwd, env: vec![], dir })
         }
     }
 }
@@ -526,5 +743,157 @@ mod tests {
             final_text(CliAgent::ClaudeCode, &full).as_deref(),
             Some("Diagnostic complet.")
         );
+    }
+
+    // --- Dossier éphémère & durcissement des outils natifs ------------------
+
+    /// Contexte minimal : MCP officiel NON branché (`plan_run` ne lit alors pas le trousseau).
+    fn ctx<'a>(allowed: &'a [String], web_search: bool) -> RunCtx<'a> {
+        RunCtx {
+            exe: PathBuf::from("minestrator-terminal"),
+            allowed_tools: allowed,
+            web_search,
+            model: "",
+            effort: "medium",
+            resume: None,
+            streaming: false,
+            official_mcp: None,
+        }
+    }
+
+    fn read_json(path: &Path) -> Value {
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    /// Dossier de test propre, hors du répertoire temporaire partagé par les vrais lancements.
+    fn test_base(name: &str) -> PathBuf {
+        let base = std::env::temp_dir().join(format!(
+            "minestrator-test-{name}-{}-{}",
+            std::process::id(),
+            RUN_SEQ.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        base
+    }
+
+    #[test]
+    fn run_dir_is_removed_on_drop() {
+        let base = test_base("drop");
+        let dir = RunDir::create_in(&base).unwrap();
+        let path = dir.path().to_path_buf();
+        write_json(&path.join("mcp.json"), &json!({ "secret": "Bearer x" })).unwrap();
+        assert!(path.join("mcp.json").exists());
+        drop(dir);
+        assert!(!path.exists(), "le dossier (et la clé qu'il contient) doit disparaître");
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn run_dir_names_are_unique() {
+        let base = test_base("unique");
+        let a = RunDir::create_in(&base).unwrap();
+        let b = RunDir::create_in(&base).unwrap();
+        assert_ne!(a.path(), b.path());
+        drop((a, b));
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_dir_and_config_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = test_base("perms");
+        let dir = RunDir::create_in(&base).unwrap();
+        let cfg = dir.path().join("mcp.json");
+        write_json(&cfg, &json!({})).unwrap();
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(dir.path()), 0o700);
+        assert_eq!(mode(&cfg), 0o600);
+        drop(dir);
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn purge_removes_only_stale_agent_dirs() {
+        let base = test_base("purge");
+        let agent = base.join(format!("{RUN_DIR_PREFIX}123-0-0"));
+        let other = base.join("autre-dossier");
+        std::fs::create_dir_all(&agent).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let max_age = Duration::from_secs(3600);
+        // Récent : conservé (un autre processus peut s'en servir).
+        purge_stale_run_dirs(&base, SystemTime::now(), max_age);
+        assert!(agent.exists());
+        // Vu depuis « demain » : périmé → purgé ; un dossier hors préfixe n'est jamais touché.
+        let tomorrow = SystemTime::now() + Duration::from_secs(24 * 3600);
+        purge_stale_run_dirs(&base, tomorrow, max_age);
+        assert!(!agent.exists());
+        assert!(other.exists());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn claude_code_gets_no_native_tools_nor_foreign_mcp() {
+        let allowed = vec!["read_file".to_string()];
+        let plan = plan_run(CliAgent::ClaudeCode, &ctx(&allowed, false)).unwrap();
+        let tools = plan.args.iter().position(|a| a == "--tools").expect("--tools");
+        assert_eq!(plan.args[tools + 1], "", "aucun outil natif sans recherche web");
+        assert!(plan.args.iter().any(|a| a == "--strict-mcp-config"));
+
+        let plan = plan_run(CliAgent::ClaudeCode, &ctx(&allowed, true)).unwrap();
+        let tools = plan.args.iter().position(|a| a == "--tools").unwrap();
+        assert_eq!(plan.args[tools + 1], "WebSearch,WebFetch");
+    }
+
+    #[test]
+    fn opencode_denies_native_tools_explicitly() {
+        let allowed = vec!["read_file".to_string()];
+        let plan = plan_run(CliAgent::OpenCode, &ctx(&allowed, false)).unwrap();
+        let cfg = read_json(&plan.dir.path().join("opencode.json"));
+        for tool in ["bash", "edit", "read", "external_directory", "webfetch", "websearch"] {
+            assert_eq!(cfg["permission"][tool], "deny", "{tool} doit être refusé");
+        }
+        assert_eq!(plan.cwd.as_deref(), Some(plan.dir.path()));
+
+        let plan = plan_run(CliAgent::OpenCode, &ctx(&allowed, true)).unwrap();
+        let cfg = read_json(&plan.dir.path().join("opencode.json"));
+        assert_eq!(cfg["permission"]["webfetch"], "allow");
+        assert_eq!(cfg["permission"]["bash"], "deny");
+    }
+
+    #[test]
+    fn gemini_never_runs_in_yolo_and_excludes_native_tools() {
+        let allowed = vec!["read_file".to_string()];
+        let plan = plan_run(CliAgent::Gemini, &ctx(&allowed, false)).unwrap();
+        assert!(!plan.args.iter().any(|a| a == "yolo" || a == "--yolo" || a == "-y"));
+        let mode = plan.args.iter().position(|a| a == "--approval-mode").unwrap();
+        assert_eq!(plan.args[mode + 1], "default");
+
+        let cfg = read_json(&plan.dir.path().join(".gemini").join("settings.json"));
+        let excluded: Vec<&str> = cfg["tools"]["exclude"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(Value::as_str)
+            .collect();
+        for tool in ["run_shell_command", "write_file", "replace", "read_file", "web_fetch"] {
+            assert!(excluded.contains(&tool), "{tool} doit être exclu");
+        }
+        assert_eq!(cfg["mcpServers"]["minestrator"]["trust"], true);
+
+        let plan = plan_run(CliAgent::Gemini, &ctx(&allowed, true)).unwrap();
+        let cfg = read_json(&plan.dir.path().join(".gemini").join("settings.json"));
+        assert!(!cfg["tools"]["exclude"].as_array().unwrap().contains(&json!("web_fetch")));
+        assert_eq!(cfg["tools"]["allowed"], json!(GEMINI_WEB));
+    }
+
+    #[test]
+    fn plan_dir_disappears_with_the_plan() {
+        let allowed = vec![];
+        let plan = plan_run(CliAgent::Gemini, &ctx(&allowed, false)).unwrap();
+        let path = plan.dir.path().to_path_buf();
+        assert!(path.join(".gemini").join("settings.json").exists());
+        drop(plan);
+        assert!(!path.exists());
     }
 }

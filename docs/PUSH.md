@@ -33,6 +33,8 @@ Trois morceaux : **(1)** le daemon (fait — `crates/minestrator-daemon`), **(2)
 Il réutilise le core, démarre le superviseur, et pousse `CoreEvent::Alert` en FCM. Config et
 lancement : [`crates/minestrator-daemon/README.md`](../crates/minestrator-daemon/README.md).
 À héberger là où il tourne 24/7 (petit VPS, Raspberry Pi, la même machine que le desktop…).
+Sur la machine du desktop, il peut aussi tourner comme **service système** installé avec l'app
+(Windows, Linux, macOS) : voir [`SERVICE.md`](./SERVICE.md).
 
 ### Access token FCM (production)
 

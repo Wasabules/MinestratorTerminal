@@ -62,7 +62,7 @@ export const VIEWS: { id: ServerView; icon: string; ready: boolean }[] = [
   { id: 'mods', icon: 'package', ready: true },
   { id: 'assistant', icon: 'message-circle', ready: true },
   { id: 'backups', icon: 'hard-drive', ready: true },
-  { id: 'settings', icon: 'settings', ready: false },
+  { id: 'settings', icon: 'settings', ready: true },
 ];
 
 export function viewMeta(view: ServerView) {

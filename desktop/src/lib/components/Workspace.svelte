@@ -4,7 +4,8 @@
   import { tabs } from '$lib/tabs/tabs.svelte';
   import { t } from '$lib/i18n';
   import { alertEvents, copilotEvents, sftpEvents, consoleEvents, modEvents } from '$lib/events';
-  import { addAlert } from '$lib/alerts/alerts.svelte';
+  import { addAlert, addBacklog } from '$lib/alerts/alerts.svelte';
+  import { api, humanizeError } from '$lib/ipc';
   import { addDiagnosis, startRun, progressRun } from '$lib/copilot/diagnoses.svelte';
   import { applyProgress } from '$lib/transfers/transfers.svelte';
   import { applyInstallProgress } from '$lib/mods/installs.svelte';
@@ -50,7 +51,46 @@
     unlisteners.push(await consoleEvents.status((p) => onRuntime(p.conn_id, p.state)));
     unlisteners.push(await consoleEvents.stats((p) => onRuntime(p.conn_id, p.state)));
     if (destroyed) unlisteners.forEach((u) => u()); // démonté pendant l'enregistrement
+    // Alertes détectées par le service d'arrière-plan pendant que l'app était fermée (24 h).
+    // Vide si aucun service ne supervise ce compte.
+    api
+      .serviceAlerts(24 * 3600)
+      .then(addBacklog)
+      .catch(() => {
+        /* service absent ou inaccessible : rien à rattraper */
+      });
+    void runPendingServiceSetup();
   });
+
+  /**
+   * Supervision en arrière-plan choisie dans l'installeur (Windows). L'installeur ne demande aucun
+   * droit : l'activation (élévation UAC + transmission de la clé) a lieu ici, une fois connecté,
+   * car le service a besoin de la clé API. Le choix est consommé : jamais redemandé.
+   */
+  async function runPendingServiceSetup() {
+    let pending = false;
+    try {
+      pending = await api.serviceTakePendingSetup();
+    } catch {
+      return;
+    }
+    if (!pending) return;
+    const note = (severity: string, message: string) =>
+      addAlert({
+        server_id: 0,
+        server_name: t('service.title'),
+        kind: 'service',
+        severity,
+        message,
+        ts: Math.floor(Date.now() / 1000),
+      });
+    try {
+      await api.serviceEnable();
+      note('info', t('service.setupDone'));
+    } catch (e) {
+      note('warning', `${t('service.setupFailed')} (${humanizeError(e)})`);
+    }
+  }
   onDestroy(() => {
     destroyed = true;
     unlisteners.forEach((u) => u());

@@ -20,6 +20,7 @@ pub enum ArchiveKind {
 
 /// Une entrée d'archive (pour l'UI, façon [`crate::models::SftpEntry`] mais interne à l'archive).
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct ArchiveEntry {
     pub name: String,
     pub size: u64,

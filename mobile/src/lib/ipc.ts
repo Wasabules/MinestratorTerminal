@@ -206,6 +206,8 @@ export const api = {
   requestBatteryUnrestricted: () => invoke<void>("request_battery_unrestricted"),
   /** Ouvre la fiche « infos de l'app » (batterie, autostart selon l'OEM, notifications). */
   openAppSettings: () => invoke<void>("open_app_settings"),
+  /** Journaux récents anonymisés (rapport de bug). Chaîne vide s'il n'y en a aucun. */
+  exportLogs: () => invoke<string>("export_logs"),
 };
 
 /** Ouvre une URL dans le navigateur externe (plugin opener). */

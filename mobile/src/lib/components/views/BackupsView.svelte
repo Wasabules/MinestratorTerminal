@@ -107,20 +107,30 @@
         <p class="dim">{t("backups.none")}</p>
       {:else}
         <ul>
-          {#each snapshots as s (s.id)}
+          {#each snapshots as s (s.id ?? `job-${s.job_id}`)}
             <li>
               <span class="meta">
-                <strong class="selectable">{s.name || `#${s.id}`}</strong>
-                <small class="dim selectable">{s.date} · {fmtSize(s.size)}</small>
+                <strong class="selectable">{s.name || (s.id != null ? `#${s.id}` : "")}</strong>
+                {#if s.id == null || s.progress != null}
+                  <!-- Création en cours : ni restaurable ni supprimable tant qu'il n'a pas d'id. -->
+                  <small class="dim">
+                    {t("backups.inProgress")}{#if s.progress != null}&nbsp;{s.progress}%{/if}
+                  </small>
+                {:else}
+                  <small class="dim selectable">{s.date} · {fmtSize(s.size)}</small>
+                {/if}
               </span>
-              <button
-                class="act"
-                onclick={() => (modal = { kind: "restore-snapshot", id: s.id, label: s.name })}
-                aria-label={t("backups.restore")}><Icon name="restart" size={18} /></button>
-              <button
-                class="act danger"
-                onclick={() => (modal = { kind: "delete-snapshot", id: s.id, label: s.name })}
-                aria-label={t("backups.delete")}><Icon name="trash" size={18} /></button>
+              {#if s.id != null && s.progress == null}
+                {@const id = s.id}
+                <button
+                  class="act"
+                  onclick={() => (modal = { kind: "restore-snapshot", id, label: s.name })}
+                  aria-label={t("backups.restore")}><Icon name="restart" size={18} /></button>
+                <button
+                  class="act danger"
+                  onclick={() => (modal = { kind: "delete-snapshot", id, label: s.name })}
+                  aria-label={t("backups.delete")}><Icon name="trash" size={18} /></button>
+              {/if}
             </li>
           {/each}
         </ul>

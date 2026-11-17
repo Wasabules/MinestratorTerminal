@@ -4,7 +4,7 @@
 use minestrator_core::{
     ActivityPage, ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Egg, Error, FicsitInstallItem,
     FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
-    LivePlayers,
+    LivePlayers, MyBoxDetails, ServerLive, ServerProperties,
     MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
     MetricSample, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
     ServersOverview, SftpEntry, SmlVersion, Snapshot, SupervisorConfig, UserNotification, UserProfile,
@@ -59,6 +59,35 @@ pub async fn live_light(core: State<'_, Arc<Core>>, id: i64) -> Result<LiveLight
     core.live_light(id).await
 }
 
+/// État temps réel complet (consommation instantanée dont FlexCore, réseau, uptime).
+#[tauri::command]
+pub async fn server_live(core: State<'_, Arc<Core>>, id: i64) -> Result<ServerLive, Error> {
+    core.server_live(id).await
+}
+
+/// Réglages du serveur (`server.properties`).
+#[tauri::command]
+pub async fn server_properties(core: State<'_, Arc<Core>>, id: i64) -> Result<ServerProperties, Error> {
+    core.server_properties(id).await
+}
+
+/// Modifie un réglage existant ; effet au prochain démarrage.
+#[tauri::command]
+pub async fn set_server_property(
+    core: State<'_, Arc<Core>>,
+    id: i64,
+    property: String,
+    value: String,
+) -> Result<(), Error> {
+    core.set_server_property(id, &property, &value).await
+}
+
+/// Détail d'une MyBox (renouvellement automatique, ressources restantes, offre, serveurs).
+#[tauri::command]
+pub async fn mybox_details(core: State<'_, Arc<Core>>, id: i64) -> Result<MyBoxDetails, Error> {
+    core.mybox_details(id).await
+}
+
 #[tauri::command]
 pub async fn live_players_bulk(
     core: State<'_, Arc<Core>>,
@@ -89,13 +118,14 @@ pub async fn user_notifications(
     core.user_notifications().await
 }
 
+/// Historique local, complété par celui du service d'arrière-plan quand c'est lui qui supervise.
 #[tauri::command]
-pub fn metrics_history(
+pub async fn metrics_history(
     core: State<'_, Arc<Core>>,
     server_id: i64,
     since_secs: i64,
 ) -> Result<Vec<MetricSample>, Error> {
-    core.metrics(server_id, since_secs)
+    core.metrics_history(server_id, since_secs).await
 }
 
 #[tauri::command]
@@ -103,9 +133,14 @@ pub fn get_supervisor_config(core: State<'_, Arc<Core>>) -> SupervisorConfig {
     core.get_supervisor_config()
 }
 
+/// Enregistre les réglages et les transmet au service d'arrière-plan s'il supervise.
 #[tauri::command]
-pub fn set_supervisor_config(core: State<'_, Arc<Core>>, config: SupervisorConfig) {
-    core.set_supervisor_config(config);
+pub async fn set_supervisor_config(
+    core: State<'_, Arc<Core>>,
+    config: SupervisorConfig,
+) -> Result<(), Error> {
+    core.set_supervisor_config_synced(config).await;
+    Ok(())
 }
 
 #[tauri::command]
@@ -407,6 +442,27 @@ pub fn hide_to_tray(window: tauri::Window) {
 #[tauri::command]
 pub fn quit_app(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+// --- Journaux (rapport de bug) ----------------------------------------------
+
+/// Journaux récents **anonymisés**, à joindre à un rapport de bug (le front les copie).
+#[tauri::command]
+pub fn export_logs() -> String {
+    minestrator_core::logs::export_recent(minestrator_core::logs::EXPORT_MAX_BYTES)
+}
+
+/// Ouvre le dossier des journaux dans le gestionnaire de fichiers. Erreur locale (chaîne) : rien
+/// à voir avec l'API, donc pas de variant de `core::Error`.
+#[tauri::command]
+pub fn open_logs_dir(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let dir = minestrator_core::logs::logs_dir()
+        .ok_or_else(|| "dossier des journaux introuvable".to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("dossier des journaux : {e}"))?;
+    app.opener()
+        .open_path(dir.to_string_lossy(), None::<&str>)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -809,4 +865,70 @@ pub fn ficsit_install(
     tauri::async_runtime::spawn(async move {
         core.run_ficsit_install(server_id, items, transfer_id).await;
     });
+}
+
+// --- Service d'arrière-plan (voir docs/SERVICE.md) --------------------------------------
+// L'app ne parle au service que par le core (IPC local) ; les actions qui exigent des droits
+// administrateur passent par une élévation du système (UAC, pkexec, osascript).
+
+/// État du service (OS + IPC) et qui supervise. Aucune action, aucun privilège.
+#[tauri::command]
+pub async fn service_overview(
+    core: State<'_, Arc<Core>>,
+) -> Result<minestrator_core::ServiceOverview, Error> {
+    Ok(core.service_overview().await)
+}
+
+/// Active le service pour l'utilisateur courant (élévation si besoin, puis clé par IPC).
+#[tauri::command]
+pub async fn service_enable(
+    core: State<'_, Arc<Core>>,
+) -> Result<minestrator_core::ServiceOverview, Error> {
+    core.service_enable().await
+}
+
+/// Le service oublie la clé et cesse de superviser ; l'app reprend la main.
+#[tauri::command]
+pub async fn service_disable(
+    core: State<'_, Arc<Core>>,
+) -> Result<minestrator_core::ServiceOverview, Error> {
+    core.service_disable().await
+}
+
+/// Met à jour le service (élévation) : sa copie protégée ne suit pas les mises à jour de l'app.
+#[tauri::command]
+pub async fn service_update(
+    core: State<'_, Arc<Core>>,
+) -> Result<minestrator_core::ServiceOverview, Error> {
+    core.service_update().await
+}
+
+/// Choix « supervision en arrière-plan » fait dans l'installeur Windows, consommé une fois.
+#[tauri::command]
+pub fn service_take_pending_setup(core: State<'_, Arc<Core>>) -> bool {
+    core.service_take_pending_setup()
+}
+
+/// Désinstalle le service (élévation) ; `purge` efface aussi son historique et ses journaux.
+#[tauri::command]
+pub async fn service_uninstall(
+    core: State<'_, Arc<Core>>,
+    purge: bool,
+) -> Result<minestrator_core::ServiceOverview, Error> {
+    core.service_uninstall(purge).await
+}
+
+/// Redémarre le service via son gestionnaire (propriétaire autorisé, sans élévation).
+#[tauri::command]
+pub async fn service_restart(core: State<'_, Arc<Core>>) -> Result<(), Error> {
+    core.service_restart().await
+}
+
+/// Alertes récentes du service (arriéré pour le centre d'alertes, sans notification).
+#[tauri::command]
+pub async fn service_alerts(
+    core: State<'_, Arc<Core>>,
+    since_secs: i64,
+) -> Result<Vec<minestrator_core::Alert>, Error> {
+    core.service_alerts(since_secs).await
 }

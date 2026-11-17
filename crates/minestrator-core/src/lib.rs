@@ -8,6 +8,9 @@
 
 mod api;
 mod archive;
+/// Génération des types TypeScript des frontends (feature `ts`, hors build de production).
+#[cfg(feature = "ts")]
+pub mod bindings;
 mod cache;
 mod cli;
 mod cli_agent;
@@ -22,6 +25,7 @@ mod factorio;
 mod ficsit;
 mod games;
 mod llm;
+pub mod logs;
 mod mca;
 pub mod mcp;
 mod models;
@@ -33,6 +37,7 @@ mod perf;
 mod persist;
 mod redact;
 mod secrets;
+pub mod service;
 mod sftp;
 mod store;
 mod supervisor;
@@ -44,7 +49,7 @@ mod world;
 pub use archive::ArchiveEntry;
 pub use cli_agent::{detect_clis, CliAgent, CliStatus};
 pub use copilot::{Autonomy, ChatReply, CopilotConfig, Effort};
-pub use error::{Error, Result};
+pub use error::{Error, ErrorKind, ErrorPayload, Result};
 pub use events::{
     Alert, ChatDelta, ConsoleConnection, ConsoleOutput, ConsoleStats, ConsoleStatus,
     CopilotProgress, CopilotStarted, CoreEvent, Diagnosis, ModInstallProgress, ProposedAction,
@@ -55,6 +60,7 @@ pub use ficsit::{
     FicsitVersion, SmlTarget, SmlVersion,
 };
 pub use games::GameCapabilities;
+pub use util::data_dir;
 pub use llm::Provider;
 pub use mods::{
     FactorioSettings, GameSettings, MarketInstalledMod, MarketMod, MarketModPage, MarketModVersion,
@@ -65,12 +71,15 @@ pub use nbt::NbtNode;
 pub use redact::PrivacyConfig;
 pub use models::{
     ActivityEntry, ActivityPage, Backup, CpuLimits, Egg, InstalledItem, LimitMb, LiveLight, LivePlayers, MarketItem, MarketPage,
-    MarketVersion, MyBoxSummary, Players, ServerDetails, ServerListItem, ServersOverview,
+    MarketVersion, LiveCpu, LiveNetwork, LiveStats, LiveUptime, LiveUsage, MyBoxDetails, MyBoxInfo,
+    MyBoxOffer, MyBoxServer, MyBoxSummary, Players, ServerDetails, ServerListItem, ServerLive,
+    ServerProperties, ServersOverview,
     SftpEntry,
     Snapshot, Startup, UserNotification, UserProfile,
 };
-pub use store::MetricSample;
-pub use supervisor::{Supervisor, SupervisorConfig, SupervisorState};
+pub use service::{ServiceOverview, ServiceStatus};
+pub use store::{MetricSample, StoredAlert};
+pub use supervisor::{Supervisor, SupervisorConfig, SupervisorHeartbeat, SupervisorState};
 
 use api::ApiClient;
 use console::ConsoleManager;
@@ -115,6 +124,8 @@ pub struct Core {
     /// `list_servers` / opération snapshot (2 RTT → 1).
     user_id_cache: Mutex<Option<i64>>,
     events: broadcast::Sender<CoreEvent>,
+    /// Lien avec le service d'arrière-plan (côté app) : qui supervise, curseur des alertes.
+    service_link: service::ServiceLink,
 }
 
 impl Core {
@@ -124,14 +135,9 @@ impl Core {
         let console = Arc::new(ConsoleManager::new(events.clone()));
 
         // Un frontend peut imposer le dossier de données via MINESTRATOR_DATA_DIR (mobile : dossier
-        // privé de l'app). Sinon, dossier de données standard de l'OS ; repli temporaire.
-        let dir = std::env::var_os("MINESTRATOR_DATA_DIR")
-            .map(std::path::PathBuf::from)
-            .or_else(|| {
-                directories::ProjectDirs::from("com", "geoffreylecoq", "MinestratorTerminal")
-                    .map(|d| d.data_dir().to_path_buf())
-            })
-            .unwrap_or_else(|| std::env::temp_dir().join("minestrator"));
+        // privé de l'app). Sinon, dossier de données standard de l'OS ; repli temporaire (pas de
+        // secrets ici : historique et réglages seulement).
+        let dir = util::data_dir().unwrap_or_else(|| std::env::temp_dir().join("minestrator"));
         let _ = std::fs::create_dir_all(&dir);
         let store = Arc::new(MetricsStore::open(&dir));
 
@@ -146,6 +152,7 @@ impl Core {
             privacy: PersistedConfig::load(&dir, "privacy.json"),
             ficsit_paths: PersistedConfig::load(&dir, "ficsit_paths.json"),
             game_settings: PersistedConfig::load(&dir, "game_settings.json"),
+            service_link: service::ServiceLink::new(&dir),
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
@@ -469,6 +476,31 @@ impl Core {
 
     pub async fn live_light(&self, id: i64) -> Result<LiveLight> {
         self.api.get_live_light(&self.token()?, id).await
+    }
+
+    /// État temps réel complet (consommation instantanée dont FlexCore, réseau, uptime) en un
+    /// GET — là où il fallait auparavant ouvrir un WebSocket éphémère et attendre un échantillon.
+    pub async fn server_live(&self, id: i64) -> Result<ServerLive> {
+        self.api.get_server_live(&self.token()?, id).await
+    }
+
+    /// Réglages du serveur (`server.properties`), sans SFTP.
+    pub async fn server_properties(&self, id: i64) -> Result<ServerProperties> {
+        self.api.get_properties(&self.token()?, id).await
+    }
+
+    /// Modifie **un** réglage existant ; effet au prochain démarrage.
+    pub async fn set_server_property(&self, id: i64, property: &str, value: &str) -> Result<()> {
+        let property = property.trim();
+        if property.is_empty() {
+            return Err(Error::Unexpected("nom de réglage vide".into()));
+        }
+        self.api.set_property(&self.token()?, id, property, value).await
+    }
+
+    /// Détail d'une MyBox : renouvellement automatique, ressources restantes, offre, serveurs.
+    pub async fn mybox_details(&self, id: i64) -> Result<MyBoxDetails> {
+        self.api.get_mybox(&self.token()?, id).await
     }
 
     /// Joueurs en ligne de plusieurs serveurs en **un seul appel** — pour une liste, là où
@@ -1048,13 +1080,19 @@ impl Core {
     }
 
     /// Attend (borné ~24 s) que le serveur soit hors ligne après un stop, pour écrire sans verrou.
+    /// Un GET `/live` par tour ; repli sur l'échantillon WebSocket si l'endpoint échoue.
     async fn wait_offline(&self, server_id: i64) {
         for _ in 0..12 {
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            match self.sample_stats(server_id).await {
-                Ok(Some(s)) if s.state == "offline" => return,
-                Ok(None) | Err(_) => return,
-                _ => {}
+            let state = match self.server_live(server_id).await {
+                Ok(live) => Some(live.state),
+                Err(_) => match self.sample_stats(server_id).await {
+                    Ok(Some(s)) => Some(s.state),
+                    Ok(None) | Err(_) => return,
+                },
+            };
+            if state.as_deref() == Some("offline") {
+                return;
             }
         }
     }
@@ -1126,7 +1164,8 @@ impl Core {
 
     /// Ouvre une connexion monitor éphémère et renvoie le premier échantillon de stats
     /// (CPU/RAM/disque instantanés), ou `None` si le serveur est hors ligne/hiberné.
-    /// Utile aux frontends « one-shot » (MCP) même sans superviseur actif.
+    /// Préférer [`Self::server_live`] (un GET, sans WebSocket) ; reste le **repli** quand `/live`
+    /// échoue, et la source de l'aperçu mobile (état `running`/`offline` façon Wings).
     pub async fn sample_stats(&self, server_id: i64) -> Result<Option<ConsoleStats>> {
         let token = self.token()?;
         let conn_id = format!("sample:{server_id}:{}", now_secs());
@@ -1805,6 +1844,7 @@ const REGION_CAP: u64 = 64 * 1024 * 1024;
 
 /// Chunk généré d'une région (coordonnées GLOBALES, taille, date, corruption), pour la carte UI.
 #[derive(serde::Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct RegionChunk {
     pub x: i64,
     pub z: i64,

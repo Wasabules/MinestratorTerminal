@@ -1,0 +1,63 @@
+name: Audit de sécurité
+
+# Failles connues (RustSec, avis npm) dans les dépendances. Hebdomadaire, en plus de chaque
+# changement de lockfile : une faille publiée après coup doit se voir sans attendre un commit.
+on:
+  schedule:
+    - cron: '0 6 * * 1' # lundi 06:00 UTC
+  push:
+    branches: [main]
+    paths:
+      - 'Cargo.lock'
+      - '**/package-lock.json'
+  pull_request:
+    paths:
+      - 'Cargo.lock'
+      - '**/package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cargo:
+    name: cargo audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Installer cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: cargo audit
+        run: cargo audit
+
+  npm:
+    name: npm audit (${{ matrix.app }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [desktop, mobile]
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: ${{ matrix.app }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      # Production : bloquant. Outillage de build (dev) : signalé sans bloquer, il n'est pas
+      # embarqué dans l'app (front statique servi par Tauri).
+      - name: Dépendances de production
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Outillage de build (informatif)
+        run: npm audit --audit-level=high || echo "::warning::failles dans l'outillage de build de ${{ matrix.app }} (voir le détail ci-dessus)"

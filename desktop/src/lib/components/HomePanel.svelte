@@ -3,7 +3,7 @@
   import { api, humanizeError } from '$lib/ipc';
   import { t } from '$lib/i18n';
   import { rememberCaps } from '$lib/games/capabilities.svelte';
-  import type { MyBoxSummary, ServerListItem, ServersOverview } from '$lib/types';
+  import type { MyBoxDetails, MyBoxSummary, ServerListItem, ServersOverview } from '$lib/types';
   import ServerCard from './ServerCard.svelte';
 
   let data = $state<ServersOverview | null>(null);
@@ -11,6 +11,8 @@
   let error = $state<string | null>(null);
   /** Joueurs en ligne par serveur, remplis en UN appel groupé après le chargement de la liste. */
   let players = $state<Record<number, { current: number; limit: number }>>({});
+  /** Détail par MyBox (`GET /mybox/{id}`) : renouvellement auto, ressources libres, suppression. */
+  let details = $state<Record<number, MyBoxDetails>>({});
 
   async function load() {
     loading = true;
@@ -19,6 +21,7 @@
       data = await api.listServers();
       rememberCaps(data.servers);
       void loadPlayers(data.servers);
+      void loadDetails(data.myboxes);
     } catch (e) {
       error = humanizeError(e);
     } finally {
@@ -41,6 +44,22 @@
     } catch {
       players = {};
     }
+  }
+
+  /**
+   * Un GET par MyBox (en parallèle ; un compte en a rarement plus de quelques-unes). Best-effort,
+   * comme les joueurs : sans détail, la carte garde ses informations de base.
+   */
+  async function loadDetails(boxes: MyBoxSummary[]) {
+    const rows = await Promise.all(
+      boxes.map((b) => api.myboxDetails(b.id).then((d) => [b.id, d] as const, () => null))
+    );
+    details = Object.fromEntries(rows.filter((r) => r !== null));
+  }
+
+  /** Nombre lisible : entier tel quel, sinon une décimale (ressources fractionnaires). */
+  function num(n: number): string {
+    return Number.isInteger(n) ? String(n) : n.toFixed(1);
   }
 
   onMount(load);
@@ -83,13 +102,28 @@
             <h2>{mybox.name}</h2>
             <span class="dim g-sub">
               {mybox.offer} · {t('home.resources', { cpu: mybox.cpu, ram: mybox.ram, disk: mybox.disk })}
+              {#if details[mybox.id] && !mybox.expired}
+                · {t('home.free', {
+                  cpu: num(details[mybox.id].mybox.cpu_remaining),
+                  ram: num(details[mybox.id].mybox.ram_remaining),
+                })}
+              {/if}
             </span>
           </div>
           <div class="g-badges">
             {#if mybox.pro}<span class="chip pro">{t('home.pro')}</span>{/if}
-            {#if mybox.expired}<span class="chip danger">{t('home.expired')}</span>
+            {#if mybox.expired}
+              {@const deletion = details[mybox.id]?.mybox.deletion_days}
+              <span class="chip danger">
+                {deletion != null ? t('home.deletionIn', { days: deletion }) : t('home.expired')}
+              </span>
             {:else if mybox.suspended}<span class="chip danger">{t('home.suspended')}</span>
-            {:else}<span class="chip">{t('home.daysLeft', { days: mybox.days_left })}</span>{/if}
+            {:else}
+              {#if details[mybox.id]?.mybox.auto_renew}
+                <span class="chip ok" title={t('home.autoRenewHint')}>{t('home.autoRenew')}</span>
+              {/if}
+              <span class="chip">{t('home.daysLeft', { days: mybox.days_left })}</span>
+            {/if}
           </div>
         </div>
 
@@ -192,6 +226,10 @@
     color: #fff;
     background: var(--brand-pro);
     border-color: transparent;
+  }
+  .chip.ok {
+    color: var(--state-running);
+    border-color: color-mix(in srgb, var(--state-running) 40%, var(--border));
   }
   .chip.danger {
     color: var(--state-danger);

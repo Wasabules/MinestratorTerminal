@@ -15,6 +15,7 @@
     MetricSample,
     ActivityEntry,
     ServerListItem,
+    ServerLive,
   } from '$lib/types';
   import Gauge from '../Gauge.svelte';
   import PowerControl from '../PowerControl.svelte';
@@ -27,6 +28,8 @@
   const connId = $derived(tab.id);
 
   let live = $state<LiveLight | null>(null);
+  /** `/live` : FlexCore, réseau, uptime — ce que `live/light` et le WebSocket ne donnent pas. */
+  let liveNow = $state<ServerLive | null>(null);
   // Entrée de la liste des serveurs : porte l'adresse, mais aussi les métadonnées que seule la
   // liste fournit (avertissements de power action, dernier backup, référence support).
   let item = $state<ServerListItem | null>(null);
@@ -68,7 +71,11 @@
     void loadHistory();
     void connect();
     void loadMetrics();
-    metricsTimer = setInterval(loadMetrics, 15000);
+    void loadNow();
+    metricsTimer = setInterval(() => {
+      void loadMetrics();
+      void loadNow();
+    }, 15000);
   });
   onDestroy(() => {
     destroyed = true;
@@ -84,6 +91,14 @@
       live = await api.liveLight(serverId);
     } catch {
       /* limites indisponibles */
+    }
+  }
+
+  async function loadNow() {
+    try {
+      liveNow = await api.serverLive(serverId);
+    } catch {
+      /* endpoint indisponible : les faits concernés restent masqués */
     }
   }
 
@@ -284,8 +299,33 @@
     </div>
     <div class="fact">
       <span class="k">{t('overview.uptime')}</span>
-      <span class="v">{stats && stats.uptime > 0 ? fmtUptime(stats.uptime) : '—'}</span>
+      <span class="v">
+        {#if stats && stats.uptime > 0}
+          {fmtUptime(stats.uptime)}
+        {:else if liveNow?.stats.uptime}
+          {fmtUptime(liveNow.stats.uptime.total_seconds * 1000)}
+        {:else}
+          —
+        {/if}
+      </span>
     </div>
+    <!-- FlexCore : seulement pour une offre qui en comporte. -->
+    {#if liveNow?.stats.cpu && liveNow.stats.cpu.flexcore > 0}
+      <div class="fact" title={t('overview.flexcoreHint')}>
+        <span class="k">{t('overview.flexcore')}</span>
+        <span class="v" class:burst={liveNow.stats.cpu.is_bursting}>
+          {liveNow.stats.cpu.is_bursting ? t('overview.flexcoreOn') : t('overview.flexcoreOff')}
+        </span>
+      </div>
+    {/if}
+    {#if liveNow?.stats.network}
+      <div class="fact" title={t('overview.networkHint')}>
+        <span class="k">{t('overview.network')}</span>
+        <span class="v small">
+          ↓ {fmtBytes(liveNow.stats.network.rx_bytes)} · ↑ {fmtBytes(liveNow.stats.network.tx_bytes)}
+        </span>
+      </div>
+    {/if}
   </section>
 
   <section class="block">
@@ -547,6 +587,12 @@
     font-size: 18px;
     font-weight: 700;
     font-family: var(--font-mono);
+  }
+  .fact .v.small {
+    font-size: 14px;
+  }
+  .fact .v.burst {
+    color: var(--state-pending);
   }
   .block {
     display: flex;

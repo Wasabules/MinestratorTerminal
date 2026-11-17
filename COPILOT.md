@@ -59,13 +59,22 @@ agnostique :
   Les Réglages affichent un **sélecteur segmenté** des trois agents + un indicateur « ✓ détecté ·
   <version> » ou « ⚠ absent », avec bouton re-scan. Le binaire reste **surchargeable** (champ
   commande).
-- **⚠ Avertissement sécurité** (en-tête de `cli_agent.rs`) : notre liste blanche d'outils ne borne
-  que **notre serveur MCP**, pas les outils **natifs** de l'agent (shell, lecture/écriture fichier
-  local, web). Claude Code restreint ses outils natifs via `--allowedTools` → **non concerné**. Mais
-  **OpenCode** (`--auto`) et **Gemini** (`--approval-mode yolo`) sont lancés en **auto-approbation
-  totale** de leurs outils natifs : un contenu injecté qu'ils lisent (console d'un joueur, crash-
-  report, config) pourrait leur faire exécuter une commande shell sur la machine de l'admin. **En
-  attendant un durcissement de leur config, préférer Claude Code.**
+- **Sécurité des outils natifs** (en-tête de `cli_agent.rs`) : notre liste blanche ne borne que
+  **notre serveur MCP**. Or l'agent lit du contenu non fiable (console où écrivent les joueurs,
+  crash-reports, configs) : une injection de prompt pourrait lui faire exécuter une commande sur la
+  machine de l'admin. Les outils **natifs** (shell, disque local, et web hors option « recherche
+  web ») sont donc retirés à chaque agent, selon son propre mécanisme (schémas vérifiés dans les
+  docs officielles, testés dans `cli_agent.rs`) :
+
+  | Agent | Mécanisme |
+  |---|---|
+  | Claude Code | `--tools ""` (ou `WebSearch,WebFetch`) retire les outils natifs — `--allowedTools` seul ne fait qu'*ajouter* des autorisations ; `--strict-mcp-config` écarte les autres serveurs MCP de l'utilisateur |
+  | OpenCode | `permission: { bash, edit, read, … : "deny" }` dans `opencode.json` — `--auto` approuve tout **sauf** les refus explicites |
+  | Gemini CLI | mode d'approbation `default` (plus `yolo`) : en non-interactif, toute demande de confirmation est refusée ; nos serveurs MCP sont `trust: true` ; `tools.exclude` en plus |
+
+- **Clé API sur disque** : la config MCP de l'agent (qui porte la clé quand le MCP officiel est
+  branché) est écrite dans un `RunDir` : dossier créé neuf, `0700`/`0600` sous Unix, **effacé à la
+  fin du processus** ; les orphelins de plus de 24 h (crash, anciennes versions) sont purgés.
 
 ### Deux modes d'exécution
 

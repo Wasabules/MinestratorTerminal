@@ -1,0 +1,1310 @@
+// Fichier GÉNÉRÉ depuis les structures Rust (crates/minestrator-core, feature `ts`) par ts-rs.
+// Ne pas modifier à la main : changer le type Rust, puis lancer `cargo bindings`.
+// `cargo bindings-check` (CI) échoue si ce fichier ne correspond plus au Rust.
+
+// --- Erreurs (error.rs) ---
+
+/**
+ * Forme JSON d'une [`Error`] reçue par les frontends (type TypeScript `AppError`). La
+ * sérialisation d'[`Error`] passe par cette structure : le type généré ne peut pas diverger.
+ */
+export type AppError = {
+  kind: AppErrorKind,
+  /**
+   * Message lisible (français), affiché quand le frontend n'a pas de traduction pour `kind`.
+   */
+  message: string,
+  /**
+   * Sous-cas stable d'une erreur `service` (`unreachable`, `forbidden`, `elevation_cancelled`…),
+   * traduit par l'UI via `service.errors.*`. Absent du JSON pour les autres erreurs.
+   */
+  code?: string,
+};
+
+/**
+ * Discriminant d'une [`Error`], tel qu'il part dans le champ `kind` du JSON (type TypeScript
+ * `AppErrorKind`). Un variant d'[`Error`] ajouté doit être rattaché ici via [`Error::error_kind`].
+ */
+export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "service";
+
+// --- Compte, serveurs, journal (models.rs, games.rs) ---
+
+export type UserProfile = {
+  id: number,
+  pseudo: string,
+  mail: string,
+  credits: number,
+  mybox_count: number,
+};
+
+/**
+ * Notification exposée aux frontends.
+ */
+export type UserNotification = {
+  id: string,
+  /**
+   * Catégorie donnée par l'hébergeur (`Information`, `Erreur`, `StratorAI`…).
+   */
+  kind: string,
+  /**
+   * Sévérité au vocabulaire du panel : `error` | `warning` | `success` | `primary`.
+   */
+  color: string,
+  message: string,
+  date: string,
+  read: boolean,
+};
+
+export type ServersOverview = {
+  myboxes: Array<MyBoxSummary>,
+  servers: Array<ServerListItem>,
+};
+
+export type MyBoxSummary = {
+  id: number,
+  name: string,
+  offer: string,
+  owner: boolean,
+  cpu: number,
+  ram: number,
+  disk: number,
+  days_left: number,
+  expired: boolean,
+  suspended: boolean,
+  pro: boolean,
+  trial: boolean,
+  bonus: boolean,
+  /**
+   * Date d'expiration brute, pour un affichage exact (`days_left` reste l'arrondi).
+   */
+  expires_at: string | null,
+};
+
+export type ServerListItem = {
+  id: number,
+  name: string,
+  mybox_id: number,
+  egg_name: string,
+  /**
+   * Nom de fichier brut renvoyé par l'API (`minecraft.webp`) — conservé pour le debug.
+   */
+  egg_icon: string | null,
+  /**
+   * URL CDN complète de la vignette du jeu, prête à poser dans un `<img>`.
+   */
+  egg_icon_url: string | null,
+  /**
+   * URL CDN de la bannière large du jeu (~200 Kio : ne la charger que si elle est affichée).
+   */
+  egg_header_url: string | null,
+  address: string,
+  status: string,
+  owner: boolean,
+  bedrock: boolean,
+  /**
+   * Identifiant d'egg exact (catalogue `/site/eggs`), quand l'API le fournit.
+   */
+  egg_id: number | null,
+  /**
+   * URL signée de téléchargement du dernier backup automatique (`None` si aucun).
+   */
+  last_backup_url: string | null,
+  /**
+   * Avertissement à afficher avant un redémarrage (`None` si l'hébergeur n'en a pas défini).
+   */
+  restart_warning: string | null,
+  /**
+   * Avertissement à afficher avant un arrêt.
+   */
+  stop_warning: string | null,
+  /**
+   * Raison d'indisponibilité, sous forme de **clé i18n du panel**
+   * (`PANEL.SERVERS_LIST.SERVER_IS_DISABLED_MYBOX`). Vide pour un serveur sain.
+   */
+  unavailable_reason: string | null,
+  /**
+   * Fin d'abonnement du serveur.
+   */
+  expires_at: string | null,
+  /**
+   * Référence courte à donner au support.
+   */
+  support_ref: string | null,
+  /**
+   * Capacités dérivées du jeu (quelles vues/fonctions exposer). Voir [`crate::games`].
+   */
+  capabilities: GameCapabilities,
+};
+
+/**
+ * Ce qu'un serveur d'un jeu donné sait faire, du point de vue de l'app. Source unique : tout
+ * (vues, console, IA) dérive de cette structure.
+ */
+export type GameCapabilities = {
+  /**
+   * Famille de jeu : `"minecraft"` | `"satisfactory"` | `"generic"`.
+   */
+  family: string,
+  /**
+   * Autocomplétion console : `"minecraft_java"` | `"minecraft_bedrock"` | `"none"`.
+   */
+  console_autocomplete: string,
+  /**
+   * Format des logs pour la détection des niveaux (filtres + coloration console) :
+   * `"minecraft"` (`[…/ERROR]`, SEVERE) | `"unreal"` (Satisfactory : `LogX: Error/Warning/Display`)
+   * | `"generic"` (ERROR/WARN/INFO insensible à la casse).
+   */
+  log_format: string,
+  /**
+   * Vue Joueurs + carte joueurs de l'Aperçu + commandes joueur de la console.
+   */
+  players: boolean,
+  /**
+   * Marketplace de mods : `"minecraft"` (Modrinth/CF/Spigot via MineStrator) | `"ficsit"` | `"none"`.
+   */
+  mods: string,
+  /**
+   * Sauvegardes/snapshots (true partout aujourd'hui ; champ prévu pour le futur).
+   */
+  backups: boolean,
+  /**
+   * Vue Paramètres : réglages du serveur (`server.properties`) lus et modifiés via l'API, sans
+   * SFTP. Minecraft (Java et Bedrock) : le seul jeu dont l'hôte expose ce fichier.
+   */
+  properties: boolean,
+};
+
+/**
+ * Compte de joueurs de plusieurs serveurs en **un seul appel**. Attention : contrairement à
+ * `GET /server/{id}/live/light`, la réponse ne porte QUE les joueurs — ni CPU, ni disque, ni
+ * statut. C'est une vue de liste, pas un remplaçant du `live_light` complet.
+ */
+export type LivePlayers = {
+  server_id: number,
+  current: number,
+  limit: number,
+};
+
+/**
+ * Entrée du catalogue d'eggs de l'hébergeur (37 au 2026-08-19) : la table de référence qui
+ * relie un `id_egg` à un jeu, sans passer par des mots-clés dans un nom.
+ */
+export type Egg = {
+  id: number,
+  name: string,
+  icon_url: string | null,
+  header_url: string | null,
+  /**
+   * Ressources minimales recommandées (cpu en cœurs, ram/disk en Go).
+   */
+  cpu: string,
+  ram: string,
+  disk: string,
+  official: boolean,
+};
+
+/**
+ * Entrée du journal d'audit d'un serveur. Bien plus riche que le `history[]` de
+ * `GET /server/{id}` (qui n'a que date/ip/is_staff/action) : elle nomme l'auteur, distingue
+ * la catégorie et le résultat, et porte un contexte — la commande tapée, par exemple.
+ */
+export type ActivityEntry = {
+  id: number,
+  /**
+   * Identifiant d'action : `power.restart`, `console.command`, `sftp.write`…
+   */
+  action: string,
+  /**
+   * Famille d'action : `power`, `console`, `sftp`…
+   */
+  category: string,
+  /**
+   * `success` ou l'échec renvoyé par l'hôte.
+   */
+  result: string,
+  /**
+   * Nom de l'auteur. L'API le fournit ici, contrairement au `history[]` du détail serveur.
+   */
+  actor: string | null,
+  /**
+   * `user`, et vraisemblablement d'autres valeurs côté hébergeur (système, API…).
+   */
+  actor_type: string,
+  /**
+   * Action du staff de l'hébergeur plutôt que du compte.
+   */
+  staff: boolean,
+  ip: string | null,
+  /**
+   * `YYYY-MM-DD HH:MM:SS.mmm`.
+   */
+  date: string,
+  /**
+   * Détail lisible quand l'API en fournit un (ex. la commande console exécutée).
+   * ⚠️ Peut contenir ce que l'utilisateur a tapé : à passer par [`crate::redact`] avant
+   * tout envoi vers un LLM ou un service de paste.
+   */
+  context: string | null,
+};
+
+/**
+ * Page de journal d'audit. `total` peut être très grand (2 173 entrées sur un serveur de test) :
+ * l'appelant pagine avec `limit`/`offset`.
+ */
+export type ActivityPage = {
+  items: Array<ActivityEntry>,
+  total: number,
+  has_more: boolean,
+};
+
+export type ServerDetails = {
+  id: number,
+  name: string,
+  hibernation: boolean,
+  ws_url: string | null,
+  ws_token: string | null,
+};
+
+export type LiveLight = {
+  status: string | null,
+  cpu: CpuLimits,
+  memory: LimitMb,
+  disk: LimitMb,
+  players: Players | null,
+  version: string | null,
+  motd: string | null,
+  hostname: string | null,
+};
+
+export type CpuLimits = {
+  dedicated: number,
+  flexcore: number,
+  limit: number,
+};
+
+export type LimitMb = {
+  limit: number,
+};
+
+export type Players = {
+  current: number,
+  limit: number,
+  list: Array<string>,
+};
+
+/**
+ * État temps réel complet d'un serveur.
+ */
+export type ServerLive = {
+  /**
+   * `online` | `starting` | `stopping` | `offline`.
+   */
+  state: string,
+  /**
+   * Statut interne de l'hôte (`null` si éteint sans état remonté).
+   */
+  status: string | null,
+  stats: LiveStats,
+};
+
+export type LiveStats = {
+  /**
+   * Absent si le serveur est éteint (de même pour `memory`, `disk`, `network`).
+   */
+  cpu: LiveCpu | null,
+  memory: LiveUsage | null,
+  disk: LiveUsage | null,
+  network: LiveNetwork | null,
+  /**
+   * Présent seulement serveur `online`.
+   */
+  uptime: LiveUptime | null,
+  /**
+   * Présents seulement serveur `online`, et selon le jeu.
+   */
+  players: Players | null,
+  version: string | null,
+  motd: string | null,
+  hostname: string | null,
+};
+
+/**
+ * CPU en **centièmes de cœur** (100 = 1 cœur).
+ */
+export type LiveCpu = {
+  /**
+   * Consommation instantanée.
+   */
+  current: number,
+  dedicated: number,
+  /**
+   * CPU partagé supplémentaire de l'offre.
+   */
+  flexcore: number,
+  /**
+   * Total disponible (dédié + FlexCore).
+   */
+  limit: number,
+  percent: number,
+  /**
+   * La consommation dépasse le CPU dédié : le serveur puise dans le FlexCore.
+   */
+  is_bursting: boolean,
+};
+
+/**
+ * RAM ou disque, en **Mo**.
+ */
+export type LiveUsage = {
+  current: number,
+  limit: number,
+  percent: number,
+};
+
+/**
+ * Compteurs réseau **cumulés** (octets) remontés par le daemon de l'hôte.
+ */
+export type LiveNetwork = {
+  rx_bytes: number,
+  tx_bytes: number,
+};
+
+export type LiveUptime = {
+  total_seconds: number,
+};
+
+/**
+ * Réglages du serveur (`server.properties` pour Minecraft), lus via l'API : ni SFTP ni droit de
+ * fichier requis (permission `settings_view`). Modification une clé à la fois, effet au prochain
+ * démarrage.
+ */
+export type ServerProperties = {
+  /**
+   * Type de réglages renvoyé par l'hôte (`server_properties`).
+   */
+  kind: string,
+  /**
+   * Clé → valeur, triées par clé ; valeurs en texte, telles qu'écrites dans le fichier.
+   */
+  properties: { [key in string]: string },
+};
+
+/**
+ * Détail d'une MyBox : abonnement, ressources restantes, offre et serveurs. Les noms de champs
+ * de l'API sont normalisés (`rename(deserialize)` : n'agit qu'à la lecture, le JSON exposé garde
+ * nos noms ; l'offre porte à la fois `disk` et `disk_total`, d'où pas d'`alias`).
+ */
+export type MyBoxDetails = {
+  mybox: MyBoxInfo,
+  offer: MyBoxOffer,
+  servers: Array<MyBoxServer>,
+};
+
+export type MyBoxInfo = {
+  id: number,
+  name: string,
+  /**
+   * Échéance brute (`AAAA-MM-JJ hh:mm:ss`).
+   */
+  expires_at: string,
+  /**
+   * Jours avant l'échéance (0 si expirée).
+   */
+  days_left: number,
+  /**
+   * Jours avant la **suppression** — seulement pour une MyBox expirée.
+   */
+  deletion_days: number | null,
+  /**
+   * Faux pour un sous-utilisateur.
+   */
+  owner: boolean,
+  /**
+   * Renouvellement automatique actif : l'échéance n'est pas une menace.
+   */
+  auto_renew: boolean,
+  free: boolean,
+  trial: boolean,
+  pro: boolean,
+  expired: boolean,
+  suspended: boolean,
+  /**
+   * Cœurs CPU encore allouables à un serveur.
+   */
+  cpu_remaining: number,
+  /**
+   * RAM (Go) encore allouable.
+   */
+  ram_remaining: number,
+};
+
+/**
+ * Offre de la MyBox (ressources totales).
+ */
+export type MyBoxOffer = {
+  name: string,
+  price: number,
+  /**
+   * Cœurs CPU.
+   */
+  cpu: number,
+  /**
+   * RAM (Go).
+   */
+  ram: number,
+  /**
+   * Disque total, extensions comprises (Go).
+   */
+  disk: number,
+  /**
+   * Nombre de bases de données autorisées.
+   */
+  databases: number,
+  /**
+   * Taille maximale par base (Go).
+   */
+  database_size: number,
+  /**
+   * IP dédiées disponibles.
+   */
+  dedicated_ips: number,
+};
+
+/**
+ * Serveur d'une MyBox, avec les ressources qui lui sont allouées.
+ */
+export type MyBoxServer = {
+  id: number,
+  name: string,
+  egg_name: string,
+  /**
+   * Cœurs CPU alloués.
+   */
+  cpu: number,
+  /**
+   * RAM allouée (Go).
+   */
+  ram: number,
+  disabled: boolean,
+  location: string,
+};
+
+/**
+ * Un échantillon de métriques (renvoyé au frontend pour les graphes).
+ *
+ * `Deserialize` : l'historique collecté par le service d'arrière-plan transite par IPC.
+ */
+export type MetricSample = {
+  ts: number,
+  cpu: number,
+  mem: number,
+  mem_limit: number,
+  disk: number,
+  state: string,
+};
+
+// --- Sauvegardes (models.rs) ---
+
+/**
+ * Un backup **quotidien automatique** d'un serveur (`GET /server/{id}/backups`, récents d'abord).
+ * On ne peut que les lister et les restaurer (pas de création à la demande côté API).
+ */
+export type Backup = {
+  id: number,
+  /**
+   * Taille en octets.
+   */
+  size: number,
+  /**
+   * Horodatage « YYYY-MM-DD HH:MM:SS ».
+   */
+  date: string,
+};
+
+/**
+ * Un **snapshot** créé à la demande (`GET /user/{id}/snapshots`). Point de sauvegarde rapide —
+ * le bon filet AVANT une correction risquée (il est plus rapide à produire qu'un backup).
+ *
+ * Désérialisé via [`SnapshotRaw`] : l'API (doc OpenAPI officielle) renvoie l'id sous forme de
+ * **chaîne `job_{job_id}`** pendant une création, et la taille en **Ko**.
+ */
+export type Snapshot = {
+  /**
+   * Id du snapshot ; `None` tant qu'il est en cours de création (pas encore restaurable ni
+   * supprimable) — `job_id` est alors renseigné.
+   */
+  id: number | null,
+  name: string,
+  /**
+   * Type d'univers (« Minecraft »). Champ `type` de l'API, renommé (mot réservé).
+   */
+  kind: string,
+  /**
+   * Taille en **octets** (convertie depuis les Ko de l'API).
+   */
+  size: number,
+  date: string,
+  /**
+   * État (doc OpenAPI) : 0 = en attente, 1 = disponible, 2 = en création.
+   */
+  status: number,
+  is_legacy: boolean,
+  /**
+   * Présents pour une création EN COURS de traitement (permet le suivi par polling) ; absents
+   * pour un snapshot déjà prêt.
+   */
+  progress: number | null,
+  job_id: number | null,
+};
+
+// --- SFTP, archives, NBT, régions (models.rs, archive.rs, nbt.rs, lib.rs) ---
+
+export type SftpEntry = {
+  name: string,
+  path: string,
+  is_dir: boolean,
+  size: number,
+  modified: number | null,
+};
+
+/**
+ * Une entrée d'archive (pour l'UI, façon [`crate::models::SftpEntry`] mais interne à l'archive).
+ */
+export type ArchiveEntry = {
+  name: string,
+  size: number,
+  is_dir: boolean,
+};
+
+/**
+ * Nœud d'un arbre NBT typé, sérialisé vers l'UI (inspecteur repliable).
+ *
+ * Les champs vides sont **omis** du JSON (pas `null`) : ils sont donc optionnels (`?:`) côté
+ * TypeScript (`ts(optional)`, que ts-rs ne déduit pas d'un `skip_serializing_if` sans `default`).
+ */
+export type NbtNode = {
+  /**
+   * Clé dans le compound parent ; absent pour la racine et les éléments de liste.
+   */
+  name?: string,
+  /**
+   * Type NBT : `Byte|Short|Int|Long|Float|Double|String|ByteArray|IntArray|LongArray|List|Compound`.
+   */
+  tag: string,
+  /**
+   * Valeur affichable (scalaires + aperçu des tableaux) ; absent pour List/Compound.
+   */
+  value?: string,
+  /**
+   * Nombre d'enfants (List/Compound) ou d'éléments (tableaux).
+   */
+  len?: number,
+  /**
+   * Sous-nœuds (List/Compound uniquement).
+   */
+  children?: Array<NbtNode>,
+};
+
+/**
+ * Chunk généré d'une région (coordonnées GLOBALES, taille, date, corruption), pour la carte UI.
+ */
+export type RegionChunk = {
+  x: number,
+  z: number,
+  size: number,
+  /**
+   * Dernière écriture (epoch secondes ; 0 si absente).
+   */
+  timestamp: number,
+  corrupt: boolean,
+};
+
+// --- Events temps réel (events.rs) ---
+
+export type ConsoleOutput = {
+  conn_id: string,
+  line: string,
+};
+
+export type ConsoleStatus = {
+  conn_id: string,
+  state: string,
+};
+
+export type ConsoleConnection = {
+  conn_id: string,
+  /**
+   * connecting | open | reconnecting | closed | hibernated | suspended (terminal : serveur
+   * suspendu ou expiré, plus de reconnexion)
+   */
+  phase: string,
+};
+
+export type ConsoleStats = {
+  conn_id: string,
+  cpu_absolute: number,
+  memory_bytes: number,
+  memory_limit_bytes: number,
+  disk_bytes: number,
+  uptime: number,
+  state: string,
+};
+
+/**
+ * Progression d'un transfert SFTP (upload / download / zip), pour le gestionnaire de transferts.
+ * `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets.
+ */
+export type SftpProgress = {
+  id: string,
+  /**
+   * Nom lisible (fichier, ou nom du .zip pour un téléchargement groupé).
+   */
+  name: string,
+  /**
+   * `up` (téléversement) | `down` (téléchargement).
+   */
+  direction: string,
+  done: number,
+  total: number,
+  /**
+   * `active` | `done` | `error`.
+   */
+  status: string,
+  /**
+   * Message si `status = error`.
+   */
+  error: string | null,
+};
+
+/**
+ * Progression d'une installation de mod Satisfactory (ficsit → SFTP). `id` = id de transfert
+ * (généré côté front). `phase` ∈ {resolving, downloading, stopping, uploading, restarting, done,
+ * error}. `done`/`total` = nombre d'artefacts (mod + SML + dépendances).
+ */
+export type ModInstallProgress = {
+  id: string,
+  phase: string,
+  mod_name: string,
+  done: number,
+  total: number,
+  /**
+   * `active` | `done` | `error`.
+   */
+  status: string,
+  error: string | null,
+};
+
+/**
+ * Alerte émise par le superviseur (crash, seuils, expiration…).
+ *
+ * `Deserialize` : le service d'arrière-plan transmet ses alertes à l'app par IPC
+ * (voir [`crate::service`]).
+ */
+export type Alert = {
+  /**
+   * ID serveur, ou ID MyBox pour une alerte d'expiration.
+   */
+  server_id: number,
+  server_name: string,
+  /**
+   * `crash` | `cpu` | `ram` | `disk` | `expiry`
+   */
+  kind: string,
+  /**
+   * `warning` | `critical`
+   */
+  severity: string,
+  message: string,
+  ts: number,
+};
+
+/**
+ * Émis au **lancement** d'un diagnostic (avant l'appel LLM) : permet à l'UI d'afficher un
+ * indicateur « analyse en cours ». L'`id` correspond à celui du [`Diagnosis`] final.
+ */
+export type CopilotStarted = {
+  id: string,
+  server_id: number,
+  server_name: string,
+  /**
+   * `crash` | `cpu` | `ram` | `disk` | `error` | `warn` | `manual` | `selection` | `performance`
+   */
+  trigger: string,
+};
+
+/**
+ * Étape d'avancement d'une analyse en cours (pour le log/détail dans l'UI). `id` = celui du
+ * [`CopilotStarted`]/[`Diagnosis`] correspondant.
+ */
+export type CopilotProgress = {
+  id: string,
+  phase: string,
+};
+
+/**
+ * Fragment de texte de réponse de l'assistant, émis en direct (streaming). `id` = session_id
+ * (id d'onglet). Le front accumule ces fragments dans la bulle en cours ; la réponse finale
+ * (renvoyée par `chat_send`) reste la source d'autorité.
+ */
+export type ChatDelta = {
+  id: string,
+  text: string,
+};
+
+/**
+ * Rapport de diagnostic produit par le Copilote (agent Claude) suite à un incident.
+ */
+export type Diagnosis = {
+  /**
+   * Identifiant unique (`{server_id}-{ts}`).
+   */
+  id: string,
+  server_id: number,
+  server_name: string,
+  /**
+   * `crash` | `cpu` | `ram` | `disk` | `manual`
+   */
+  trigger: string,
+  /**
+   * `warning` | `critical`
+   */
+  severity: string,
+  /**
+   * Résumé en une phrase.
+   */
+  summary: string,
+  /**
+   * Cause probable (markdown).
+   */
+  cause: string,
+  /**
+   * Correctif détaillé (markdown).
+   */
+  suggested_fix: string,
+  /**
+   * Actions concrètes proposées (0 à quelques-unes).
+   */
+  actions: Array<ProposedAction>,
+  ts: number,
+};
+
+/**
+ * Une action concrète proposée par le Copilote, applicable via la couche d'outils.
+ * L'exécution dépend du niveau d'autonomie choisi (jamais exécutée en mode « suggérer »).
+ */
+export type ProposedAction = {
+  /**
+   * Nom d'outil (`power_action`, `send_command`, `write_file`, …).
+   */
+  tool: string,
+  /**
+   * Arguments de l'outil (inclut `server_id`).
+   */
+  args: JsonValue,
+  /**
+   * Description lisible de l'action.
+   */
+  label: string,
+  /**
+   * `safe` (réversible/sans perte) | `caution` (modifie une config) | `danger` (destructif).
+   */
+  risk: string,
+};
+
+export type JsonValue = number | string | boolean | Array<JsonValue> | { [key in string]: JsonValue } | null;
+
+// --- Réglages persistés (supervisor.rs, mcp.rs, redact.rs, mods.rs) ---
+
+/**
+ * Réglages du superviseur (modifiables depuis l'UI, persistés).
+ *
+ * `#[serde(default)]` : un champ absent du `supervisor.json` (ajouté par une version ultérieure)
+ * prend sa valeur par défaut, au lieu de rendre tout le fichier illisible — ce qui ramenait
+ * silencieusement TOUS les réglages de l'utilisateur aux valeurs d'usine.
+ */
+export type SupervisorConfig = {
+  enabled: boolean,
+  crash_detection: boolean,
+  expiry_alerts: boolean,
+  cpu_threshold: number,
+  ram_threshold: number,
+  disk_threshold: number,
+  /**
+   * Serveurs exclus du monitoring.
+   */
+  disabled_servers: Array<number>,
+};
+
+/**
+ * Réglages du serveur MCP (modifiables depuis l'UI, persistés dans `mcp.json`).
+ */
+export type McpConfig = {
+  enabled: boolean,
+  /**
+   * Autorise les actions modifiantes (power, commandes, modération, écriture de fichiers).
+   */
+  allow_writes: boolean,
+};
+
+/**
+ * Réglages de confidentialité (persistés dans `privacy.json`).
+ */
+export type PrivacyConfig = {
+  /**
+   * Masque les données sensibles AVANT de les envoyer aux agents IA (Copilote, Assistant,
+   * clients MCP externes). Activé par défaut : rien de sensible ne part vers un LLM sans le vouloir.
+   */
+  redact_ai: boolean,
+  /**
+   * Masque aussi les données sensibles dans l'AFFICHAGE de la console (temps réel + préchargement).
+   */
+  redact_console: boolean,
+};
+
+/**
+ * Réglages par jeu (partie **non-secrète**, persistée `game_settings.json`). Les secrets (token
+ * Factorio) vont au trousseau (voir `secrets::store_game_secret`). Extensible : un champ par jeu.
+ */
+export type GameSettings = {
+  factorio: FactorioSettings,
+};
+
+/**
+ * Réglages Factorio : le `username` du compte factorio.com (le token de download va au trousseau).
+ */
+export type FactorioSettings = {
+  username: string,
+};
+
+// --- Copilote (copilot.rs, llm.rs, cli_agent.rs) ---
+
+/**
+ * Réglages du Copilote (persistés dans `copilot.json`).
+ */
+export type CopilotConfig = {
+  enabled: boolean,
+  provider: LlmProvider,
+  /**
+   * URL de base LLM ; vide = valeur par défaut du fournisseur.
+   */
+  base_url: string,
+  model: string,
+  /**
+   * Commande de l'agent CLI local (fournisseur `LocalCli`), ex. `claude`.
+   */
+  cli_command: string,
+  /**
+   * Arguments de la commande CLI (le prompt est passé sur stdin), ex. `["-p"]`.
+   */
+  cli_args: Array<string>,
+  /**
+   * Mode agent : branche notre serveur MCP sur la CLI (Claude Code) pour qu'elle lise
+   * fichiers/console/métriques elle-même et croise, au lieu d'un prompt pré-rempli.
+   */
+  cli_agentic: boolean,
+  autonomy: Autonomy,
+  on_crash: boolean,
+  on_threshold: boolean,
+  /**
+   * Déclenche un diagnostic sur une ligne console classée ERROR (via le monitor).
+   */
+  on_error: boolean,
+  /**
+   * Déclenche un diagnostic sur une ligne console classée WARN (plus bruyant).
+   */
+  on_warn: boolean,
+  /**
+   * Sur **surcharge prolongée** CPU/RAM (pas un simple pic), lance une **analyse de
+   * performance Spark** : rapports Spark + profiler, puis suggestions.
+   */
+  perf_on_overload: boolean,
+  /**
+   * Seuil (% CPU ou RAM) à partir duquel on considère le serveur « surchargé ».
+   */
+  perf_overload_pct: number,
+  /**
+   * Durée minimale (minutes) de surcharge CONTINUE avant de déclencher (évite les pics).
+   */
+  perf_overload_minutes: number,
+  disabled_servers: Array<number>,
+  /**
+   * Autorise l'agent à faire des **recherches web** (mode CLI/Claude Code : outils
+   * WebSearch/WebFetch). Sans effet en mode API HTTP (pas d'outil web). Défaut : activé.
+   */
+  web_search: boolean,
+  /**
+   * Outils **interdits** à l'IA (Copilote/Assistant) — noms MCP sans préfixe (ex.
+   * `power_action`, `delete_path`). Vide = tous autorisés (selon lecture/écriture + autonomie).
+   * Permet un contrôle FIN des permissions quelle que soit la source (API HTTP ou CLI).
+   */
+  disabled_tools: Array<string>,
+  /**
+   * Effort de raisonnement demandé au modèle.
+   */
+  effort: Effort,
+  /**
+   * Agent CLI utilisé quand `provider = LocalCli` (Claude Code / OpenCode / Gemini).
+   */
+  cli_agent: CliAgent,
+  /**
+   * Utiliser le **MCP officiel** MineStrator (gestion serveur) en plus de notre MCP local (SFTP +
+   * outils exclusifs). Défaut activé : l'officiel, maintenu par l'hébergeur, est plus fiable pour
+   * la gestion. Désactivé ⇒ le Copilote n'utilise que notre catalogue local complet.
+   */
+  use_official_mcp: boolean,
+};
+
+/**
+ * Fournisseur LLM. Le transport `OpenaiCompatible` est volontairement générique
+ * (URL de base configurable) pour couvrir tout service exposant l'API OpenAI.
+ */
+export type LlmProvider = "anthropic" | "openai_compatible" | "local_cli";
+
+/**
+ * Niveau d'autonomie du Copilote (choisi dans les réglages).
+ */
+export type Autonomy = "suggest_only" | "apply_on_confirm" | "auto_safe";
+
+/**
+ * Effort de raisonnement demandé au modèle. Mappé par fournisseur : niveau natif `--effort`
+ * pour Claude Code (CLI), indice de prompt pour l'API HTTP.
+ */
+export type Effort = "low" | "medium" | "high";
+
+/**
+ * Agent CLI sélectionné. Le binaire concret vient de `cli_command` (surchargeable) ; l'enum
+ * détermine flags, config MCP et parsing.
+ */
+export type CliAgent = "claude_code" | "open_code" | "gemini";
+
+/**
+ * Statut de disponibilité d'un agent CLI (exposé à l'UI Réglages → Copilote).
+ */
+export type CliStatus = {
+  agent: CliAgent,
+  /**
+   * Binaire sondé (commande par défaut de l'agent).
+   */
+  command: string,
+  /**
+   * Présent et répondant à `--version` ?
+   */
+  available: boolean,
+  /**
+   * Version brute rapportée (1re ligne de sortie), si disponible.
+   */
+  version: string | null,
+};
+
+/**
+ * Réponse d'un tour de chat : texte + actions proposées (vides en mode autonome, où l'agent agit).
+ */
+export type ChatReply = {
+  text: string,
+  actions: Array<ProposedAction>,
+};
+
+// --- Marketplace Minecraft (models.rs) ---
+
+export type MarketItem = {
+  /**
+   * Identifiant natif de la source (slug Modrinth via `slug`, id numérique CF/Spigot).
+   */
+  id: string,
+  slug: string,
+  name: string,
+  tag: string,
+  downloads: number,
+  icon_url: string | null,
+  game_versions: Array<string>,
+  loaders: Array<string>,
+  source: string,
+  /**
+   * Payant/restreint → non installable via MineStrator (l'API renvoie 403).
+   */
+  premium: boolean,
+  /**
+   * Téléchargement externe (SpigotMC) → non installable non plus.
+   */
+  external: boolean,
+  external_url: string | null,
+};
+
+export type MarketPage = {
+  items: Array<MarketItem>,
+  total_hits: number | null,
+};
+
+export type MarketVersion = {
+  id: string,
+  version_number: string,
+  name: string,
+  game_versions: Array<string>,
+  loaders: Array<string>,
+  release_type: string,
+  downloads: number | null,
+  date_published: string,
+  filename: string | null,
+  file_size: number | null,
+};
+
+export type InstalledItem = {
+  name: string,
+  filename: string,
+  version: string,
+  enabled: boolean,
+  loader: string,
+};
+
+// --- Mods Satisfactory (ficsit.rs) ---
+
+/**
+ * Un mod du catalogue.
+ */
+export type FicsitMod = {
+  id: string,
+  mod_reference: string,
+  name: string,
+  short_description: string,
+  downloads: number,
+  logo: string,
+};
+
+/**
+ * Page de résultats de recherche.
+ */
+export type FicsitModPage = {
+  mods: Array<FicsitMod>,
+  count: number,
+};
+
+/**
+ * Une version publiée d'un mod.
+ */
+export type FicsitVersion = {
+  id: string,
+  version: string,
+  sml_version: string,
+  size: number,
+  hash: string,
+  link: string,
+  targets: Array<FicsitTarget>,
+  dependencies: Array<FicsitDep>,
+};
+
+/**
+ * Artefact d'une version pour une cible donnée (Windows / WindowsServer / LinuxServer).
+ */
+export type FicsitTarget = {
+  target_name: string,
+  link: string,
+  hash: string,
+  size: number,
+};
+
+/**
+ * Dépendance d'une version (`mod_id` = mod_reference de la dépendance ; `SML` pour le loader).
+ */
+export type FicsitDep = {
+  mod_id: string,
+  condition: string,
+  optional: boolean,
+};
+
+/**
+ * Une version du Satisfactory Mod Loader.
+ */
+export type SmlVersion = {
+  id: string,
+  version: string,
+  satisfactory_version: number,
+  targets: Array<SmlTarget>,
+};
+
+/**
+ * Artefact SML pour une cible (le lien pointe vers une release GitHub).
+ */
+export type SmlTarget = {
+  target_name: string,
+  link: string,
+};
+
+/**
+ * Un mod présent dans le dossier `Mods/` du serveur (déduit du listing SFTP).
+ */
+export type FicsitInstalledMod = {
+  /**
+   * Référence du mod = nom du dossier (ex. `RefinedPower`).
+   */
+  reference: string,
+  name: string,
+  /**
+   * Un mod désactivé a son dossier suffixé `.disabled`.
+   */
+  enabled: boolean,
+};
+
+/**
+ * Un mod à installer (référence + version choisie) — élément d'une installation par lot.
+ */
+export type FicsitInstallItem = {
+  reference: string,
+  versionId: string,
+};
+
+// --- Mods multi-sources : Thunderstore, Factorio, uMod (mods.rs) ---
+
+/**
+ * Un mod du catalogue, quelle que soit la source.
+ */
+export type MarketMod = {
+  /**
+   * Référence stable, source-spécifique (sert à récupérer les versions / installer).
+   */
+  reference: string,
+  name: string,
+  description: string,
+  downloads: number,
+  icon_url: string,
+  /**
+   * `thunderstore` | `factorio` | `umod` | …
+   */
+  source: string,
+};
+
+/**
+ * Page de résultats.
+ */
+export type MarketModPage = {
+  mods: Array<MarketMod>,
+  count: number,
+  has_more: boolean,
+};
+
+/**
+ * Une version publiée d'un mod (normalisée).
+ */
+export type MarketModVersion = {
+  version: string,
+  /**
+   * Contrainte/compatibilité de version de jeu (SML, `factorio_version`…), ou vide.
+   */
+  game_version: string,
+  /**
+   * Dépendances lisibles (hors loader/framework), pour affichage.
+   */
+  dependencies: Array<string>,
+};
+
+/**
+ * Un mod installé sur le serveur (normalisé), avec son état activé.
+ */
+export type MarketInstalledMod = {
+  reference: string,
+  name: string,
+  enabled: boolean,
+};
+
+/**
+ * Un mod à installer (référence + version voulue ; version vide = dernière).
+ */
+export type ModInstallItem = {
+  reference: string,
+  version: string,
+};
+
+// --- Service d'arrière-plan (service.rs, supervisor.rs) ---
+
+/**
+ * Vue d'ensemble pour la section Réglages « Service d'arrière-plan ».
+ */
+export type ServiceOverview = {
+  /**
+   * OS pris en charge (Windows, Linux systemd, macOS).
+   */
+  supported: boolean,
+  /**
+   * Binaire du service livré avec l'app.
+   */
+  binary_available: boolean,
+  /**
+   * Le service exécute une autre version que l'app : l'app s'est mise à jour, pas la copie
+   * protégée du binaire que le service exécute (sa mise à jour exige une élévation).
+   */
+  outdated: boolean,
+  /**
+   * `not_installed` | `stopped` | `running` | `unknown`
+   */
+  install_state: 'not_installed' | 'stopped' | 'running' | 'unknown',
+  /**
+   * `ok` | `unreachable` | `forbidden` | `timeout` | `protocol`
+   */
+  link: string,
+  status: ServiceStatus | null,
+  /**
+   * Qui supervise : `app` | `service`
+   */
+  supervision: 'app' | 'service',
+  /**
+   * Le service surveille-t-il le compte de l'app ? (`None` si l'un des deux est inconnu)
+   */
+  same_account: boolean | null,
+  /**
+   * `uac` | `pkexec` | `osascript` | `none`
+   */
+  elevation: 'uac' | 'pkexec' | 'osascript' | 'none',
+  /**
+   * Commande d'activation à lancer soi-même (repli sans élévation graphique).
+   */
+  manual_enable: string | null,
+};
+
+/**
+ * État du service, tel qu'il le rapporte.
+ */
+export type ServiceStatus = {
+  protocol: number,
+  version: string,
+  pid: number,
+  started_at: number,
+  /**
+   * Lancé par le gestionnaire de services (sinon : `minestrator-daemon run` au premier plan).
+   */
+  managed: boolean,
+  has_key: boolean,
+  /**
+   * Compte MineStrator surveillé (résolu après validation de la clé).
+   */
+  account_id: number | null,
+  account_name: string | null,
+  supervisor_enabled: boolean,
+  data_dir: string,
+  /**
+   * Push FCM configuré.
+   */
+  fcm: boolean,
+  /**
+   * Dernier tour de poll réussi (`None` = aucun depuis le démarrage).
+   */
+  last_poll: number | null,
+  /**
+   * Serveurs sous connexion monitor.
+   */
+  monitored: number,
+  suspended: boolean,
+};
+
+/**
+ * État observable du superviseur (exposé par le service d'arrière-plan).
+ */
+export type SupervisorHeartbeat = {
+  /**
+   * Dernier tour de poll réussi (`None` = aucun depuis le démarrage).
+   */
+  last_poll: number | null,
+  /**
+   * Serveurs sous connexion monitor.
+   */
+  monitored: number,
+  suspended: boolean,
+};

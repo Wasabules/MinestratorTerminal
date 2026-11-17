@@ -14,23 +14,31 @@ import {
   fakeMail,
   fakeRef,
   fakeText,
+  fakeProperty,
 } from './fake.svelte';
 import { t } from './i18n';
 import type {
   ActivityPage,
+  Alert,
   AppError,
+  AppErrorKind,
   ArchiveEntry,
   Backup,
   ChatReply,
   CliStatus,
   CopilotConfig,
   Egg,
+  FicsitInstallItem,
   FicsitInstalledMod,
   FicsitModPage,
   FicsitVersion,
   GameSettings,
   InstalledItem,
+  JsonValue,
   LiveLight,
+  MyBoxDetails,
+  ServerLive,
+  ServerProperties,
   LivePlayers,
   MarketInstalledMod,
   MarketModPage,
@@ -41,6 +49,7 @@ import type {
   MarketVersion,
   McpConfig,
   MetricSample,
+  ModInstallItem,
   NbtNode,
   PlayerAction,
   PowerAction,
@@ -48,6 +57,7 @@ import type {
   RegionChunk,
   ServerDetails,
   ServersOverview,
+  ServiceOverview,
   SftpEntry,
   SmlVersion,
   Snapshot,
@@ -68,6 +78,12 @@ import type {
 async function demo<T>(value: Promise<T>, transform: (v: T) => T): Promise<T> {
   const v = await value;
   return isFake() ? transform(v) : v;
+}
+
+/** Mode démo : le pseudo du compte surveillé par le service est substitué comme les autres. */
+function fakeServiceOverview(o: ServiceOverview): ServiceOverview {
+  if (!o.status?.account_name) return o;
+  return { ...o, status: { ...o.status, account_name: fakePlayer(o.status.account_name) } };
 }
 
 export const api = {
@@ -111,6 +127,43 @@ export const api = {
       players: l.players
         ? { ...l.players, list: l.players.list.map((p) => fakePlayer(p)) }
         : l.players,
+    })),
+
+  /**
+   * État temps réel complet : consommation instantanée (CPU en centièmes de cœur, dont FlexCore
+   * via `is_bursting` ; RAM/disque en Mo), réseau cumulé, uptime. Blocs absents serveur éteint.
+   */
+  serverLive: (id: number) =>
+    demo(invoke<ServerLive>('server_live', { id }), (l) => ({
+      ...l,
+      stats: {
+        ...l.stats,
+        motd: l.stats.motd ? fakeText(l.stats.motd) : l.stats.motd,
+        hostname: l.stats.hostname ? fakeText(l.stats.hostname) : l.stats.hostname,
+        players: l.stats.players
+          ? { ...l.stats.players, list: l.stats.players.list.map((p) => fakePlayer(p)) }
+          : l.stats.players,
+      },
+    })),
+
+  /** Réglages du serveur (`server.properties`), sans SFTP. */
+  serverProperties: (id: number) =>
+    demo(invoke<ServerProperties>('server_properties', { id }), (p) => ({
+      ...p,
+      properties: Object.fromEntries(
+        Object.entries(p.properties).map(([k, v]) => [k, fakeProperty(k, v)])
+      ),
+    })),
+  /** Modifie UN réglage existant ; effet au prochain démarrage. */
+  setServerProperty: (id: number, property: string, value: string) =>
+    invoke<void>('set_server_property', { id, property, value }),
+
+  /** Détail d'une MyBox : renouvellement auto, ressources restantes, offre, serveurs. */
+  myboxDetails: (id: number) =>
+    demo(invoke<MyBoxDetails>('mybox_details', { id }), (d) => ({
+      ...d,
+      mybox: { ...d.mybox, name: fakeBox(d.mybox.name) },
+      servers: d.servers.map((s) => ({ ...s, name: fakeServer(s.name) })),
     })),
 
   /**
@@ -171,7 +224,7 @@ export const api = {
   setCopilotKey: (key: string) => invoke<void>('set_copilot_key', { key }),
   clearCopilotKey: () => invoke<void>('clear_copilot_key'),
   /** Applique une action proposée par le Copilote. Le server_id vient du diagnostic. */
-  copilotApply: (serverId: number, tool: string, args: Record<string, unknown>) =>
+  copilotApply: (serverId: number, tool: string, args: JsonValue) =>
     invoke<string>('copilot_apply', { serverId, tool, args }),
   /** Déclenche un diagnostic manuel pour un serveur. */
   copilotDiagnoseNow: (serverId: number, serverName: string) =>
@@ -272,7 +325,7 @@ export const api = {
   /** Installe un lot de mods (fond, un seul redémarrage) : suivi via mods://install-progress. */
   ficsitInstall: (
     serverId: number,
-    items: { reference: string; versionId: string }[],
+    items: FicsitInstallItem[],
     transferId: string
   ) => invoke<void>('ficsit_install', { serverId, items, transferId }),
 
@@ -287,7 +340,7 @@ export const api = {
   modsInstall: (
     serverId: number,
     source: string,
-    items: { reference: string; version: string }[],
+    items: ModInstallItem[],
     transferId: string
   ) => invoke<void>('mods_install', { serverId, source, items, transferId }),
   /** Mods installés d'une source, avec leur état activé. */
@@ -383,6 +436,30 @@ export const api = {
   /** Quitte complètement l'application. */
   quitApp: () => invoke<void>('quit_app'),
 
+  /** Journaux récents anonymisés (rapport de bug). Chaîne vide s'il n'y en a aucun. */
+  exportLogs: () => invoke<string>('export_logs'),
+  /** Ouvre le dossier des journaux dans le gestionnaire de fichiers. */
+  openLogsDir: () => invoke<void>('open_logs_dir'),
+
+  // --- Service d'arrière-plan (supervision machine, voir docs/SERVICE.md) ---
+  /** État du service (OS + IPC) et qui supervise. Sans privilège. */
+  serviceOverview: () => demo(invoke<ServiceOverview>('service_overview'), fakeServiceOverview),
+  /** Active le service (élévation système si besoin) puis lui transmet la clé par IPC. */
+  serviceEnable: () => demo(invoke<ServiceOverview>('service_enable'), fakeServiceOverview),
+  /** Le service oublie la clé et cesse de superviser ; l'app reprend la main. */
+  serviceDisable: () => demo(invoke<ServiceOverview>('service_disable'), fakeServiceOverview),
+  /** Désinstalle le service (élévation) ; `purge` efface aussi son historique. */
+  serviceUninstall: (purge: boolean) =>
+    demo(invoke<ServiceOverview>('service_uninstall', { purge }), fakeServiceOverview),
+  /** Redémarre le service via son gestionnaire. */
+  serviceRestart: () => invoke<void>('service_restart'),
+  /** Met à jour le service (élévation) : sa copie protégée ne suit pas les mises à jour de l'app. */
+  serviceUpdate: () => demo(invoke<ServiceOverview>('service_update'), fakeServiceOverview),
+  /** Choix « supervision en arrière-plan » fait dans l'installeur (Windows) ; `true` une fois. */
+  serviceTakePendingSetup: () => invoke<boolean>('service_take_pending_setup'),
+  /** Alertes récentes du service (survenues app fermée), sans notification. */
+  serviceAlerts: (sinceSecs: number) => invoke<Alert[]>('service_alerts', { sinceSecs }),
+
   /** Efface la clé enregistrée. */
   logout: () => invoke<void>('logout'),
 };
@@ -400,7 +477,14 @@ export function isAppError(value: unknown): value is AppError {
 /** Message d'erreur prêt à afficher, adapté au cas (i18n). */
 export function humanizeError(value: unknown): string {
   if (!isAppError(value)) return String(value);
-  const known: Record<string, string> = {
+  // Service d'arrière-plan : sous-cas traduit dans l'espace de noms dédié `service.errors`.
+  if (value.kind === 'service' && value.code) {
+    const key = `service.errors.${value.code}`;
+    const text = t(key);
+    if (text !== key) return text;
+  }
+  // Typé par le discriminant généré depuis Rust : un `kind` renommé ou retiré casse le typecheck.
+  const known: Partial<Record<AppErrorKind, string>> = {
     unauthorized: 'errors.unauthorized',
     forbidden: 'errors.forbidden',
     rate_limited: 'errors.rate_limited',

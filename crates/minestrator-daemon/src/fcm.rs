@@ -55,3 +55,52 @@ pub async fn send(
         Err(format!("FCM {status} : {text}"))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::tests::env_lock;
+    use std::path::PathBuf;
+
+    fn cfg(source: AccessTokenSource) -> FcmConfig {
+        FcmConfig {
+            project_id: "mon-projet".into(),
+            access_token_source: source,
+        }
+    }
+
+    #[test]
+    fn token_file_is_read_and_trimmed() {
+        let path = std::env::temp_dir()
+            .join(format!("mst-test-fcm-token-{}.txt", std::process::id()));
+        // Un helper de rafraîchissement écrit souvent le token suivi d'un saut de ligne.
+        std::fs::write(&path, "  ya29.a0AfB_token \n").unwrap();
+        let token = access_token(&cfg(AccessTokenSource::File(path.clone())));
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(token.unwrap(), "ya29.a0AfB_token");
+    }
+
+    #[test]
+    fn missing_token_file_is_an_error() {
+        let path = PathBuf::from("/chemin/inexistant/fcm-token");
+        let err = access_token(&cfg(AccessTokenSource::File(path))).unwrap_err();
+        assert!(err.starts_with("lecture de FCM_ACCESS_TOKEN_FILE"), "{err}");
+    }
+
+    #[test]
+    fn env_source_reads_fcm_access_token() {
+        let _guard = env_lock();
+        let saved = std::env::var_os("FCM_ACCESS_TOKEN");
+
+        std::env::set_var("FCM_ACCESS_TOKEN", "ya29.env");
+        let ok = access_token(&cfg(AccessTokenSource::Env));
+        std::env::remove_var("FCM_ACCESS_TOKEN");
+        let missing = access_token(&cfg(AccessTokenSource::Env));
+        if let Some(v) = saved {
+            std::env::set_var("FCM_ACCESS_TOKEN", v);
+        }
+
+        assert_eq!(ok.unwrap(), "ya29.env");
+        assert_eq!(missing.unwrap_err(), "FCM_ACCESS_TOKEN manquant.");
+    }
+}

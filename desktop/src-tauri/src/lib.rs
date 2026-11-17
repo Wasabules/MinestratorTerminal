@@ -22,6 +22,7 @@ pub fn run() {
     let events = core.subscribe();
     let supervisor = core.supervisor();
     let copilot_core = core.clone();
+    let link_core = core.clone();
 
     let mut builder = tauri::Builder::default();
     // Instance unique : DOIT être le 1er plugin enregistré. Si une 2ᵉ instance est lancée alors que
@@ -67,8 +68,12 @@ pub fn run() {
                 }
             });
 
-            // Superviseur (dans le runtime tokio).
+            // Superviseur (dans le runtime tokio), après une première décision du lien avec le
+            // service d'arrière-plan : si le service supervise déjà ce compte, le superviseur
+            // local reste en veille (pas de double collecte ni d'alertes en double) et les
+            // alertes du service arrivent par le même bus d'events (docs/SERVICE.md).
             tauri::async_runtime::spawn(async move {
+                link_core.start_service_link().await;
                 supervisor.start();
             });
 
@@ -101,6 +106,10 @@ pub fn run() {
             commands::list_servers,
             commands::server_details,
             commands::live_light,
+            commands::server_live,
+            commands::server_properties,
+            commands::set_server_property,
+            commands::mybox_details,
             commands::live_players_bulk,
             commands::list_eggs,
             commands::server_activity,
@@ -186,6 +195,16 @@ pub fn run() {
             commands::clear_factorio_token,
             commands::hide_to_tray,
             commands::quit_app,
+            commands::export_logs,
+            commands::open_logs_dir,
+            commands::service_overview,
+            commands::service_enable,
+            commands::service_disable,
+            commands::service_uninstall,
+            commands::service_update,
+            commands::service_take_pending_setup,
+            commands::service_restart,
+            commands::service_alerts,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");
@@ -288,11 +307,9 @@ fn show_main(app: &tauri::AppHandle) {
     }
 }
 
+/// Journaux : sortie standard + fichier tournant dans le dossier de données (cf. `core::logs`).
 fn init_tracing() {
-    use tracing_subscriber::EnvFilter;
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("minestrator_core=info,minestrator_terminal_lib=info,warn"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+    minestrator_core::logs::init("minestrator_core=info,minestrator_terminal_lib=info,warn");
 }
 
 /// Mode serveur MCP (stdio) : la même app, lancée avec `--mcp`, sert le protocole MCP
