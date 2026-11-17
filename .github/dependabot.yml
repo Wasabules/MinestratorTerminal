@@ -24,6 +24,11 @@ updates:
     groups:
       front-mineures:
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (compilateur natif) n'expose pas l'API JavaScript dont dépendent SvelteKit 3
+      # (peer `typescript ^6`) et svelte-check : à réévaluer quand ils l'accepteront.
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
