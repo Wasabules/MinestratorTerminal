@@ -192,36 +192,39 @@
         <p class="dim empty">{t('backups.none')}</p>
       {:else}
         <div class="list">
-          {#each snapshots as s (s.id)}
+          {#each snapshots as s (s.id ?? `job-${s.job_id}`)}
+            {@const pending = s.id == null || s.progress != null}
             <div class="row">
-              <span class="ic" class:pulse={s.progress != null}><Icon name="hard-drive" size={16} /></span>
+              <span class="ic" class:pulse={pending}><Icon name="hard-drive" size={16} /></span>
               <div class="meta">
                 <span class="name">
-                  {s.name || `#${s.id}`}
+                  {s.name || (s.id != null ? `#${s.id}` : '')}
                   {#if s.is_legacy}<span class="tag">{t('backups.legacy')}</span>{/if}
                 </span>
                 <span class="sub dim">
-                  {#if s.progress != null}
-                    {t('backups.inProgress')} {s.progress}%
+                  {#if pending}
+                    {t('backups.inProgress')}{#if s.progress != null}&nbsp;{s.progress}%{/if}
                   {:else}
                     {s.date} · {humanSize(s.size)}
                   {/if}
                 </span>
               </div>
-              {#if s.progress == null}
+              <!-- Création en cours : ni restaurable ni supprimable tant qu'il n'a pas d'id. -->
+              {#if s.id != null && !pending}
+                {@const id = s.id}
                 <div class="acts">
                   {@render danger(
-                    `rs-${s.id}`,
+                    `rs-${id}`,
                     t('backups.restore'),
                     t('backups.restoreConfirm'),
-                    () => api.restoreSnapshot(s.id, serverId),
+                    () => api.restoreSnapshot(id, serverId),
                     t('backups.restoreStarted')
                   )}
                   {@render danger(
-                    `ds-${s.id}`,
+                    `ds-${id}`,
                     t('backups.delete'),
                     t('backups.deleteConfirm'),
-                    () => api.deleteSnapshot(s.id),
+                    () => api.deleteSnapshot(id),
                     t('backups.deleted'),
                     'trash'
                   )}

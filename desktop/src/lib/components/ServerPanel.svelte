@@ -11,6 +11,7 @@
   import ModMarketplaceView from './views/ModMarketplaceView.svelte';
   import AssistantView from './views/AssistantView.svelte';
   import BackupsView from './views/BackupsView.svelte';
+  import ServerSettingsView from './views/ServerSettingsView.svelte';
   import ComingSoon from './views/ComingSoon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
@@ -46,6 +47,12 @@
   <AssistantView {tab} />
 {:else if tab.view === 'backups'}
   <BackupsView {tab} />
+{:else if tab.view === 'settings'}
+  {#if caps === undefined || caps.properties}
+    <ServerSettingsView {tab} />
+  {:else}
+    <ComingSoon {tab} />
+  {/if}
 {:else}
   <ComingSoon {tab} />
 {/if}

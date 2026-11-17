@@ -101,6 +101,23 @@
     return () => document.removeEventListener("visibilitychange", onVis);
   });
 
+  // Journaux anonymisés → presse-papier, à joindre à un rapport de bug.
+  let logsMsg = $state<string | null>(null);
+  async function copyLogs() {
+    try {
+      const text = await api.exportLogs();
+      if (text.trim()) {
+        await navigator.clipboard.writeText(text);
+        logsMsg = t("settings.logsCopied");
+      } else {
+        logsMsg = t("settings.logsEmpty");
+      }
+    } catch {
+      logsMsg = t("settings.logsError");
+    }
+    setTimeout(() => (logsMsg = null), 2500);
+  }
+
   const themeOpts: { val: ThemePref; key: string }[] = [
     { val: "system", key: "settings.system" },
     { val: "dark", key: "settings.dark" },
@@ -226,6 +243,10 @@
           {upd === "downloading" ? t("update.downloading") : `${t("update.now")} → ${updInfo.version}`}
         </button>
       {/if}
+      <button class="link" onclick={copyLogs}>
+        <Icon name="copy" size={16} />
+        {logsMsg ?? t("settings.logsCopy")}
+      </button>
       <button class="link" onclick={() => openExternal("https://minestrator.com").catch(() => {})}>
         <Icon name="external" size={16} /> {t("settings.website")}
       </button>

@@ -128,3 +128,24 @@ export function fakeText(text: string, players: string[] = []): string {
   }
   return out;
 }
+
+/**
+ * Réglage `server.properties` : substitue ceux qui identifient le serveur (adresse, MOTD, graine,
+ * pack de ressources) et masque les secrets. Les autres (difficulté, slots…) restent lisibles.
+ */
+export function fakeProperty(key: string, value: string): string {
+  if (!value) return value;
+  if (/password|secret|token/i.test(key)) return "••••••••";
+  switch (key) {
+    case "server-ip":
+      return fakeIp(value);
+    case "motd":
+      return fakeText(value);
+    case "level-seed":
+      return "1234567890";
+    case "resource-pack":
+      return "https://example.net/pack.zip";
+    default:
+      return value;
+  }
+}

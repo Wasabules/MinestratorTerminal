@@ -10,6 +10,7 @@ const RELEASES_LATEST: &str =
 const USER_AGENT: &str = concat!("MinestratorTerminalMobile/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct UpdateInfo {
     /// Version disponible (ex. `0.4.1`).
     pub version: String,
@@ -37,7 +38,7 @@ struct GhAsset {
 /// Parse « v0.4.1 » / « 0.4.1 » → (0,4,1) pour comparaison.
 fn parse_ver(s: &str) -> (u64, u64, u64) {
     let s = s.trim().trim_start_matches('v');
-    let mut it = s.split(|c: char| c == '.' || c == '-' || c == '+' || c == ' ');
+    let mut it = s.split(['.', '-', '+', ' ']);
     let n = |x: Option<&str>| x.and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
     (n(it.next()), n(it.next()), n(it.next()))
 }

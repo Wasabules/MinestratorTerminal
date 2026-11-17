@@ -28,8 +28,17 @@
     SupervisorConfig,
   } from '$lib/types';
   import Icon from '../Icon.svelte';
+  import ServiceSection from '../settings/ServiceSection.svelte';
 
-  type Section = 'general' | 'games' | 'supervisor' | 'mcp' | 'copilot' | 'privacy' | 'debug';
+  type Section =
+    | 'general'
+    | 'games'
+    | 'supervisor'
+    | 'service'
+    | 'mcp'
+    | 'copilot'
+    | 'privacy'
+    | 'debug';
   let section = $state<Section>('general');
   let debugOn = $state(false);
   let fakeOn = $state(false);
@@ -75,6 +84,8 @@
     { name: 'list_files', write: false },
     { name: 'read_file', write: false },
     { name: 'read_startup', write: false },
+    { name: 'read_properties', write: false },
+    { name: 'mybox_info', write: false },
     { name: 'list_installed_mods', write: false },
     { name: 'list_installed_plugins', write: false },
     { name: 'market_search', write: false },
@@ -87,6 +98,7 @@
     { name: 'delete_path', write: true },
     { name: 'rename_path', write: true },
     { name: 'set_startup_params', write: true },
+    { name: 'set_property', write: true },
     { name: 'install_mod', write: true },
   ];
   let exePath = $state('');
@@ -213,6 +225,7 @@
     clearTimeout(errorTimer);
     clearTimeout(copyTimer);
     clearTimeout(testTimer);
+    clearTimeout(logsTimer);
   });
 
   function flashSaved() {
@@ -299,6 +312,34 @@
       copyTimer = setTimeout(() => (copied = false), 1500);
     } catch {
       /* clipboard indispo */
+    }
+  }
+
+  // --- Journaux (rapport de bug) ---
+  let logsMsg = $state<string | null>(null);
+  let logsTimer: ReturnType<typeof setTimeout> | undefined;
+
+  async function copyLogs() {
+    try {
+      const text = await api.exportLogs();
+      if (!text.trim()) {
+        logsMsg = t('settings.logsEmpty');
+      } else {
+        await navigator.clipboard.writeText(text);
+        logsMsg = t('settings.logsCopied');
+      }
+      clearTimeout(logsTimer);
+      logsTimer = setTimeout(() => (logsMsg = null), 2500);
+    } catch (e) {
+      flashError(e);
+    }
+  }
+
+  async function openLogs() {
+    try {
+      await api.openLogsDir();
+    } catch (e) {
+      flashError(e);
     }
   }
 
@@ -496,6 +537,9 @@
     >
       {t('settings.supervisor')}
     </button>
+    <button class="nav-item" class:on={section === 'service'} onclick={() => (section = 'service')}>
+      {t('service.nav')}
+    </button>
     <button class="nav-item" class:on={section === 'mcp'} onclick={() => (section = 'mcp')}>
       {t('settings.mcp')}
     </button>
@@ -691,6 +735,8 @@
           {/each}
         </div>
       </div>
+    {:else if section === 'service'}
+      <ServiceSection />
     {:else if section === 'mcp' && mcp}
       <h1>{t('settings.mcp')}</h1>
 
@@ -1085,6 +1131,17 @@
         </div>
         <input type="checkbox" bind:checked={fakeOn} onchange={() => setFake(fakeOn)} />
       </label>
+
+      <h2>{t('settings.logs')}</h2>
+      <p class="desc dim">{t('settings.logsDesc')}</p>
+      <div class="row">
+        <span class="label">{t('settings.logsActions')}</span>
+        <div class="upd-actions">
+          {#if logsMsg}<span class="upd-msg ok">{logsMsg}</span>{/if}
+          <button class="btn btn--ghost" onclick={openLogs}>{t('settings.logsOpen')}</button>
+          <button class="btn" onclick={copyLogs}>{t('settings.logsCopy')}</button>
+        </div>
+      </div>
 
       <h2>{t('settings.debugServers')}</h2>
       <p class="desc dim">{t('settings.debugServersDesc')}</p>

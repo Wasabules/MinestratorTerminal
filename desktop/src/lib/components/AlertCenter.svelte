@@ -57,7 +57,9 @@
   }
 
   function color(severity: string): string {
-    return severity === 'critical' ? 'var(--state-danger)' : 'var(--state-pending)';
+    if (severity === 'critical') return 'var(--state-danger)';
+    // `info` : notice sans gravité (ex. service d'arrière-plan activé).
+    return severity === 'info' ? 'var(--state-running)' : 'var(--state-pending)';
   }
 </script>
 

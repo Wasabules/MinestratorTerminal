@@ -365,12 +365,12 @@
         <p class="dim pad">{t("files.empty")}</p>
       {:else}
         <ul class="arc">
-          {#each archive.entries.slice(0, 300) as a (a.path)}
+          {#each archive.entries.slice(0, 300) as a (a.name)}
             <li>
-              <button class="row" onclick={() => openArchiveEntry(a.path)} disabled={a.is_dir}>
+              <button class="row" onclick={() => openArchiveEntry(a.name)} disabled={a.is_dir}>
                 <Icon name={a.is_dir ? "folder" : "file"} size={18} />
                 <span class="meta">
-                  <span class="name">{a.path}</span>
+                  <span class="name">{a.name}</span>
                   {#if !a.is_dir}<small class="dim">{fmtSize(a.size)}</small>{/if}
                 </span>
               </button>

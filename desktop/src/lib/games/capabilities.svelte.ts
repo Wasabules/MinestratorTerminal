@@ -20,6 +20,7 @@ export const GENERIC_CAPS: GameCapabilities = {
   players: false,
   mods: 'none',
   backups: true,
+  properties: false,
 };
 
 const store = $state<{
@@ -68,6 +69,7 @@ export function availableViews(caps: GameCapabilities | undefined): typeof VIEWS
   return VIEWS.filter((v) => {
     if (v.id === 'players') return caps.players;
     if (v.id === 'mods') return caps.mods !== 'none';
+    if (v.id === 'settings') return caps.properties;
     return true;
   });
 }

@@ -5,13 +5,18 @@
 
 import type { SftpProgress } from '$lib/types';
 
+/**
+ * Un transfert suivi. `direction` (`up` | `down`) et `status` (`active` | `done` | `error`) sont
+ * des chaînes côté Rust (`SftpProgress`) : on garde leur type généré plutôt qu'une union qui
+ * promettrait plus que le core ne garantit.
+ */
 export interface Transfer {
   id: string;
   name: string;
-  direction: 'up' | 'down';
+  direction: SftpProgress['direction'];
   done: number;
   total: number;
-  status: 'active' | 'done' | 'error';
+  status: SftpProgress['status'];
   error: string | null;
 }
 
