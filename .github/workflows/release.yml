@@ -11,7 +11,12 @@ permissions:
   contents: write
 
 jobs:
+  # Garde-fou : la CI complète (clippy, tests, typecheck) doit passer avant tout build.
+  verify:
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: verify
     strategy:
       fail-fast: false
       matrix:
@@ -87,7 +92,7 @@ jobs:
             echo "---"
             echo ""
             echo "**Installeurs** (en pièces jointes) :"
-            echo "- Windows : \`.msi\` ou \`.exe\` (NSIS)"
+            echo "- Windows : \`.exe\` (pour votre compte, sans droits administrateur ; propose le service de supervision en arrière-plan) ou \`.msi\` (pour tous les utilisateurs, droits administrateur)"
             echo "- macOS : \`.dmg\` (universel Intel + Apple Silicon)"
             echo "- Linux : \`.AppImage\`, \`.deb\` ou \`.rpm\`"
             echo "- Android : \`.apk\` signé, à installer manuellement"
@@ -115,14 +120,18 @@ jobs:
           releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          # Surcouche « service d'arrière-plan » : embarque `minestrator-daemon` (compilé par
+          # `scripts/build-daemon-sidecar.mjs` pour la cible) et les scripts d'installeurs.
+          # Voir docs/SERVICE.md.
+          args: ${{ matrix.args }} --config src-tauri/tauri.service.conf.json
 
   # --- App mobile Android : APK signé, attaché à la même release ---
-  # `if: always()` → l'APK est produit même si un build desktop échoue (ex. course sur
-  # latest.json de tauri-action) ; `needs` ne sert qu'à l'ordre (la release existe déjà).
+  # L'APK est produit même si un build desktop échoue (ex. course sur latest.json de
+  # tauri-action) — mais jamais si la vérification a échoué. `needs: release` ne sert qu'à
+  # l'ordre (la release existe déjà).
   android:
-    needs: release
-    if: ${{ always() }}
+    needs: [verify, release]
+    if: ${{ always() && needs.verify.result == 'success' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
