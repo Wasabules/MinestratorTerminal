@@ -27,7 +27,7 @@ pub struct ApiClient {
 
 impl ApiClient {
     pub fn new() -> Self {
-        let http = reqwest::Client::builder()
+        let http = crate::http::builder()
             .user_agent(USER_AGENT)
             .build()
             .expect("construction du client HTTP");

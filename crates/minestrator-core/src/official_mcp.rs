@@ -16,10 +16,10 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+    crate::http::builder()
         .timeout(Duration::from_secs(30))
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .unwrap_or_else(|_| crate::http::client())
 });
 
 /// Toolsets délégués à l'officiel : **tout sauf `files`** (on gère les fichiers en SFTP direct,

@@ -131,7 +131,7 @@ pub async fn run(opts: Options, env: EnvConfig, shutdown: impl Future<Output = (
     // plan, il est facultatif (VPS sans app).
     let mut ipc_task = tokio::spawn(ipc::serve(shared.clone(), opts.endpoint.clone(), opts.owners.clone()));
 
-    let client = reqwest::Client::new();
+    let client = minestrator_core::http::client();
     tokio::pin!(shutdown);
     loop {
         tokio::select! {

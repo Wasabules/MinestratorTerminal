@@ -7,10 +7,10 @@ use crate::error::{Error, Result};
 use std::sync::LazyLock;
 
 static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+    crate::http::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .unwrap_or_else(|_| crate::http::client())
 });
 
 /// Plafond d'envoi (les services limitent ; on garde le DÉBUT — startup/premières erreurs y sont).

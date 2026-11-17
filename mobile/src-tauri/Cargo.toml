@@ -27,7 +27,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 
 # Transport des octets de transfert via l'IPC (le JS ne sait pas passer de binaire brut).
-base64 = "0.22"
+base64 = "0.23"
 
 # Toute la logique métier vit dans le core, partagé avec le desktop et le futur daemon.
 minestrator-core = { path = "../../crates/minestrator-core" }
@@ -38,7 +38,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Auto-update mobile : check via l'API GitHub Releases + téléchargement de l'APK (rustls).
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
 
 tracing = "0.1"
 

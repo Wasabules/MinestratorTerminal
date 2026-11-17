@@ -44,7 +44,7 @@ fn parse_ver(s: &str) -> (u64, u64, u64) {
 }
 
 fn client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    minestrator_core::http::builder()
         .user_agent(USER_AGENT)
         .build()
         .map_err(|e| e.to_string())

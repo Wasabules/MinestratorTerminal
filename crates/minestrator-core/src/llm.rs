@@ -24,7 +24,7 @@ const EMPTY_ASSISTANT_TURN: &str = "(réponse vide)";
 
 /// Client HTTP **partagé** (pool de connexions + TLS réutilisés) pour tous les appels LLM — évite
 /// de reconstruire un `reqwest::Client` à chaque message de chat / diagnostic.
-static LLM_HTTP: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
+static LLM_HTTP: LazyLock<reqwest::Client> = LazyLock::new(crate::http::client);
 
 /// Fournisseur LLM. Le transport `OpenaiCompatible` est volontairement générique
 /// (URL de base configurable) pour couvrir tout service exposant l'API OpenAI.

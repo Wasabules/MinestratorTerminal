@@ -310,7 +310,7 @@ pub async fn download(art: &FactorioArtifact, username: &str, token: &str) -> Re
         ));
     }
     if !art.sha1.is_empty() {
-        let got = format!("{:x}", Sha1::digest(&bytes));
+        let got = crate::util::hex(&Sha1::digest(&bytes));
         if !got.eq_ignore_ascii_case(&art.sha1) {
             return Err(Error::Unexpected("Empreinte sha1 invalide (téléchargement corrompu ?).".into()));
         }

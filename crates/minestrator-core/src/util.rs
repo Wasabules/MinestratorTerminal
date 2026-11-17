@@ -13,6 +13,16 @@ pub fn data_dir() -> Option<std::path::PathBuf> {
         })
 }
 
+/// Représentation hexadécimale minuscule (empreintes sha1/sha256 : `digest` 0.11 ne formate plus
+/// ses sorties en `{:x}`).
+pub(crate) fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write;
+    bytes.iter().fold(String::with_capacity(bytes.len() * 2), |mut s, b| {
+        let _ = write!(s, "{b:02x}");
+        s
+    })
+}
+
 /// Les `n` dernières lignes, jointes par `\n`.
 pub(crate) fn tail(lines: &[String], n: usize) -> String {
     let start = lines.len().saturating_sub(n);
