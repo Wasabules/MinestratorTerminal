@@ -52,7 +52,7 @@ fastnbt = "2"
 # Mods Satisfactory (ficsit.app) : vérification d'intégrité sha256 des artefacts + résolution des
 # contraintes de versions (SML/dépendances, syntaxe semver `^3.12.0`).
 sha2 = "0.10"
-sha1 = "0.10"
+sha1 = "0.11"
 semver = "1"
 
 # Génération des types TypeScript des frontends (`desktop/src/lib/bindings`, `mobile/src/lib/bindings`)
