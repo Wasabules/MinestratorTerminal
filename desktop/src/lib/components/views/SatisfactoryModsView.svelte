@@ -9,11 +9,11 @@
   import { onDestroy, onMount } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { confirm } from '@tauri-apps/plugin-dialog';
-  import { api, humanizeError } from '$lib/ipc';
-  import { modEvents } from '$lib/events';
-  import { t } from '$lib/i18n';
-  import { fmtBytes } from '$lib/copilot/format';
-  import { uid } from '$lib/util/id';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { modEvents } from '#lib/events.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { fmtBytes } from '#lib/copilot/format.ts';
+  import { uid } from '#lib/util/id.ts';
   import {
     addToCart,
     removeFromCart,
@@ -22,9 +22,9 @@
     inCart,
     hasActiveRun,
     startRun,
-  } from '$lib/mods/installs.svelte';
-  import type { FicsitInstalledMod, FicsitMod, FicsitVersion } from '$lib/types';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
+  } from '#lib/mods/installs.svelte.ts';
+  import type { FicsitInstalledMod, FicsitMod, FicsitVersion } from '#lib/types.ts';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();

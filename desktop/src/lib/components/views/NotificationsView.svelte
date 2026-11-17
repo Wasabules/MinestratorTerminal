@@ -8,9 +8,9 @@
    * liste reçue, ce qui évite tout aller-retour réseau au moindre changement de filtre.
    */
   import { onMount } from 'svelte';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import type { UserNotification } from '$lib/types';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import type { UserNotification } from '#lib/types.ts';
   import Icon from '../Icon.svelte';
 
   let all = $state<UserNotification[]>([]);

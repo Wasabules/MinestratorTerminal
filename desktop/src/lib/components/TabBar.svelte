@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { tabs, viewMeta, type ServerTab, type Tab } from '$lib/tabs/tabs.svelte';
-  import { serverColor, setServerColor, SERVER_COLORS } from '$lib/servers/colors.svelte';
-  import { serverRuntime } from '$lib/servers/runtime.svelte';
-  import { runtimeMeta } from '$lib/status';
-  import { isCompactTabs } from '$lib/tabs/mode.svelte';
-  import { detachTab, isPointerOutsideWindow } from '$lib/windows';
-  import { t } from '$lib/i18n';
+  import { tabs, viewMeta, type ServerTab, type Tab } from '#lib/tabs/tabs.svelte.ts';
+  import { serverColor, setServerColor, SERVER_COLORS } from '#lib/servers/colors.svelte.ts';
+  import { serverRuntime } from '#lib/servers/runtime.svelte.ts';
+  import { runtimeMeta } from '#lib/status.ts';
+  import { isCompactTabs } from '#lib/tabs/mode.svelte.ts';
+  import { detachTab, isPointerOutsideWindow } from '#lib/windows.ts';
+  import { t } from '#lib/i18n/index.ts';
   import Icon from './Icon.svelte';
 
   type Menu = { x: number; y: number; tab: ServerTab };

@@ -1,6 +1,6 @@
 /** Centre de diagnostics : accumule les rapports du Copilote + suit les analyses en cours. */
 
-import type { CopilotProgress, CopilotStarted, Diagnosis } from '$lib/types';
+import type { CopilotProgress, CopilotStarted, Diagnosis } from '#lib/types.ts';
 
 export interface DiagnosisItem extends Diagnosis {
   read: boolean;

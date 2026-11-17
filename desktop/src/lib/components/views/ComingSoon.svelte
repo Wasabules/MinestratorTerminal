@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { t } from '$lib/i18n';
-  import { viewMeta, type ServerTab } from '$lib/tabs/tabs.svelte';
+  import { t } from '#lib/i18n/index.ts';
+  import { viewMeta, type ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();

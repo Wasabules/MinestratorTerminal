@@ -3,7 +3,7 @@
  * Lu par le layout (garde de navigation) et les écrans.
  */
 
-import type { UserProfile } from '$lib/types';
+import type { UserProfile } from '#lib/types.ts';
 
 export type AuthState =
   | { status: 'loading' }

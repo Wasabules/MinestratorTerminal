@@ -7,9 +7,9 @@
    */
   import { onMount, onDestroy } from 'svelte';
   import { confirm } from '@tauri-apps/plugin-dialog';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import type { ServiceOverview } from '$lib/types';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import type { ServiceOverview } from '#lib/types.ts';
 
   type Busy = '' | 'enable' | 'disable' | 'restart' | 'update' | 'uninstall';
 

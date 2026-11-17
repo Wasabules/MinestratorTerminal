@@ -25,6 +25,7 @@ mod factorio;
 mod ficsit;
 mod games;
 mod llm;
+pub mod http;
 pub mod logs;
 mod mca;
 pub mod mcp;
@@ -130,6 +131,7 @@ pub struct Core {
 
 impl Core {
     pub fn new() -> Self {
+        http::ensure_default_provider();
         let (events, _rx) = broadcast::channel(1024);
         let api = ApiClient::new();
         let console = Arc::new(ConsoleManager::new(events.clone()));
@@ -1368,7 +1370,7 @@ impl Core {
                 sftp::read_bytes(&conn, path, MCP_TRANSFER_CAP).await
             })
             .await?;
-        let hash = format!("{:x}", sha2::Sha256::digest(&data));
+        let hash = util::hex(&sha2::Sha256::digest(&data));
         Ok((false, data.len() as u64, hash))
     }
 

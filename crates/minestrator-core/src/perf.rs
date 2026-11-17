@@ -25,7 +25,7 @@ const TOP_HOTSPOTS: usize = 15;
 /// Client HTTP partagé pour récupérer les rapports Spark (pool de connexions + TLS réutilisés) :
 /// un `reqwest::Client` est conçu pour être partagé, pas recréé à chaque appel.
 static SPARK_HTTP: std::sync::LazyLock<reqwest::Client> =
-    std::sync::LazyLock::new(reqwest::Client::new);
+    std::sync::LazyLock::new(crate::http::client);
 
 /// Collecte un rapport de performance Spark et le renvoie en texte pour le Copilote.
 /// Émet des étapes de progression (`id` = celui de l'analyse).

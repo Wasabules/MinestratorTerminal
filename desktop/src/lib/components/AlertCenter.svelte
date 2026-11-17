@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n';
-  import { ago } from '$lib/copilot/format';
-  import { alertItems, unreadCount, markAllRead, clearAlerts } from '$lib/alerts/alerts.svelte';
-  import { api } from '$lib/ipc';
-  import { tabs } from '$lib/tabs/tabs.svelte';
-  import type { UserNotification } from '$lib/types';
+  import { t } from '#lib/i18n/index.ts';
+  import { ago } from '#lib/copilot/format.ts';
+  import { alertItems, unreadCount, markAllRead, clearAlerts } from '#lib/alerts/alerts.svelte.ts';
+  import { api } from '#lib/ipc.ts';
+  import { tabs } from '#lib/tabs/tabs.svelte.ts';
+  import type { UserNotification } from '#lib/types.ts';
   import Icon from './Icon.svelte';
 
   let open = $state(false);

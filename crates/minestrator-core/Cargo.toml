@@ -11,28 +11,31 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # Réseau : rustls (pas d'OpenSSL système).
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-base64 = "0.22"
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "form", "rustls-no-provider"] }
+# TLS de reqwest et de la console : fournisseur `ring` + racines Mozilla embarquées (voir `http.rs`).
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+webpki-roots = "1"
+base64 = "0.23"
 
 # Async + console WebSocket (Wings). `process` : agent CLI local (Copilote sans clé API).
 # `io-std` : transport stdio du serveur MCP (`mcp::serve_stdio`). `net` : canal IPC local avec le
 # service d'arrière-plan (socket Unix / canal nommé Windows, voir `service.rs`).
 tokio = { version = "1", features = ["rt", "sync", "macros", "time", "fs", "io-util", "io-std", "process", "net"] }
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3"
 
 # Client SFTP natif.
 # Backend crypto `ring` (pas `aws-lc-rs`, qui exige CMake/NASM et complique la compilation croisée
 # Android) ; `rsa` : clés d'hôte RSA des serveurs Wings anciens.
 russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
-russh-sftp = "2.0"
+russh-sftp = "3"
 
 # Stockage local de l'historique de métriques (SQLite embarqué, sans dépendance système).
 rusqlite = { version = "0.43", features = ["bundled"] }
-directories = "5"
+directories = "6"
 
 # Parsing du rapport de profiler Spark (protobuf `x-spark-sampler`) — structs à la main, sans protoc.
-prost = "0.13"
+prost = "0.14"
 
 thiserror = "2"
 tracing = "0.1"
@@ -51,8 +54,8 @@ fastnbt = "2"
 
 # Mods Satisfactory (ficsit.app) : vérification d'intégrité sha256 des artefacts + résolution des
 # contraintes de versions (SML/dépendances, syntaxe semver `^3.12.0`).
-sha2 = "0.10"
-sha1 = "0.10"
+sha2 = "0.11"
+sha1 = "0.11"
 semver = "1"
 
 # Génération des types TypeScript des frontends (`desktop/src/lib/bindings`, `mobile/src/lib/bindings`)
@@ -68,7 +71,7 @@ ts = ["dep:ts-rs"]
 
 # Trousseau natif de l'OS (fonctionne aussi headless).
 [target.'cfg(windows)'.dependencies]
-keyring = { version = "3", features = ["windows-native"] }
+keyring = "4"
 # Service d'arrière-plan : état du service (SCM), SID de l'utilisateur, élévation UAC.
 windows-service = "0.8"
 windows-sys = { version = "0.61", features = [
@@ -87,7 +90,7 @@ windows-sys = { version = "0.61", features = [
 libc = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3", features = ["apple-native"] }
+keyring = "4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-keyring = { version = "3", features = ["sync-secret-service"] }
+keyring = "4"

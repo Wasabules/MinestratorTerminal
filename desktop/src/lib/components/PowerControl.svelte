@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import type { PowerAction } from '$lib/types';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import type { PowerAction } from '#lib/types.ts';
 
   let {
     serverId,

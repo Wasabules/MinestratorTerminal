@@ -8,9 +8,9 @@
  * vues serveur n'ont sinon aucun moyen de les obtenir sans refaire un appel.
  */
 
-import { api } from '$lib/ipc';
-import { VIEWS } from '$lib/tabs/tabs.svelte';
-import type { GameCapabilities, ServerListItem } from '$lib/types';
+import { api } from '#lib/ipc.ts';
+import { VIEWS } from '#lib/tabs/tabs.svelte.ts';
+import type { GameCapabilities, ServerListItem } from '#lib/types.ts';
 
 /** Capacités par défaut pour un jeu inconnu / non encore chargé (défaut sûr). */
 export const GENERIC_CAPS: GameCapabilities = {

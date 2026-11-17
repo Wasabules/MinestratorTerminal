@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { api, ensureNotificationPermission } from "$lib/ipc";
-  import { auth } from "$lib/stores/auth.svelte";
-  import { settings } from "$lib/stores/settings.svelte";
-  import { initFake, isFake } from "$lib/fake.svelte";
-  import { t } from "$lib/i18n";
-  import Onboarding from "$lib/components/Onboarding.svelte";
-  import ServersList from "$lib/components/ServersList.svelte";
-  import ServerView from "$lib/components/ServerView.svelte";
-  import SettingsView from "$lib/components/SettingsView.svelte";
-  import NotificationsView from "$lib/components/NotificationsView.svelte";
-  import UpdateBanner from "$lib/components/UpdateBanner.svelte";
-  import type { MyBoxSummary, ServerListItem } from "$lib/types";
+  import { api, ensureNotificationPermission } from "#lib/ipc.ts";
+  import { auth } from "#lib/stores/auth.svelte.ts";
+  import { settings } from "#lib/stores/settings.svelte.ts";
+  import { initFake, isFake } from "#lib/fake.svelte.ts";
+  import { t } from "#lib/i18n.ts";
+  import Onboarding from "#lib/components/Onboarding.svelte";
+  import ServersList from "#lib/components/ServersList.svelte";
+  import ServerView from "#lib/components/ServerView.svelte";
+  import SettingsView from "#lib/components/SettingsView.svelte";
+  import NotificationsView from "#lib/components/NotificationsView.svelte";
+  import UpdateBanner from "#lib/components/UpdateBanner.svelte";
+  import type { MyBoxSummary, ServerListItem } from "#lib/types.ts";
 
   let selected = $state<{ server: ServerListItem; box: MyBoxSummary | null } | null>(null);
   let showSettings = $state(false);

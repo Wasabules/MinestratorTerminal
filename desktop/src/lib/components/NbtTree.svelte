@@ -3,7 +3,7 @@
   // exact (puce colorée). Fonctions : recherche (surlignage + auto-dépli via arbre pré-filtré),
   // hints « parlants » (UUID/date/coordonnées/booléen), dépli/repli groupé, menu contextuel (copier).
   import { untrack } from 'svelte';
-  import type { NbtNode } from '$lib/types';
+  import type { NbtNode } from '#lib/types.ts';
   import Self from './NbtTree.svelte';
 
   let {

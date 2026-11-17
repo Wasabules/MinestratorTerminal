@@ -4,8 +4,8 @@
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { Update } from '@tauri-apps/plugin-updater';
-  import { checkForUpdate, applyUpdate, isAutoUpdateEnabled } from '$lib/updater';
-  import { t } from '$lib/i18n';
+  import { checkForUpdate, applyUpdate, isAutoUpdateEnabled } from '#lib/updater.ts';
+  import { t } from '#lib/i18n/index.ts';
 
   let update = $state<Update | null>(null);
   let busy = $state(false);

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { openUrl } from '@tauri-apps/plugin-opener';
-  import { api, humanizeError } from '$lib/ipc';
-  import { setAuth } from '$lib/stores/auth.svelte';
-  import { t } from '$lib/i18n';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { setAuth } from '#lib/stores/auth.svelte.ts';
+  import { t } from '#lib/i18n/index.ts';
 
   const PANEL_URL = 'https://minestrator.com/my/account?section=api';
 

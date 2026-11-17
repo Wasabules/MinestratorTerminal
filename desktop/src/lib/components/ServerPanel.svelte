@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import type { ServerTab } from '$lib/tabs/tabs.svelte';
-  import { serverCaps, ensureCaps } from '$lib/games/capabilities.svelte';
+  import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
+  import { serverCaps, ensureCaps } from '#lib/games/capabilities.svelte.ts';
   import ServerOverview from './views/ServerOverview.svelte';
   import ConsoleView from './views/ConsoleView.svelte';
   import SftpView from './views/SftpView.svelte';

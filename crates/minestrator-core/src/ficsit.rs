@@ -22,10 +22,10 @@ pub const SERVER_TARGET: &str = "LinuxServer";
 const MAX_ARTIFACT: u64 = 512 * 1024 * 1024;
 
 static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+    crate::http::builder()
         .timeout(std::time::Duration::from_secs(120))
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .unwrap_or_else(|_| crate::http::client())
 });
 
 // --- Modèles (Deserialize depuis GraphQL, Serialize vers le front) ---------
@@ -334,7 +334,7 @@ pub async fn download(link: &str, expected_hash: Option<&str>) -> Result<Vec<u8>
         return Err(Error::Unexpected("artefact trop volumineux.".into()));
     }
     if let Some(expected) = expected_hash {
-        let got = format!("{:x}", Sha256::digest(&bytes));
+        let got = crate::util::hex(&Sha256::digest(&bytes));
         if !got.eq_ignore_ascii_case(expected) {
             return Err(Error::Unexpected(
                 "empreinte sha256 de l'artefact invalide (téléchargement corrompu ?).".into(),

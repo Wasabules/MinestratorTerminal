@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { t } from '$lib/i18n';
-  import { renderMarkdown } from '$lib/markdown';
-  import { ago, elapsed, trigIcon, trigLabel } from '$lib/copilot/format';
+  import { t } from '#lib/i18n/index.ts';
+  import { renderMarkdown } from '#lib/markdown.ts';
+  import { ago, elapsed, trigIcon, trigLabel } from '#lib/copilot/format.ts';
   import ActionList from '../ActionList.svelte';
   import Icon from '../Icon.svelte';
   import {
@@ -10,7 +10,7 @@
     activeRuns,
     clearDiagnoses,
     markDiagnosesRead,
-  } from '$lib/copilot/diagnoses.svelte';
+  } from '#lib/copilot/diagnoses.svelte.ts';
 
   let expanded = $state<Record<string, boolean>>({});
   // Force la ré-évaluation des durées « il y a … » chaque seconde.

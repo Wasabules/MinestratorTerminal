@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { api, humanizeError } from '$lib/ipc';
-  import { t } from '$lib/i18n';
-  import { riskColor } from '$lib/copilot/format';
-  import type { ProposedAction } from '$lib/types';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t } from '#lib/i18n/index.ts';
+  import { riskColor } from '#lib/copilot/format.ts';
+  import type { ProposedAction } from '#lib/types.ts';
   import Icon from './Icon.svelte';
 
   let { actions, serverId }: { actions: ProposedAction[]; serverId: number } = $props();

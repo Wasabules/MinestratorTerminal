@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { api } from '$lib/ipc';
-  import { authStore, setAuth } from '$lib/stores/auth.svelte';
-  import { tabs } from '$lib/tabs/tabs.svelte';
-  import { toggleTheme } from '$lib/theme';
-  import { t, getLocale, setLocale, LOCALES, type Locale } from '$lib/i18n';
+  import { api } from '#lib/ipc.ts';
+  import { authStore, setAuth } from '#lib/stores/auth.svelte.ts';
+  import { tabs } from '#lib/tabs/tabs.svelte.ts';
+  import { toggleTheme } from '#lib/theme.ts';
+  import { t, getLocale, setLocale, LOCALES, type Locale } from '#lib/i18n/index.ts';
   import Icon from './Icon.svelte';
 
   let open = $state(false);

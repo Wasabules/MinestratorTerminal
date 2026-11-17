@@ -31,11 +31,11 @@ pub struct FactorioSettings {
 /// Client HTTP externe partagé (réseau côté cœur, hors CSP webview). UA « navigateur » : certaines
 /// API (Cloudflare devant Thunderstore) refusent un UA vide/curl.
 static HTTP: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    reqwest::Client::builder()
+    crate::http::builder()
         .timeout(std::time::Duration::from_secs(30))
         .user_agent("MinestratorTerminal/0.2 (+https://minestrator.com)")
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+        .unwrap_or_else(|_| crate::http::client())
 });
 
 /// GET + désérialisation JSON typée, avec `params` de query encodés proprement.

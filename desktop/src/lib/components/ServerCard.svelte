@@ -1,10 +1,10 @@
 <script lang="ts">
-  import type { ServerListItem } from '$lib/types';
-  import { statusMeta } from '$lib/status';
-  import { tabs, VIEWS, type ServerView } from '$lib/tabs/tabs.svelte';
-  import { serverColor } from '$lib/servers/colors.svelte';
-  import { isDebug } from '$lib/debug.svelte';
-  import { t } from '$lib/i18n';
+  import type { ServerListItem } from '#lib/types.ts';
+  import { statusMeta } from '#lib/status.ts';
+  import { tabs, VIEWS, type ServerView } from '#lib/tabs/tabs.svelte.ts';
+  import { serverColor } from '#lib/servers/colors.svelte.ts';
+  import { isDebug } from '#lib/debug.svelte.ts';
+  import { t } from '#lib/i18n/index.ts';
   import StatusDot from './StatusDot.svelte';
   import Icon from './Icon.svelte';
 

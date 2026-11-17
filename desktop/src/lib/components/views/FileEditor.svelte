@@ -17,10 +17,10 @@
   import { properties } from '@codemirror/legacy-modes/mode/properties';
   import { shell } from '@codemirror/legacy-modes/mode/shell';
   import { toml } from '@codemirror/legacy-modes/mode/toml';
-  import { api, humanizeError } from '$lib/ipc';
-  import { openCopilotMenu } from '$lib/copilot/menu.svelte';
-  import { PASTE_SERVICES, pasteExport } from '$lib/paste';
-  import { t } from '$lib/i18n';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { openCopilotMenu } from '#lib/copilot/menu.svelte.ts';
+  import { PASTE_SERVICES, pasteExport } from '#lib/paste.ts';
+  import { t } from '#lib/i18n/index.ts';
   import Icon from '../Icon.svelte';
 
   let {

@@ -225,7 +225,7 @@ mod tests {
     #[test]
     fn reqwest_errors_become_network_errors() {
         // Erreur de construction de requête (URL invalide) : aucune E/S réseau.
-        let e = reqwest::Client::new().get("pas une url").build().unwrap_err();
+        let e = crate::http::client().get("pas une url").build().unwrap_err();
         let err = Error::from(e);
         assert_eq!(err.kind(), "network");
         assert!(err.to_string().starts_with("Erreur réseau : "), "{err}");

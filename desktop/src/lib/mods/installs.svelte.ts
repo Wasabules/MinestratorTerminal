@@ -5,7 +5,7 @@
  * Calqué sur `src/lib/transfers/transfers.svelte.ts` (store rune + abonnement central dans Workspace).
  */
 
-import type { ModInstallProgress } from '$lib/types';
+import type { ModInstallProgress } from '#lib/types.ts';
 
 /** Un mod ajouté au panier d'un serveur (référence + version choisie + nom lisible). */
 export interface CartItem {

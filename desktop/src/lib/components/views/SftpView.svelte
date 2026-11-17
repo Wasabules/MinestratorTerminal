@@ -3,20 +3,20 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
-  import { api, humanizeError } from '$lib/ipc';
-  import { t, getLocale } from '$lib/i18n';
-  import { fmtBytes as fmtSize } from '$lib/copilot/format';
-  import { tabs, type ServerTab } from '$lib/tabs/tabs.svelte';
+  import { api, humanizeError } from '#lib/ipc.ts';
+  import { t, getLocale } from '#lib/i18n/index.ts';
+  import { fmtBytes as fmtSize } from '#lib/copilot/format.ts';
+  import { tabs, type ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import Icon from '../Icon.svelte';
-  import { sftpEvents } from '$lib/events';
-  import { uid } from '$lib/util/id';
+  import { sftpEvents } from '#lib/events.ts';
+  import { uid } from '#lib/util/id.ts';
   import {
     startTransfer,
     transferItems,
     activeCount,
     clearFinished,
-  } from '$lib/transfers/transfers.svelte';
-  import type { ArchiveEntry, NbtNode, RegionChunk, SftpEntry } from '$lib/types';
+  } from '#lib/transfers/transfers.svelte.ts';
+  import type { ArchiveEntry, NbtNode, RegionChunk, SftpEntry } from '#lib/types.ts';
   import {
     isColVisible,
     toggleCol,
@@ -27,7 +27,7 @@
     OPTIONAL_COLUMNS,
     COLUMN_LABEL,
     type SftpSortKey,
-  } from '$lib/sftp/columns.svelte';
+  } from '#lib/sftp/columns.svelte.ts';
   import FileEditor from './FileEditor.svelte';
   import NbtTree from '../NbtTree.svelte';
 
