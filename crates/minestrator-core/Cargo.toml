@@ -31,7 +31,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 directories = "5"
 
 # Parsing du rapport de profiler Spark (protobuf `x-spark-sampler`) — structs à la main, sans protoc.
-prost = "0.13"
+prost = "0.14"
 
 thiserror = "2"
 tracing = "0.1"
