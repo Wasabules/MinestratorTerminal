@@ -27,7 +27,7 @@ russh-sftp = "2.0"
 async-trait = "0.1"
 
 # Stockage local de l'historique de métriques (SQLite embarqué, sans dépendance système).
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 directories = "5"
 
 # Parsing du rapport de profiler Spark (protobuf `x-spark-sampler`) — structs à la main, sans protoc.
