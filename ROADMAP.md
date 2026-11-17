@@ -11,7 +11,8 @@
 - **Superviseur + tray** — surveille tous les serveurs en tâche de fond, même fenêtre fermée.
 - **Historique CPU/RAM/disque** — séries temporelles stockées en local (SQLite) + graphiques.
 - **Alertes natives** — crash, seuils CPU/RAM/disque, expiration MyBox (`tend_days`).
-- **Registre de snapshots** — l'app note ceux qu'elle crée, contournant l'absence de listing API.
+- **Snapshots** — listing (`GET /user/{id}/snapshots`), création, restauration, suppression ; suivi
+  des créations en cours.
 - **Tableau expiration & crédits** — comptes à rebours MyBox, solde, rappels avant suspension.
 - **Serveur MCP intégré** — expose l'app à Claude (statut, commandes, power, logs, métriques, SFTP).
 - **Marketplace mods/plugins** — recherche Modrinth / CurseForge / Spigot → upload SFTP.
@@ -52,4 +53,5 @@
 - **Page de statut / overlay OBS** — joueurs en ligne et uptime, partageables.
 - **Multi-comptes** — plusieurs clés API, vue agrégée.
 - **Journal d'audit local** — chaque action faite via l'app, exportable.
-- **Création de serveurs par templates** — `POST /server` + presets d'eggs réutilisables.
+- **Création de serveurs par templates** — `POST /mybox/{id_mybox}/server` (+ `GET
+  /server/catalog/eggs` et `/server/catalog/locations`) + presets d'eggs réutilisables.

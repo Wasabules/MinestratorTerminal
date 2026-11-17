@@ -68,7 +68,7 @@ members = [
   "mobile/src-tauri",            # app mobile (Android ; iOS à venir)
   "crates/minestrator-core",     # cœur métier partagé
   "crates/minestrator-mcp",      # serveur MCP headless
-  "crates/minestrator-daemon",   # daemon Linux : surveillance + push FCM (alertes app fermée)
+  "crates/minestrator-daemon",   # service d'arrière-plan Windows/Linux/macOS : supervision, IPC, push FCM
 ]
 ```
 
@@ -114,7 +114,10 @@ Regroupés par domaine (liste réelle des fichiers).
   (`UserProfile`, `ServersOverview`/`MyBoxSummary`, `ServerDetails`, `LiveLight`, `Startup`, `MarketPage`,
   `Backup`, `Snapshot`, `InstalledItem`, `SftpEntry`…).
 - **`config`** — constantes (URLs, `Origin` Wings, comptes trousseau, version Anthropic, variables d'env MCP).
-- **`error`** — `Error` unifié, sérialisé `{ kind, message }` pour un traitement par cas côté frontend.
+- **`error`** — `Error` unifié, sérialisé `{ kind, message }` (via `ErrorPayload`, discriminant typé
+  `ErrorKind`) pour un traitement par cas côté frontend.
+- **`bindings`** *(feature `ts`)* — génération des types TypeScript des frontends depuis les structs
+  serde (ts-rs). Voir §5.3.
 - **`events`** — `CoreEvent` (enum) + payloads `Serialize` diffusés sur un canal `broadcast`.
 - **`util`** — petits helpers texte partagés.
 
@@ -134,6 +137,10 @@ Regroupés par domaine (liste réelle des fichiers).
 - **`cache`** — cache mémoire TTL des lectures d'API stables/semi-stables (au niveau du `Core`).
 - **`persist`** — config JSON persistée (load/get/set sous mutex) dans le dossier data de l'OS ;
   mutualise MCP, Copilote et confidentialité.
+- **`logs`** — journaux **fichier** à rotation quotidienne (`<data>/logs/`, 7 jours) installés par
+  l'app desktop et mobile (`logs::init`), et **export anonymisé** (`redact`) pour un rapport de bug
+  (Réglages → Debug sur desktop, Réglages sur mobile). Sans eux, les logs d'une release Windows
+  (sans console) ou Android (stdout non relié à logcat) sont perdus.
 - **`perf`** — analyse de performance via **Spark** : orchestre health/tps/gc + profiler, télécharge et
   parse le rapport protobuf (`prost`), assemble un contexte pour le Copilote.
 - **`doctor`** — docteur démarrage : rassemble commande de démarrage + fin de `latest.log` + crash-report
@@ -154,12 +161,17 @@ Regroupés par domaine (liste réelle des fichiers).
   d'outils et le `dispatch`. Réglable via `McpConfig` (activer/désactiver, mode lecture seule). Réutilisée
   par `minestrator-mcp`, par `src-tauri --mcp`, et par le Copilote en interne.
 - **`official_mcp`** — client du **serveur MCP OFFICIEL** de MineStrator (`https://mcp.sttr.io/minestrator`,
-  Streamable HTTP stateless, `Bearer <clé API>`) : ~60 outils de gestion délégués à l'hôte. Notre MCP local
+  Streamable HTTP stateless, `Bearer <clé API>`) : une centaine d'outils de gestion (107 annoncés fin
+  2026, cf. minestrator.com/connecter/votre/ia) délégués à l'hôte. Notre MCP local
   garde le SFTP fin + les outils exclusifs (`inspect_region`, Spark, docteur démarrage).
 
 ### 3.5 Sécurité & confidentialité
 - **`secrets`** — trousseau natif de l'OS (`keyring`) : clé API + clés LLM par fournisseur
-  (`llm-key-<slug>`). Fonctionne aussi en headless.
+  (`llm-key-<slug>`). Fonctionne aussi en headless. Backend **fichier** (mobile, daemon) : dossier de
+  données de l'app, jamais le répertoire temporaire, `secrets.json` en `0600` sous Unix.
+- **`cli_agent::RunDir`** — dossier éphémère de la config d'un agent CLI (qui peut porter la clé API) :
+  privé, effacé à la fin du processus, orphelins purgés. Les outils natifs des agents (shell, disque)
+  sont retirés — cf. `COPILOT.md`.
 - **`redact`** — `PrivacyConfig` + anonymisation (`redact`) des secrets/IP/e-mails avant envoi à un LLM.
 - **`paste`** — export d'un texte (console, fichier) vers un service public (mclo.gs, instance MineStrator,
   pastes.dev). Contenu **toujours** anonymisé + dé-ANSI avant envoi (indépendant du réglage IA).
@@ -199,6 +211,20 @@ la moitié des endpoints annoncés par le RE n'existent pas pour cette authentif
 | `GET /user/servers/websocket` | ✗ 404 | — |
 | `GET /user/tickets`, `/user/notifications/unreaded` | ✗ inaccessibles (auth mobile `api_authkey` requise) | — ; les notifications utilisateur sont **déjà** dans `GET /user` (`user.notifications[]`) |
 | En-tête `X-App-Token` | ✗ non requis | on ne l'envoie pas : c'est le secret client de l'app officielle |
+
+### 4.2 Endpoints adoptés depuis l'OpenAPI officielle (non vérifiés au banc)
+
+Source : `https://api.minestrator.com/openapi-public-fr.yaml`. Contrairement au §4.1, ces endpoints
+n'ont **pas** été testés avec une clé réelle : leurs modèles (`models.rs`) sont **tolérants** (entiers
+acceptés en flottant/chaîne, drapeaux `0/1` ou booléens, objet vide sérialisé en `[]` par PHP), et
+les usages critiques gardent un **repli** sur le chemin éprouvé.
+
+| Endpoint | Usage dans le core | Repli |
+|---|---|---|
+| `GET /server/{id}/live` | `Core::server_live` : outil MCP `server_status`, `wait_offline` (installation de mods), Aperçu desktop (FlexCore, réseau, uptime) | `live/light` + échantillon WebSocket (`sample_stats`) |
+| `GET /server/{id}/properties` | `Core::server_properties` : vue **Paramètres** desktop, outil MCP `read_properties` (secrets masqués) | — (lecture seule, erreur affichée) |
+| `PATCH /server/{id}/properties` (`{property, value}`) | `Core::set_server_property` : une clé à la fois, effet au prochain démarrage ; outil `set_property` | — |
+| `GET /mybox/{id}` | `Core::mybox_details` : accueil (renouvellement auto, ressources libres, suppression), outil `mybox_info`, superviseur (pas d'alerte d'expiration si renouvellement auto ; alerte critique de suppression) | alerte d'expiration classique si l'appel échoue |
 
 > **Piège de l'API** : un chemin `/user/<inconnu>` ne renvoie **pas** 404 mais le profil complet,
 > avec `description: "User - Informations - Get user datas"`. Un endpoint « qui répond 200 » n'est
@@ -243,7 +269,7 @@ Le WS ne sert qu'à **recevoir** output + stats + status.
 
 ### 5.1 Commandes (`desktop/src-tauri/src/commands.rs`, enregistrées dans `lib.rs`)
 
-~70 commandes `#[tauri::command]`, appelées **uniquement** via la couche typée `src/lib/ipc.ts`
+Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via la couche typée `src/lib/ipc.ts`
 (aucun composant n'appelle `invoke` en direct). Groupées par domaine :
 
 | Domaine | Commandes (extraits) |
@@ -276,15 +302,44 @@ observer le même serveur indépendamment.
 | `console://output` | `{ conn_id, line }` | append xterm |
 | `console://stats` | `{ conn_id, cpu_absolute, memory_bytes, memory_limit_bytes, disk_bytes, uptime, state }` | jauges |
 | `console://status` | `{ conn_id, state }` | badge d'état |
-| `console://connection` | `{ conn_id, phase }` | `connecting \| open \| reconnecting \| closed \| hibernated` |
+| `console://connection` | `{ conn_id, phase }` | `connecting \| open \| reconnecting \| closed \| hibernated \| suspended` |
 | `alert://new` | `{ server_id, kind, severity, message, ts }` | bandeau + **notif native** |
 | `copilot://started` | `{ id, server_id, trigger }` | indicateur « analyse en cours » |
 | `copilot://progress` | `{ id, phase }` | log de progression |
 | `copilot://diagnosis` | `Diagnosis` (cause, fix, actions proposées) | rapport + **notif native** |
 | `chat://delta` | `{ id = session_id, text }` | streaming des réponses assistant |
 | `sftp://progress` | `{ id = transferId, name, direction, done, total, status, error }` | gestionnaire de transferts |
+| `mods://install-progress` | `ModInstallProgress` (`{ id, phase, mod_name, done, total, status, error }`) | suivi d'une installation de mods par lot |
 
 *(`CoreEvent::ConsoleLog` est interne — déclencheur Copilote — et n'est pas relayé au webview.)*
+
+### 5.3 Types partagés : générés depuis Rust (ts-rs)
+
+Les types qui traversent l'IPC (réponses de commandes, payloads d'events ci-dessus, arguments
+structurés) ne sont **pas** écrits à la main en TypeScript : ils sont générés depuis les structs serde
+par [`ts-rs`](https://docs.rs/ts-rs) 12, puis **versionnés**. Une dérive (champ serde renommé, `Option`
+ajoutée…) casse la CI au lieu de casser l'app à l'exécution.
+
+| Fichier généré | Source | Ré-exporté par |
+|---|---|---|
+| `desktop/src/lib/bindings/core.ts` | `minestrator_core::bindings::core()` | `desktop/src/lib/types.ts` (`export type *`) |
+| `mobile/src/lib/bindings/core.ts` | idem (contenu identique) | `mobile/src/lib/types.ts` |
+| `mobile/src/lib/bindings/mobile.ts` | `mobile/src-tauri/src/bindings.rs` (`UpdateInfo`, `SftpSearchResult`) | `mobile/src/lib/types.ts` |
+
+- **Dérivation optionnelle** : `#[cfg_attr(feature = "ts", derive(ts_rs::TS))]`. La feature `ts` (core et
+  crate mobile) n'est activée que par les alias de génération : ts-rs n'entre dans aucun binaire livré, et
+  le core ne gagne aucune dépendance d'UI.
+- **Forme JSON exacte** : ts-rs lit les attributs serde (`rename`, `rename_all`, `tag`, `default`,
+  `flatten`…). `Option<T>` → `T | null` (champ présent, à `null`). Un `skip_serializing_if` **sans**
+  `default` (champ réellement omis) exige `ts(optional)` → `?:` (`NbtNode`). `serde_json::Value` →
+  `JsonValue`. `Error`, à sérialisation manuelle, passe par `ErrorPayload` (`AppError`) et `ErrorKind`
+  (`AppErrorKind`).
+- **Entiers 64 bits en `number`** (`Config::with_large_int("number")`) : c'est ce que `JSON.parse`
+  produit réellement, pas un `bigint`.
+- `types.ts` ne garde que les unions purement front (`PowerAction`, `PlayerAction`, `MarketKind`,
+  `MarketSource` : de simples chaînes côté Rust).
+- **`cargo bindings`** régénère ; **`cargo bindings-check`** (CI) échoue si un fichier versionné ne
+  correspond plus au Rust. Les alias vivent dans `.cargo/config.toml`.
 
 ---
 
@@ -313,7 +368,7 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   `MarketplaceView` (mods/plugins), `AssistantView` (chat Copilote streamé), `BackupsView`
   (backups + snapshots), `SettingsView`, `CopilotView`, `ComingSoon` (placeholder).
 - **Couches transverses** — `ipc.ts` (façade `api` typée + `humanizeError`/i18n), `events.ts`
-  (abonnements typés), stores rune (`stores/auth.svelte.ts`, `servers/colors.svelte`, `sftp/columns.svelte`),
+  (abonnements typés), `types.ts` (ré-export des types générés de `bindings/`, cf. §5.3), stores rune (`stores/auth.svelte.ts`, `servers/colors.svelte`, `sftp/columns.svelte`),
   `theme.ts` (clair/sombre), `i18n` (fr/en), `updater.ts` + `UpdateBanner.svelte`.
 
 **UX desktop.** Fenêtre en **tray** : fermer la fenêtre la **masque** (le superviseur continue en fond) ;
@@ -328,7 +383,8 @@ menu Afficher/Quitter + clic gauche = réafficher. Notifications natives pour al
 (`rustls-tls-webpki-roots`) + `futures-util` ; **`russh` 0.45 / `russh-sftp` 2.0** (+ `async-trait`) ;
 **`rusqlite` *bundled*** + `directories` ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip`
 (deflate **pur Rust**) ; **`fastnbt`** ; `thiserror` ; `tracing`. **`keyring` 3** par OS
-(`windows-native` / `apple-native` / `sync-secret-service`).
+(`windows-native` / `apple-native` / `sync-secret-service`). **`ts-rs` 12** *optionnel* (feature `ts`,
+génération des bindings TypeScript uniquement).
 
 **`src-tauri`** — `tauri` 2 (feature `tray-icon`) ; plugins `opener`, `dialog`, `notification`,
 `updater`, `process` ; `minestrator-core` ; `tokio` (sync, rt-multi-thread, io-std, io-util) ;
