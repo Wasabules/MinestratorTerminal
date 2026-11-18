@@ -17,6 +17,7 @@
   import { initCloseBehavior } from '#lib/close.svelte.ts';
   import { initDebug } from '#lib/debug.svelte.ts';
   import { initFake, isFake } from '#lib/fake.svelte.ts';
+  import { initAnon } from '#lib/anon/anon.svelte.ts';
   import UpdateBanner from '#lib/components/UpdateBanner.svelte';
   import CloseDialog from '#lib/components/CloseDialog.svelte';
 
@@ -34,6 +35,7 @@
     initCloseBehavior();
     initDebug();
     initFake();
+    initAnon();
     try {
       if (!await api.hasStoredKey()) {
         setAuth({ status: 'signed_out' });

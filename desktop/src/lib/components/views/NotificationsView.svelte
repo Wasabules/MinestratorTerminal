@@ -12,6 +12,7 @@
   import { t } from '#lib/i18n/index.ts';
   import type { UserNotification } from '#lib/types.ts';
   import Icon from '../Icon.svelte';
+  import Masked from '../Masked.svelte';
 
   let all = $state<UserNotification[]>([]);
   let loading = $state(true);
@@ -122,7 +123,7 @@
                 <span class="kind" style="color: {color(n.color)}">{n.kind}</span>
                 <span class="date dim">{n.date.slice(0, 16)}</span>
               </div>
-              <p class="msg selectable">{n.message}</p>
+              <p class="msg selectable"><Masked value={n.message} /></p>
             </div>
           </li>
         {/each}

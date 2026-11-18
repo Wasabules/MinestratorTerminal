@@ -29,6 +29,8 @@
   import UptimeCard from '../UptimeCard.svelte';
   import BiomeLandscape from '../BiomeLandscape.svelte';
   import Icon from '../Icon.svelte';
+  import Masked from '../Masked.svelte';
+  import { isAnon } from '#lib/anon/anon.svelte.ts';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
@@ -300,10 +302,13 @@
           </span>
           {#if live?.version}<span class="chip">{live.version}</span>{/if}
           {#if address}
+            <!-- Mode anonyme : la puce affiche le masque, le bouton copie la vraie adresse. -->
             <button class="chip addr" onclick={copyAddress} title={t('overview.copyAddress')}>
-              <span class="mono">{address}</span>
+              <span class="mono"><Masked value={address} kind="address" /></span>
               {#if copied}
-                <Icon name="check" size={13} stroke={2.4} /><span class="copied">{t('overview.copied')}</span>
+                <Icon name="check" size={13} stroke={2.4} /><span class="copied"
+                  >{isAnon() ? t('anon.copiedReal') : t('overview.copied')}</span
+                >
               {:else}
                 <Icon name="copy" size={13} stroke={2.2} />
               {/if}
@@ -441,10 +446,10 @@
                 <span class="a-what">
                   <strong class:staff={h.staff}>{actorLabel(h)}</strong>
                   <span>{actionLabel(h.action)}</span>
-                  {#if h.context}<code class="a-ctx selectable">{h.context}</code>{/if}
+                  {#if h.context}<code class="a-ctx selectable"><Masked value={h.context} /></code>{/if}
                   {#if h.result && h.result !== 'success'}<span class="a-ko">{h.result}</span>{/if}
                 </span>
-                {#if h.ip}<span class="a-ip selectable">{h.ip}</span>{/if}
+                {#if h.ip}<span class="a-ip selectable"><Masked value={h.ip} kind="address" /></span>{/if}
                 <span class="a-date">{h.date.slice(0, 16)}</span>
               </div>
             {/each}

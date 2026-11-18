@@ -477,6 +477,7 @@ export const en: Dict = {
       power: 'power turn on off',
       updates: 'version update upgrade',
       alerts: 'alerts notifications incidents',
+      anon: 'anonymous hide mask ip address email screenshot screen streamer privacy anonyme masquer',
       views: {
         overview: 'dashboard status resources',
         sftp: 'files explorer',
@@ -485,6 +486,22 @@ export const en: Dict = {
         settings: 'properties server.properties configuration',
       },
     },
+  },
+  // Anonymous mode (anon/anon.svelte.ts): IPs, addresses and email hidden on screen.
+  anon: {
+    title: 'Anonymous mode',
+    badge: 'Anonymous',
+    turnOn: 'Turn on anonymous mode',
+    turnOff: 'Turn off anonymous mode',
+    hintOff: 'Anonymous mode: hide IPs, addresses and email on screen ({keys})',
+    hintOn: 'Anonymous mode on: IPs, addresses and email are hidden. Click to show them again ({keys})',
+    announceOn: 'Anonymous mode on',
+    announceOff: 'Anonymous mode off',
+    masked: 'hidden',
+    maskedHint: 'Hidden by anonymous mode',
+    copiedReal: 'Copied, unmasked',
+    settingDesc:
+      'Hides IP addresses, connection addresses, the SFTP host and the account email on screen — instantly, without reloading anything, and reversible at any time (eye button in the top bar or {keys}). Server names and player names stay visible: to replace them with fictitious values too, turn on demo data. Copy buttons always copy the real value.',
   },
   overview: {
     analyzeDisk: 'Analyze disk space',

@@ -8,6 +8,7 @@
   import StatusDot from './StatusDot.svelte';
   import Icon from './Icon.svelte';
   import BiomeLandscape from './BiomeLandscape.svelte';
+  import Masked from './Masked.svelte';
 
   let {
     server,
@@ -64,7 +65,7 @@
       {/if}
       <span class="titles">
         <span class="name">{server.name}</span>
-        <span class="addr">{server.address}</span>
+        <span class="addr"><Masked value={server.address} kind="address" /></span>
       </span>
     </button>
 

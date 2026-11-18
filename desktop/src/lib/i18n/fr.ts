@@ -483,6 +483,7 @@ export const fr = {
       power: 'alimentation allumer éteindre',
       updates: 'version mise à jour update',
       alerts: 'alertes notifications incidents',
+      anon: 'anonyme masquer cacher ip adresse e-mail capture écran screenshot streamer confidentialité',
       views: {
         overview: 'tableau de bord état ressources',
         sftp: 'fichiers explorateur',
@@ -491,6 +492,22 @@ export const fr = {
         settings: 'propriétés server.properties configuration',
       },
     },
+  },
+  // Mode anonyme (anon/anon.svelte.ts) : IP, adresses et e-mail masqués à l'affichage.
+  anon: {
+    title: 'Mode anonyme',
+    badge: 'Anonyme',
+    turnOn: 'Activer le mode anonyme',
+    turnOff: 'Désactiver le mode anonyme',
+    hintOff: 'Mode anonyme : masquer IP, adresses et e-mail à l’écran ({keys})',
+    hintOn: 'Mode anonyme actif : IP, adresses et e-mail masqués. Cliquer pour les réafficher ({keys})',
+    announceOn: 'Mode anonyme activé',
+    announceOff: 'Mode anonyme désactivé',
+    masked: 'masqué',
+    maskedHint: 'Masqué par le mode anonyme',
+    copiedReal: 'Copié, non masqué',
+    settingDesc:
+      'Masque à l’écran les adresses IP, les adresses de connexion, l’hôte SFTP et l’e-mail du compte — aussitôt, sans rien recharger, et réversible à tout moment (bouton œil de la barre du haut ou {keys}). Les noms de serveurs et les pseudos restent visibles : pour les remplacer aussi par des valeurs fictives, active les données de démo. Les boutons « Copier » copient toujours la vraie valeur.',
   },
   overview: {
     analyzeDisk: 'Analyser l’espace disque',

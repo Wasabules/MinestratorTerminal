@@ -15,6 +15,8 @@
   import { closeBehavior, setCloseBehavior, type CloseBehavior } from '#lib/close.svelte.ts';
   import { isDebug, setDebug } from '#lib/debug.svelte.ts';
   import { isFake, setFake } from '#lib/fake.svelte.ts';
+  import { anonShortcutLabel, isAnon, setAnon } from '#lib/anon/anon.svelte.ts';
+  import { hasSensitive } from '#lib/anon/mask.ts';
   import { settingsNav } from '#lib/settings/nav.svelte.ts';
   import type {
     Autonomy,
@@ -955,9 +957,10 @@
           />
 
           <h2>{t('settings.copilotBaseUrl')}</h2>
+          <!-- Mode anonyme : une URL locale (`http://192.168.1.10:11434`) est saisie masquée. -->
           <input
             class="txt"
-            type="text"
+            type={isAnon() && hasSensitive(copilot.base_url) ? 'password' : 'text'}
             bind:value={copilot.base_url}
             onchange={saveCopilot}
             placeholder={copilot.provider === 'anthropic'
@@ -1163,6 +1166,15 @@
           <div class="tl-desc dim">{t('settings.debugModeDesc')}</div>
         </div>
         <input type="checkbox" bind:checked={debugOn} onchange={() => setDebug(debugOn)} />
+      </label>
+
+      <!-- Près du mode démo, dont il se distingue : il masque les adresses sans rien remplacer. -->
+      <label class="toggle-row">
+        <div class="tl">
+          <div class="tl-title">{t('anon.title')}</div>
+          <div class="tl-desc dim">{t('anon.settingDesc', { keys: anonShortcutLabel() })}</div>
+        </div>
+        <input type="checkbox" checked={isAnon()} onchange={(e) => setAnon(e.currentTarget.checked)} />
       </label>
 
       <label class="toggle-row">

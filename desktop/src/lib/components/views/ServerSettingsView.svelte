@@ -9,6 +9,8 @@
   import { api, humanizeError } from '#lib/ipc.ts';
   import { t } from '#lib/i18n/index.ts';
   import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
+  import { isAnon } from '#lib/anon/anon.svelte.ts';
+  import { hasSensitive } from '#lib/anon/mask.ts';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
@@ -57,9 +59,12 @@
     return value === 'true' || value === 'false';
   }
 
-  /** Réglage secret (mot de passe RCON…) : saisie masquée. */
-  function isSecret(key: string): boolean {
-    return /password|secret|token/i.test(key);
+  /**
+   * Saisie masquée : réglage secret (mot de passe RCON…), ou valeur contenant une IP ou une
+   * adresse (`server-ip`…) quand le mode anonyme est actif.
+   */
+  function isMasked(key: string): boolean {
+    return /password|secret|token/i.test(key) || (isAnon() && hasSensitive(draft[key]));
   }
 
   async function save(key: string) {
@@ -163,7 +168,7 @@
                 <input
                   id={`prop-${key}`}
                   class="input"
-                  type={isSecret(key) ? 'password' : 'text'}
+                  type={isMasked(key) ? 'password' : 'text'}
                   bind:value={draft[key]}
                   spellcheck="false"
                   autocomplete="off"

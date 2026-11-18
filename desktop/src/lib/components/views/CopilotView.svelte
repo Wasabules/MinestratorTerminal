@@ -3,8 +3,10 @@
   import { t } from '#lib/i18n/index.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
   import { ago, elapsed, trigIcon, trigLabel } from '#lib/copilot/format.ts';
+  import { anonText } from '#lib/anon/anon.svelte.ts';
   import ActionList from '../ActionList.svelte';
   import Icon from '../Icon.svelte';
+  import Masked from '../Masked.svelte';
   import {
     diagnosisItems,
     activeRuns,
@@ -76,7 +78,7 @@
                   <span class="srv">{d.server_name}</span>
                   <span class="time dim">{ago(now, d.ts)}</span>
                 </div>
-                <div class="summary">{d.summary}</div>
+                <div class="summary"><Masked value={d.summary} /></div>
               </div>
             </button>
 
@@ -84,11 +86,11 @@
               <div class="detail">
                 {#if d.cause}
                   <div class="sec-label">{t('copilot.cause')}</div>
-                  <div class="prose md">{@html renderMarkdown(d.cause)}</div>
+                  <div class="prose md">{@html renderMarkdown(anonText(d.cause))}</div>
                 {/if}
                 {#if d.suggested_fix}
                   <div class="sec-label">{t('copilot.fix')}</div>
-                  <div class="prose md">{@html renderMarkdown(d.suggested_fix)}</div>
+                  <div class="prose md">{@html renderMarkdown(anonText(d.suggested_fix))}</div>
                 {/if}
 
                 {#if d.actions.length > 0}
@@ -99,7 +101,7 @@
                 {#if d.log.length > 0}
                   <div class="sec-label">{t('copilot.log')}</div>
                   <ul class="log">
-                    {#each d.log as step, i (i)}<li class="done-step">{step}</li>{/each}
+                    {#each d.log as step, i (i)}<li class="done-step"><Masked value={step} /></li>{/each}
                   </ul>
                 {/if}
               </div>
