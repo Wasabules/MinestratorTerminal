@@ -1,14 +1,22 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { t } from '#lib/i18n/index.ts';
   import { ago } from '#lib/copilot/format.ts';
-  import { alertItems, unreadCount, markAllRead, clearAlerts } from '#lib/alerts/alerts.svelte.ts';
+  import {
+    alertItems,
+    unreadCount,
+    markAllRead,
+    clearAlerts,
+    isAlertCenterOpen,
+    setAlertCenterOpen,
+  } from '#lib/alerts/alerts.svelte.ts';
   import { api } from '#lib/ipc.ts';
   import { tabs } from '#lib/tabs/tabs.svelte.ts';
   import type { UserNotification } from '#lib/types.ts';
   import Icon from './Icon.svelte';
 
-  let open = $state(false);
+  // État d'ouverture partagé : la palette de commandes peut ouvrir ce panneau.
+  const open = $derived(isAlertCenterOpen());
   let now = $state(Date.now());
   const count = $derived(unreadCount());
   /**
@@ -24,12 +32,17 @@
   });
 
   function toggle() {
-    open = !open;
-    if (open) {
+    setAlertCenterOpen(!open);
+  }
+
+  // À chaque ouverture (bouton ou palette) : alertes lues, notifications de l'hébergeur rechargées.
+  $effect(() => {
+    if (!open) return;
+    untrack(() => {
       markAllRead();
       void loadNotifications();
-    }
-  }
+    });
+  });
 
   /** Best-effort : le panneau reste utile (alertes locales) même si l'API ne répond pas. */
   async function loadNotifications() {
@@ -70,7 +83,7 @@
   </button>
 
   {#if open}
-    <button class="backdrop" aria-label={t('common.close')} onclick={() => (open = false)}></button>
+    <button class="backdrop" aria-label={t('common.close')} onclick={() => setAlertCenterOpen(false)}></button>
     <div class="panel" role="menu">
       <div class="head">
         <span class="title">{t('alerts.title')}</span>
@@ -108,7 +121,7 @@
           <button
             class="clear"
             onclick={() => {
-              open = false;
+              setAlertCenterOpen(false);
               tabs.openNotifications();
             }}>{t('alerts.seeAll')}</button
           >

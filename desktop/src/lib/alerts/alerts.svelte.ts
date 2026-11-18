@@ -50,3 +50,14 @@ export function markAllRead(): void {
 export function clearAlerts(): void {
   store.items = [];
 }
+
+/** Panneau du centre d'alertes ouvert ? Pilotable hors du composant (palette de commandes). */
+const panel = $state<{ open: boolean }>({ open: false });
+
+export function isAlertCenterOpen(): boolean {
+  return panel.open;
+}
+
+export function setAlertCenterOpen(open: boolean): void {
+  panel.open = open;
+}

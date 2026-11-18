@@ -368,6 +368,13 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   chaque fenêtre est une instance indépendante avec son propre `TabManager`, l'auth étant partagée via le
   trousseau OS. `readDetachSpec` (dans `+page.svelte`) rouvre l'onglet demandé ; `isPointerOutsideWindow`
   détecte le glisser-hors-fenêtre depuis la `TabBar`.
+- **Palette de commandes** (Ctrl+K / ⌘K, `components/CommandPalette.svelte`) — `<dialog>` modal qui
+  pilote le `TabManager` (aucune route) ; recherche floue pure dans `palette/fuzzy.ts`. Elle n'a aucune
+  entrée en dur : une fonctionnalité s'y ajoute via `palette/registry.svelte.ts` —
+  `registerPaletteSource` (section de la racine), `registerServerEntries` (entrées par serveur, dans
+  sa sous-page et en recherche) ou `registerPaletteMode` (préfixe, ex. `>` commande console) ; sources
+  intégrées et exemple dans `palette/sources.svelte.ts`. Alimentation : mêmes garde-fous que les
+  boutons via `servers/power.ts`. Récents = identifiants seuls (localStorage).
 - **Garde d'auth** — `routes/+layout.svelte` : au boot, `has_stored_key` puis `get_user` valident la clé ;
   un `$effect` redirige entre `/onboarding` et `/`. `logout` efface la clé et ramène à l'onboarding.
 - **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique), `ConsoleView`

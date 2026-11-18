@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
   import type { Update } from '@tauri-apps/plugin-updater';
   import { api, humanizeError } from '#lib/ipc.ts';
@@ -15,6 +15,7 @@
   import { closeBehavior, setCloseBehavior, type CloseBehavior } from '#lib/close.svelte.ts';
   import { isDebug, setDebug } from '#lib/debug.svelte.ts';
   import { isFake, setFake } from '#lib/fake.svelte.ts';
+  import { settingsRequest, clearSettingsRequest } from '#lib/settings/nav.svelte.ts';
   import type {
     Autonomy,
     CliStatus,
@@ -275,6 +276,17 @@
       flashError(e);
     }
   }
+
+  // Navigation demandée de l'extérieur (palette de commandes) : section, puis action éventuelle.
+  $effect(() => {
+    const req = settingsRequest();
+    if (!req) return;
+    untrack(() => {
+      clearSettingsRequest();
+      section = req.section as Section;
+      if (req.checkUpdates && !updChecking) void checkUpdates();
+    });
+  });
 
   async function save() {
     if (!config) return;
