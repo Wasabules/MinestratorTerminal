@@ -114,12 +114,35 @@ Console live**. À étoffer ensuite :
 - ⏳ **Palier FCM (garanti)** : daemon `crates/minestrator-daemon` (surveillance + push FCM), pour
   être prévenu même process tué / tél en veille. Reste à câbler la **réception** côté Android →
   voir [`docs/PUSH.md`](../docs/PUSH.md).
-- ✅ **Notifications de l'hébergeur** : écran dédié (cloche de la liste) — recherche, filtres par
-  catégorie, messages entiers. Lecture seule : `GET /user` les porte, mais aucun endpoint de
-  marquage « lu » n'est accessible avec une clé du panel (cf. `ARCHITECTURE.md` §4.1).
+- ✅ **Notifications de l'hébergeur** : écran dédié (depuis le centre d'alertes) — recherche,
+  filtres par catégorie, messages entiers. Lecture seule : `GET /user` les porte, mais aucun
+  endpoint de marquage « lu » n'est accessible avec une clé du panel (cf. `ARCHITECTURE.md` §4.1).
+- ✅ **Centre d'alertes** : cloche de la liste des serveurs (pastille des non lues), écran
+  `AlertsView` — crash, seuils CPU/RAM/disque, échéance des MyBox ; filtre par serveur, tout est
+  marqué lu à l'ouverture, « Tout effacer ». Les dernières alertes d'un serveur figurent aussi dans
+  son Aperçu. Différence avec le desktop, qui garde les alertes dans son webview : le pont d'events
+  les consigne côté Rust (`src-tauri/src/alerts.rs`, fichier `alerts.json` du dossier privé,
+  200 entrées / 30 jours), car le webview peut être détruit pendant que le service d'arrière-plan
+  garde le process et continue d'alerter.
 - ✅ **Journal d'actions** dans l'Aperçu (date, action, badge staff), **téléchargement du dernier
   backup**, **avertissements de l'hébergeur** avant stop/restart, **icônes de jeu** via le CDN et
   **compteur de joueurs** sur la liste (un seul appel groupé pour tous les serveurs).
-- **Éditeurs de config en formulaire** (`server.properties`, `ops.json`…), Copilote en chat.
+- ✅ **Onglets du serveur pilotés par `GameCapabilities`** : Joueurs, Paramètres et Mods
+  n'apparaissent que pour les jeux concernés. Cinq emplacements au plus dans la barre du bas : au-delà,
+  les vues suivantes (Sauvegardes, Paramètres, Mods pour un serveur Minecraft Java) passent derrière
+  **Plus** (feuille) ; le pager et le balayage les gardent toutes.
+- ✅ **Paramètres du serveur** (`server.properties`, Minecraft) : lecture via l'API (sans SFTP),
+  recherche, interrupteurs pour les booléens (enregistrés au toucher), feuille d'édition pour le
+  reste, valeurs secrètes masquées (RCON…) avec affichage à la demande, bandeau « Redémarrer
+  maintenant » après modification (avec l'avertissement de l'hébergeur s'il existe).
+- ✅ **Historique des métriques** : carte de l'Aperçu, CPU / RAM / disque en % de la limite sur
+  1 h, 6 h ou 24 h, lue dans le SQLite local du superviseur (aucun réseau). Graphique SVG maison
+  (`MetricsChart`), balayage au doigt, trous visibles quand l'app ne surveillait pas, palette
+  vérifiée en clair, en sombre et en daltonisme.
+- ✅ **Mods & plugins** (Minecraft Java) : catalogues Modrinth / CurseForge / SpigotMC via l'API
+  MineStrator, filtres source / loader / version, liste des installés, installation directe
+  (Modrinth, SpigotMC) avec choix de version. Pas de SFTP en jeu. Les marketplaces des autres jeux
+  (Thunderstore, Factorio, uMod, ficsit), qui passent par le SFTP, restent desktop.
+- **Éditeurs de config en formulaire** (`ops.json`, whitelist…), Copilote en chat.
 - **Natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
 - **Factorisation** : extraire `ipc.ts`/`events.ts`/i18n/tokens dans un package partagé avec le desktop.
