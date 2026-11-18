@@ -114,6 +114,10 @@ Regroupés par domaine (liste réelle des fichiers).
   par MineStrator fin 2026, toujours documenté) : saisi une fois par serveur, vérifié par une session
   avant d'être enregistré (`set_sftp_password`), puis essayé avant celui de l'API si elle en renvoie
   un. Sans mot de passe : erreur `sftp_password_required`, que l'UI traduit en saisie.
+  **Identité du serveur** : l'empreinte SHA-256 de la clé d'hôte est mémorisée au premier contact
+  par `hôte:port` (`sftp_known_hosts.json`, `KnownHosts`) ; une empreinte différente bloque la
+  connexion **avant** l'envoi du mot de passe (`sftp_host_key_changed`). L'UI montre les deux
+  empreintes ; seule celle réellement présentée peut être acceptée (`trust_sftp_host_key`).
 - **`models`** — structs `serde` : miroirs typés des réponses d'API et de leurs enveloppes brutes
   (`UserProfile`, `ServersOverview`/`MyBoxSummary`, `ServerDetails`, `LiveLight`, `Startup`, `MarketPage`,
   `Backup`, `Snapshot`, `InstalledItem`, `SftpEntry`…).

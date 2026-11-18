@@ -98,6 +98,11 @@ jobs:
       - name: Typecheck (svelte-check)
         run: npm run check
 
+      # fr et en : mêmes clés et mêmes paramètres `{x}`. Indispensable côté mobile, dont les
+      # dictionnaires ne sont pas typés (une clé oubliée s'afficherait en français).
+      - name: Traductions fr/en
+        run: node ../scripts/check-i18n.mjs ${{ matrix.app }}
+
       # Les dépendances embarquées dans l'app : une faille haute ou critique bloque.
       - name: Audit des dépendances de production
         run: npm audit --omit=dev --audit-level=high

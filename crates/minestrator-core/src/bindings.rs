@@ -232,6 +232,7 @@ pub fn core() -> Bindings {
         .add::<Snapshot>()
         .section("SFTP, archives, NBT, régions (models.rs, archive.rs, nbt.rs, lib.rs)")
         .add::<SftpEntry>()
+        .add::<SftpHostKey>()
         .add::<ArchiveEntry>()
         .add::<NbtNode>()
         .add::<RegionChunk>()

@@ -4,29 +4,135 @@
 //! plus (l'API l'a retiré de ses réponses fin 2026, malgré sa documentation) : l'utilisateur le saisit
 //! une fois par serveur, il est rangé dans le stockage sécurisé (`secrets`) et ne quitte jamais le
 //! cœur. Si l'API le renvoie à nouveau, il sert de second essai.
+//!
+//! **Identité du serveur** : l'empreinte de la clé d'hôte SSH est mémorisée au premier contact
+//! (confiance au premier usage, comme `known_hosts` d'OpenSSH), par `hôte:port` — tous les serveurs
+//! d'un même nœud la partagent. Une empreinte différente ensuite **bloque** la connexion avant
+//! l'envoi du mot de passe (`SftpHostKeyChanged`) : il peut s'agir d'une réinstallation du nœud par
+//! MineStrator, ou d'une interception. Seul l'utilisateur peut accepter la nouvelle empreinte.
 
 use crate::api::ApiClient;
 use crate::error::{Error, Result};
 use crate::models::{SftpCreds, SftpEntry};
+use crate::persist::PersistedConfig;
 use russh::client;
+use russh::keys::{HashAlg, PublicKeyOrCertificate};
 use russh_sftp::client::SftpSession;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const MAX_EDIT_BYTES: u64 = 2 * 1024 * 1024;
 
-struct Handler;
+/// Empreinte SHA-256 (format OpenSSH `SHA256:…`) et algorithme de la clé présentée par le serveur.
+fn fingerprint_of(key: &PublicKeyOrCertificate) -> (String, String) {
+    match key {
+        PublicKeyOrCertificate::PublicKey { key, .. } => (
+            key.fingerprint(HashAlg::Sha256).to_string(),
+            key.algorithm().to_string(),
+        ),
+        PublicKeyOrCertificate::Certificate(cert) => (
+            cert.public_key().fingerprint(HashAlg::Sha256).to_string(),
+            cert.algorithm().to_string(),
+        ),
+    }
+}
+
+/// Vérifie la clé d'hôte pendant la poignée de main : acceptée si aucune n'est connue (premier
+/// contact) ou si elle correspond à celle mémorisée. Celle reçue est notée dans tous les cas, pour
+/// la mémoriser ou expliquer le refus.
+struct Handler {
+    expected: Option<String>,
+    seen: Arc<Mutex<Option<(String, String)>>>,
+}
 
 impl client::Handler for Handler {
     type Error = russh::Error;
 
     async fn check_server_key(
         &mut self,
-        _server_public_key: &russh::keys::PublicKeyOrCertificate,
+        server_public_key: &PublicKeyOrCertificate,
     ) -> std::result::Result<bool, Self::Error> {
-        Ok(true)
+        let (fingerprint, algorithm) = fingerprint_of(server_public_key);
+        let accepted = host_key_accepted(self.expected.as_deref(), &fingerprint);
+        *self.seen.lock().unwrap() = Some((fingerprint, algorithm));
+        Ok(accepted)
     }
+}
+
+fn host_key_accepted(expected: Option<&str>, found: &str) -> bool {
+    expected.is_none_or(|e| e == found)
+}
+
+/// Empreinte connue d'un hôte SFTP (donnée publique : rien de secret ici).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KnownHost {
+    pub fingerprint: String,
+    pub algorithm: String,
+    /// Première rencontre (secondes Unix).
+    pub first_seen: i64,
+}
+
+/// Empreintes mémorisées (`sftp_known_hosts.json`) et empreintes refusées en attente de décision
+/// de l'utilisateur (en mémoire : seule celle réellement présentée par le serveur peut être
+/// acceptée, jamais une valeur arbitraire).
+pub struct KnownHosts {
+    known: PersistedConfig<BTreeMap<String, KnownHost>>,
+    pending: Mutex<HashMap<String, (String, String)>>,
+}
+
+impl KnownHosts {
+    pub fn load(dir: &Path) -> Self {
+        Self {
+            known: PersistedConfig::load(dir, "sftp_known_hosts.json"),
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+
+    pub fn get(&self, host: &str) -> Option<KnownHost> {
+        self.known.with(|m| m.get(host).cloned())
+    }
+
+    fn remember(&self, host: &str, fingerprint: String, algorithm: String) {
+        let mut map = self.known.get();
+        map.insert(
+            host.to_string(),
+            KnownHost { fingerprint, algorithm, first_seen: crate::store::now_secs() },
+        );
+        self.known.set(map);
+    }
+
+    /// Empreinte refusée en attente de décision pour cet hôte, s'il y en a une.
+    pub fn pending(&self, host: &str) -> Option<(String, String)> {
+        self.pending.lock().unwrap().get(host).cloned()
+    }
+
+    /// Accepte la nouvelle empreinte d'un hôte. Elle doit être exactement celle que le serveur a
+    /// présentée lors du refus : l'interface ne peut pas faire accepter autre chose.
+    pub fn trust_pending(&self, host: &str, fingerprint: &str) -> Result<()> {
+        let pending = self.pending.lock().unwrap().remove(host);
+        match pending {
+            Some((found, algorithm)) if found == fingerprint => {
+                self.remember(host, found, algorithm);
+                Ok(())
+            }
+            other => {
+                if let Some(p) = other {
+                    self.pending.lock().unwrap().insert(host.to_string(), p);
+                }
+                Err(Error::Unexpected(
+                    "Cette empreinte n'est pas celle présentée par le serveur : reconnecte-toi pour la revoir.".into(),
+                ))
+            }
+        }
+    }
+}
+
+/// Identifiant d'hôte des empreintes : `hôte:port`.
+pub fn host_id(creds: &SftpCreds) -> String {
+    format!("{}:{}", creds.host, creds.port)
 }
 
 pub struct SftpConn {
@@ -34,9 +140,9 @@ pub struct SftpConn {
     _handle: client::Handle<Handler>,
 }
 
-#[derive(Default)]
 pub struct SftpManager {
     sessions: Mutex<HashMap<i64, Arc<SftpConn>>>,
+    hosts: KnownHosts,
 }
 
 /// La session est-elle morte ? Seul ce cas justifie de purger le pool et de rejouer.
@@ -72,6 +178,14 @@ pub fn is_session_dead(e: &Error) -> bool {
 }
 
 impl SftpManager {
+    pub fn new(dir: &Path) -> Self {
+        Self { sessions: Mutex::new(HashMap::new()), hosts: KnownHosts::load(dir) }
+    }
+
+    pub fn hosts(&self) -> &KnownHosts {
+        &self.hosts
+    }
+
     fn cached(&self, id: i64) -> Option<Arc<SftpConn>> {
         self.sessions.lock().unwrap().get(&id).cloned()
     }
@@ -106,7 +220,7 @@ impl SftpManager {
                 None
             }
         };
-        let conn = connect(creds, stored).await?;
+        let conn = connect(creds, stored, &self.hosts).await?;
         Ok(self.insert(id, conn))
     }
 }
@@ -123,13 +237,13 @@ fn password_candidates(stored: Option<String>, from_api: &str) -> Vec<String> {
 
 /// Ouvre une session en essayant chaque mot de passe candidat. Seul un refus d'authentification
 /// fait passer au suivant : une panne réseau est remontée telle quelle.
-pub async fn connect(creds: SftpCreds, stored: Option<String>) -> Result<SftpConn> {
+pub async fn connect(creds: SftpCreds, stored: Option<String>, hosts: &KnownHosts) -> Result<SftpConn> {
     let candidates = password_candidates(stored, &creds.password);
     if candidates.is_empty() {
         return Err(Error::SftpPasswordRequired);
     }
     for password in candidates {
-        match open(SftpCreds { password, ..creds.clone() }).await {
+        match open(SftpCreds { password, ..creds.clone() }, hosts).await {
             Err(Error::SftpAuth) => continue,
             other => return other,
         }
@@ -137,7 +251,7 @@ pub async fn connect(creds: SftpCreds, stored: Option<String>) -> Result<SftpCon
     Err(Error::SftpAuth)
 }
 
-pub(crate) async fn open(creds: SftpCreds) -> Result<SftpConn> {
+pub(crate) async fn open(creds: SftpCreds, hosts: &KnownHosts) -> Result<SftpConn> {
     // Sonde périodique : sans elle, une session inactive meurt en silence (veille du téléphone,
     // NAT qui oublie la connexion, coupure réseau en arrière-plan) et l'app ne l'apprend qu'à la
     // prochaine opération, qui échoue. `keepalive_max` laisse tomber la session après quatre
@@ -147,9 +261,27 @@ pub(crate) async fn open(creds: SftpCreds) -> Result<SftpConn> {
         keepalive_max: 4,
         ..client::Config::default()
     });
-    let mut handle = client::connect(config, (creds.host.as_str(), creds.port), Handler)
-        .await
-        .map_err(|e| Error::Network(format!("SSH: {e}")))?;
+    let host = host_id(&creds);
+    let expected = hosts.get(&host).map(|k| k.fingerprint);
+    let seen = Arc::new(Mutex::new(None));
+    let handler = Handler { expected: expected.clone(), seen: seen.clone() };
+    let connected = client::connect(config, (creds.host.as_str(), creds.port), handler).await;
+    let presented = seen.lock().unwrap().take();
+    let mut handle = match connected {
+        Ok(handle) => handle,
+        Err(e) => {
+            // Refus de notre fait : la clé présentée n'est pas celle mémorisée. Rien n'a été envoyé
+            // au serveur (le mot de passe part après la poignée de main).
+            if let (Some(expected), Some((found, algorithm))) = (&expected, presented) {
+                if !host_key_accepted(Some(expected), &found) {
+                    tracing::warn!(%host, "empreinte SFTP différente de celle mémorisée : connexion bloquée");
+                    hosts.pending.lock().unwrap().insert(host.clone(), (found, algorithm));
+                    return Err(Error::SftpHostKeyChanged { host });
+                }
+            }
+            return Err(Error::Network(format!("SSH: {e}")));
+        }
+    };
 
     let auth = handle
         .authenticate_password(&creds.user, &creds.password)
@@ -157,6 +289,13 @@ pub(crate) async fn open(creds: SftpCreds) -> Result<SftpConn> {
         .map_err(|e| Error::Network(format!("SSH auth: {e}")))?;
     if !auth.success() {
         return Err(Error::SftpAuth);
+    }
+    // Premier contact réussi : l'empreinte devient la référence de cet hôte.
+    if expected.is_none() {
+        if let Some((fingerprint, algorithm)) = presented {
+            tracing::info!(%host, %fingerprint, "empreinte SFTP mémorisée (premier contact)");
+            hosts.remember(&host, fingerprint, algorithm);
+        }
     }
 
     let channel = handle
@@ -621,8 +760,42 @@ mod tests {
     #[tokio::test]
     async fn no_password_anywhere_asks_the_user_without_connecting() {
         // L'hôte n'existe pas : si une connexion était tentée, l'erreur serait réseau.
-        let err = connect(creds(""), None).await.err().expect("doit échouer");
+        let dir = std::env::temp_dir().join(format!("minestrator-test-kh-none-{}", std::process::id()));
+        let err = connect(creds(""), None, &KnownHosts::load(&dir)).await.err().expect("doit échouer");
         assert!(matches!(err, Error::SftpPasswordRequired), "{err:?}");
+    }
+
+    #[test]
+    fn host_key_is_trusted_on_first_use_then_pinned() {
+        assert!(host_key_accepted(None, "SHA256:abc"), "premier contact");
+        assert!(host_key_accepted(Some("SHA256:abc"), "SHA256:abc"));
+        assert!(!host_key_accepted(Some("SHA256:abc"), "SHA256:xyz"), "empreinte changée");
+    }
+
+    #[test]
+    fn only_the_fingerprint_actually_presented_can_be_trusted() {
+        let dir = std::env::temp_dir().join(format!("minestrator-test-kh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let hosts = KnownHosts::load(&dir);
+        let host = "node1.exemple:2022";
+        hosts.remember(host, "SHA256:ancienne".into(), "ssh-ed25519".into());
+        // Sans refus préalable, rien à accepter.
+        assert!(hosts.trust_pending(host, "SHA256:nouvelle").is_err());
+        hosts
+            .pending
+            .lock()
+            .unwrap()
+            .insert(host.into(), ("SHA256:nouvelle".into(), "ssh-ed25519".into()));
+        // Une autre valeur que celle présentée est refusée, et la demande reste en attente.
+        assert!(hosts.trust_pending(host, "SHA256:inventee").is_err());
+        assert!(hosts.pending(host).is_some());
+        hosts.trust_pending(host, "SHA256:nouvelle").unwrap();
+        assert_eq!(hosts.get(host).unwrap().fingerprint, "SHA256:nouvelle");
+        assert!(hosts.pending(host).is_none());
+        // Persisté : relu tel quel par une nouvelle instance.
+        assert_eq!(KnownHosts::load(&dir).get(host).unwrap().fingerprint, "SHA256:nouvelle");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

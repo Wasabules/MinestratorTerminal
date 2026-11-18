@@ -33,6 +33,7 @@ import type {
   ServerDetails,
   ServersOverview,
   SftpEntry,
+  SftpHostKey,
   SftpSearchResult,
   Snapshot,
   UpdateInfo,
@@ -127,6 +128,11 @@ export const api = {
     invoke<void>("sftp_set_password", { serverId, password }),
   sftpForgetPassword: (serverId: number) => invoke<void>("sftp_forget_password", { serverId }),
   sftpHasPassword: (serverId: number) => invoke<boolean>("sftp_has_password", { serverId }),
+  /** Identité du serveur SFTP : empreinte mémorisée et, après un refus, celle présentée. */
+  sftpHostKey: (serverId: number) => invoke<SftpHostKey>("sftp_host_key", { serverId }),
+  /** Accepte l'empreinte présentée par le serveur (exactement celle affichée à l'utilisateur). */
+  sftpTrustHostKey: (serverId: number, fingerprint: string) =>
+    invoke<void>("sftp_trust_host_key", { serverId, fingerprint }),
   sftpReadText: (serverId: number, path: string) =>
     invoke<string>("sftp_read_text", { serverId, path }),
   sftpWriteText: (serverId: number, path: string, content: string) =>

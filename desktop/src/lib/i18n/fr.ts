@@ -667,6 +667,19 @@ export const fr = {
       forget: 'Oublier',
       forgotten: 'Mot de passe oublié pour ce serveur.',
     },
+    hostKey: {
+      title: 'L’identité du serveur SFTP a changé',
+      intro:
+        'Le serveur de fichiers ne présente plus la même empreinte que lors des connexions précédentes. La connexion est bloquée, et ton mot de passe n’a pas été envoyé.',
+      causes:
+        'C’est normal si MineStrator a réinstallé ou déplacé le serveur. Sur un réseau public ou inconnu, il peut aussi s’agir d’une interception : dans le doute, n’accepte pas et vérifie auprès du support MineStrator.',
+      host: 'Serveur',
+      known: 'Empreinte connue',
+      presented: 'Nouvelle empreinte',
+      none: 'Aucune — reconnecte-toi pour la voir.',
+      trust: 'Faire confiance à la nouvelle empreinte',
+      trusting: 'Enregistrement…',
+    },
   },
   errors: {
     unauthorized: 'Clé refusée : vérifie qu’elle est correcte et toujours active.',
@@ -678,6 +691,8 @@ export const fr = {
       'Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l’onglet « Accès » du panel MineStrator, puis saisis-le à nouveau dans l’onglet Fichiers.',
     sftp_password_required:
       'Mot de passe SFTP requis : saisis-le une fois dans l’onglet Fichiers de ce serveur.',
+    sftp_host_key_changed:
+      'L’identité du serveur SFTP a changé : connexion bloquée. Ouvre l’onglet Fichiers de ce serveur pour vérifier et confirmer la nouvelle empreinte.',
   },
   // Service d'arrière-plan (supervision machine) — espace de noms dédié, voir docs/SERVICE.md.
   service: {

@@ -59,6 +59,7 @@ import type {
   ServersOverview,
   ServiceOverview,
   SftpEntry,
+  SftpHostKey,
   SmlVersion,
   Snapshot,
   SupervisorConfig,
@@ -432,6 +433,11 @@ export const api = {
     invoke<void>('sftp_set_password', { serverId, password }),
   sftpForgetPassword: (serverId: number) => invoke<void>('sftp_forget_password', { serverId }),
   sftpHasPassword: (serverId: number) => invoke<boolean>('sftp_has_password', { serverId }),
+  /** Identité du serveur SFTP : empreinte mémorisée et, après un refus, celle présentée. */
+  sftpHostKey: (serverId: number) => invoke<SftpHostKey>('sftp_host_key', { serverId }),
+  /** Accepte l'empreinte présentée par le serveur (exactement celle affichée à l'utilisateur). */
+  sftpTrustHostKey: (serverId: number, fingerprint: string) =>
+    invoke<void>('sftp_trust_host_key', { serverId, fingerprint }),
   /** Exporte un texte vers un service de paste public ; renvoie l'URL. */
   pasteUpload: (service: string, content: string) =>
     invoke<string>('paste_upload', { service, content }),
@@ -497,6 +503,7 @@ export function humanizeError(value: unknown): string {
     no_key: 'errors.no_key',
     sftp_auth: 'errors.sftp_auth',
     sftp_password_required: 'errors.sftp_password_required',
+    sftp_host_key_changed: 'errors.sftp_host_key_changed',
   };
   const key = known[value.kind];
   return key ? t(key) : value.message;

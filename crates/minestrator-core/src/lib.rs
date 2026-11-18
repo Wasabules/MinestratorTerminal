@@ -62,6 +62,8 @@ pub use ficsit::{
 };
 pub use games::GameCapabilities;
 pub use util::data_dir;
+/// Base de l'API MineStrator (outillage : contrôle de contrat `examples/api_contract.rs`).
+pub use config::API_BASE_URL;
 pub use llm::Provider;
 pub use mods::{
     FactorioSettings, GameSettings, MarketInstalledMod, MarketMod, MarketModPage, MarketModVersion,
@@ -75,7 +77,7 @@ pub use models::{
     MarketVersion, LiveCpu, LiveNetwork, LiveStats, LiveUptime, LiveUsage, MyBoxDetails, MyBoxInfo,
     MyBoxOffer, MyBoxServer, MyBoxSummary, Players, ServerDetails, ServerListItem, ServerLive,
     ServerProperties, ServersOverview,
-    SftpEntry,
+    SftpEntry, SftpHostKey,
     Snapshot, Startup, UserNotification, UserProfile,
 };
 pub use service::{ServiceOverview, ServiceStatus};
@@ -150,7 +152,7 @@ impl Core {
         Self {
             api,
             console,
-            sftp: SftpManager::default(),
+            sftp: SftpManager::new(&dir),
             store,
             sup_state: Arc::new(SupervisorState::load(&dir)),
             mcp: PersistedConfig::load(&dir, "mcp.json"),
@@ -1837,12 +1839,39 @@ impl Core {
             return Err(Error::SftpPasswordRequired);
         }
         let creds = self.api.get_sftp_creds(&self.token()?, id).await?;
-        let conn = sftp::open(models::SftpCreds { password: password.to_string(), ..creds }).await?;
+        let conn =
+            sftp::open(models::SftpCreds { password: password.to_string(), ..creds }, self.sftp.hosts())
+                .await?;
         secrets::store_sftp_password(id, password)?;
         let mut ids = self.sftp_saved.get();
         ids.insert(id);
         self.sftp_saved.set(ids);
         self.sftp.insert(id, conn);
+        Ok(())
+    }
+
+    /// Identité (empreinte de clé d'hôte) du serveur SFTP d'un serveur : celle mémorisée et, après
+    /// un refus, celle que le serveur a présentée et que l'utilisateur peut accepter.
+    pub async fn sftp_host_key(&self, id: i64) -> Result<SftpHostKey> {
+        let creds = self.api.get_sftp_creds(&self.token()?, id).await?;
+        let host = sftp::host_id(&creds);
+        let known = self.sftp.hosts().get(&host);
+        let pending = self.sftp.hosts().pending(&host);
+        Ok(SftpHostKey {
+            host,
+            known_fingerprint: known.as_ref().map(|k| k.fingerprint.clone()),
+            known_algorithm: known.map(|k| k.algorithm),
+            presented_fingerprint: pending.as_ref().map(|p| p.0.clone()),
+            presented_algorithm: pending.map(|p| p.1),
+        })
+    }
+
+    /// Accepte la nouvelle empreinte présentée par le serveur SFTP d'un serveur (après un refus
+    /// `SftpHostKeyChanged`). `fingerprint` doit être exactement celle présentée.
+    pub async fn trust_sftp_host_key(&self, id: i64, fingerprint: &str) -> Result<()> {
+        let creds = self.api.get_sftp_creds(&self.token()?, id).await?;
+        self.sftp.hosts().trust_pending(&sftp::host_id(&creds), fingerprint)?;
+        self.sftp.drop_session(id);
         Ok(())
     }
 

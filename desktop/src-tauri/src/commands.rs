@@ -7,7 +7,7 @@ use minestrator_core::{
     LivePlayers, MyBoxDetails, ServerLive, ServerProperties,
     MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
     MetricSample, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
-    ServersOverview, SftpEntry, SmlVersion, Snapshot, SupervisorConfig, UserNotification, UserProfile,
+    ServersOverview, SftpEntry, SftpHostKey, SmlVersion, Snapshot, SupervisorConfig, UserNotification, UserProfile,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -502,6 +502,22 @@ pub fn sftp_forget_password(core: State<'_, Arc<Core>>, server_id: i64) -> Resul
 #[tauri::command]
 pub fn sftp_has_password(core: State<'_, Arc<Core>>, server_id: i64) -> bool {
     core.has_sftp_password(server_id)
+}
+
+/// Identité du serveur SFTP (empreinte mémorisée, et celle présentée lors d'un refus).
+#[tauri::command]
+pub async fn sftp_host_key(core: State<'_, Arc<Core>>, server_id: i64) -> Result<SftpHostKey, Error> {
+    core.sftp_host_key(server_id).await
+}
+
+/// Accepte la nouvelle empreinte présentée par le serveur SFTP (après confirmation explicite).
+#[tauri::command]
+pub async fn sftp_trust_host_key(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    fingerprint: String,
+) -> Result<(), Error> {
+    core.trust_sftp_host_key(server_id, &fingerprint).await
 }
 
 // --- Copilote (agent LLM multi-fournisseur) -------------------------------

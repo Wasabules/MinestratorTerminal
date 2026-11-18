@@ -49,6 +49,13 @@ modules `#[cfg(test)]` dans `crates/minestrator-core/src/*.rs` et `crates/minest
   mobile.
 - `release.yml` l'appelle en garde-fou avant tout build.
 - `audit.yml` lance cargo audit et npm audit chaque semaine et à chaque changement de lockfile.
+- `api-watch.yml` surveille l'API MineStrator chaque jour : contrat des réponses
+  (`cargo run -p minestrator-core --example api_contract`, lectures seules, secret
+  `MINESTRATOR_API_KEY`) et structure de l'OpenAPI publique comparée à
+  `docs/api/openapi-resume.txt` (`scripts/api-watch/openapi_resume.py`). Un écart ouvre une issue
+  (`surveillance-api`, `surveillance-api-doc`). Un champ lu avec tolérance (`#[serde(default)]`)
+  mais indispensable s'ajoute à `RAW_FIELDS` de l'exemple : c'est ainsi que la disparition du
+  mot de passe SFTP aurait été vue.
 - Dependabot ouvre des PR groupées.
 
 ## Architecture
@@ -109,7 +116,9 @@ ts-rs suit les attributs serde ; un `skip_serializing_if` **sans** `default` (ch
 **Côté mobile**, la chaîne est parallèle et ne partage aucun fichier front avec le desktop :
 `mobile/src-tauri/src/*.rs` → `generate_handler!` de `mobile/src-tauri/src/lib.rs` →
 `mobile/src/lib/ipc.ts` + `types.ts` → `mobile/src/lib/i18n.ts` (un seul fichier, dictionnaires
-`fr`/`en` **plats et non typés** : une clé oubliée dans `en` n'est pas détectée et s'affiche brute).
+`fr`/`en` **plats et non typés** : `en` commence par `...fr`, une clé oubliée s'afficherait en
+français). `node scripts/check-i18n.mjs` (lancé par la CI) exige les mêmes clés et les mêmes
+paramètres `{x}` en fr et en, côté mobile comme desktop — même pour un texte identique.
 
 **Mode démo** : si la réponse d'une nouvelle commande contient des données identifiantes (noms de
 serveur/MyBox, pseudos, IP, e-mails, références), enveloppe l'appel dans `demo(invoke(...), transform)`
