@@ -154,8 +154,8 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
   + `MINESTRATOR_DATA_DIR`) : dossier machine à accès restreint, contenu **chiffré DPAPI** sous
   Windows. Un nouveau secret = un compte `KEYRING_ACCOUNT_*` dans `config.rs` + ses fonctions dans
   `secrets.rs` ; jamais dans un `PersistedConfig`, `localStorage` ou un journal. Le **mot de passe
-  SFTP** n'est plus fourni par l'API : saisi une fois par serveur (`sftp-password-<id>`), vérifié
-  avant d'être enregistré, effacé avec le compte qui l'a enregistré (`sftp_passwords.json` :
+  SFTP** vient de `GET /server/{id}/sftp` (non documenté ; `GET /server/{id}` ne le donne plus). En
+  secours, saisi par serveur (`sftp-password-<id>`), vérifié avant d'être enregistré, effacé avec le compte qui l'a enregistré (`sftp_passwords.json` :
   serveur → id utilisateur, aucun secret).
 - **Plusieurs comptes** (`core/src/accounts.rs`, app seulement) : la clé du compte **actif** reste
   sous `api-key` — c'est elle que lisent MCP headless, agents CLI, superviseur et activation du
@@ -212,6 +212,7 @@ Les keystores (`*.jks`, `keystore.properties`) et `updater-private.key` ne doive
 | `DESIGN.md` | Charte graphique / tokens |
 | `docs/AUTO-UPDATE.md`, `docs/PUSH.md` | Updater signé ; notifications push mobile (FCM) |
 | `docs/SERVICE.md` | Service d'arrière-plan : secrets machine, IPC, notifications, installeurs |
+| `docs/api/REFERENCE.md` | API MineStrator complète, **documentée ou non** (relevé du panel web, accès avec une clé API, structures) — générée par `scripts/api-watch/reference.py` |
 | `mobile/README.md` | Spécificités Android (gen/android, signature, périmètre livré) |
 | `ROADMAP.md` | Livré / à finir / backlog |
 | `CHANGELOG.md` | Notes de version (source du corps des releases GitHub) |
