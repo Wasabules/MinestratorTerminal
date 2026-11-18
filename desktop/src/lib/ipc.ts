@@ -608,7 +608,8 @@ export const api = {
   sftpForgetPassword: (serverId: number) => invoke<void>('sftp_forget_password', { serverId }),
   sftpHasPassword: (serverId: number) => invoke<boolean>('sftp_has_password', { serverId }),
   /** Identité du serveur SFTP : empreinte mémorisée et, après un refus, celle présentée. */
-  sftpHostKey: (serverId: number) => invoke<SftpHostKey>('sftp_host_key', { serverId }),
+  sftpHostKey: (serverId: number) =>
+    demo(invoke<SftpHostKey>('sftp_host_key', { serverId }), (k) => ({ ...k, host: fakeAddress(k.host) })),
 
   // --- Tâches planifiées du panel MineStrator (exécutées par l'hébergeur) ---
   panelSchedules: (serverId: number) =>
