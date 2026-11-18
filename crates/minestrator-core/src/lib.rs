@@ -9,6 +9,7 @@
 mod accounts;
 mod api;
 mod archive;
+mod automation;
 /// Génération des types TypeScript des frontends (feature `ts`, hors build de production).
 #[cfg(feature = "ts")]
 pub mod bindings;
@@ -45,11 +46,19 @@ mod store;
 mod supervisor;
 mod thunderstore;
 mod umod;
+mod uptime;
 mod util;
+mod webhook;
 mod world;
 
 pub use accounts::{Account, AccountSwitch};
 pub use archive::ArchiveEntry;
+pub use automation::{
+    AutomationConfig, AutomationRun, RestartRule, Schedule, ScheduledTask, ServerAutomations,
+    TaskAction, TaskInfo,
+};
+pub use uptime::{Outage, UptimeReport, UptimeSpan, UptimeWindow};
+pub use webhook::{WebhookConfig, WebhookDestination, WebhookEvent, WebhookInfo, WebhookKind};
 pub use cli_agent::{detect_clis, CliAgent, CliStatus};
 pub use copilot::{Autonomy, ChatReply, CopilotConfig, Effort};
 pub use error::{Error, ErrorKind, ErrorPayload, Result};
@@ -139,6 +148,10 @@ pub struct Core {
     events: broadcast::Sender<CoreEvent>,
     /// Lien avec le service d'arrière-plan (côté app) : qui supervise, curseur des alertes.
     service_link: service::ServiceLink,
+    /// Automatisations (redémarrage automatique, tâches planifiées) : config et état d'exécution.
+    automation: automation::AutomationState,
+    /// Destinations d'alertes externes (webhooks) : config non secrète et répartiteur.
+    webhooks: webhook::WebhookState,
 }
 
 impl Core {
@@ -170,6 +183,8 @@ impl Core {
             accounts: PersistedConfig::load(&dir, "accounts.json"),
             account_op: tokio::sync::Mutex::new(()),
             service_link: service::ServiceLink::new(&dir),
+            automation: automation::AutomationState::load(&dir),
+            webhooks: webhook::WebhookState::load(&dir),
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),

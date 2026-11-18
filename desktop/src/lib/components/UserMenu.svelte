@@ -8,7 +8,7 @@
     openAddAccount,
     refreshAccounts,
   } from '#lib/stores/accounts.svelte.ts';
-  import { openSettingsAt } from '#lib/stores/settingsNav.svelte.ts';
+  import { openSettingsSection } from '#lib/settings/nav.svelte.ts';
   import { tabs } from '#lib/tabs/tabs.svelte.ts';
   import { toggleTheme } from '#lib/theme.ts';
   import { t, getLocale, setLocale, LOCALES, type Locale } from '#lib/i18n/index.ts';
@@ -56,7 +56,7 @@
 
   function manageAccounts() {
     open = false;
-    openSettingsAt('accounts');
+    openSettingsSection('accounts');
   }
 
   /** Retire le compte actif : bascule sur un autre compte s'il en reste, sinon écran de connexion. */

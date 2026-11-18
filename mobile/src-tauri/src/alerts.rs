@@ -187,6 +187,7 @@ mod tests {
             severity: "critical".into(),
             message: "message".into(),
             ts,
+            details: None,
         }
     }
 

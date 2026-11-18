@@ -1,32 +1,25 @@
 /**
- * Navigation vers une section des Réglages depuis l'extérieur de la vue (palette de commandes,
- * liens d'autres panneaux). La section affichée reste un état local de `SettingsView` : ce module
- * ne fait que transmettre l'intention, que la vue consomme puis efface.
+ * Navigation des Réglages hors de la vue — source unique :
+ * - la section ouverte vit ici, pas dans `SettingsView` : elle survit au remontage du workspace
+ *   (changement de compte) ;
+ * - toute ouverture directe d'une section depuis ailleurs (palette de commandes, « Gérer les
+ *   comptes » du menu utilisateur…) passe par `openSettingsSection`.
  */
 
 import { tabs } from '#lib/tabs/tabs.svelte.ts';
 
-export interface SettingsRequest {
-  /** Identifiant de section de `SettingsView` (`general`, `mcp`, `privacy`…). */
-  section: string;
-  /** Lancer aussi la recherche de mise à jour (section Général). */
-  checkUpdates?: boolean;
-}
+/**
+ * État partagé avec `SettingsView` : `section` est synchronisée dans les deux sens ;
+ * `checkUpdates` est une demande ponctuelle, consommée puis remise à `false` par la vue.
+ */
+export const settingsNav = $state<{ section: string; checkUpdates: boolean }>({
+  section: 'general',
+  checkUpdates: false,
+});
 
-const store = $state<{ request: SettingsRequest | null }>({ request: null });
-
-/** Ouvre (ou focus) l'onglet Réglages sur `section`. */
+/** Ouvre (ou focus) l'onglet Réglages sur `section` (`general`, `accounts`, `mcp`…). */
 export function openSettingsSection(section: string, opts: { checkUpdates?: boolean } = {}): void {
-  store.request = { section, checkUpdates: opts.checkUpdates };
+  settingsNav.section = section;
+  if (opts.checkUpdates) settingsNav.checkUpdates = true;
   tabs.openSettings();
-}
-
-/** Demande en attente (réactif), `null` sinon. */
-export function settingsRequest(): SettingsRequest | null {
-  return store.request;
-}
-
-/** Marque la demande comme traitée (appelé par `SettingsView`). */
-export function clearSettingsRequest(): void {
-  store.request = null;
 }

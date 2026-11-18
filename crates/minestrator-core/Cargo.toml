@@ -32,6 +32,10 @@ russh-sftp = "3"
 
 # Stockage local de l'historique de métriques (SQLite embarqué, sans dépendance système).
 rusqlite = { version = "0.43", features = ["bundled"] }
+
+# Planificateur d'automatisations : heure locale de la machine (fuseau et changements d'heure de
+# l'OS). Déjà présent dans l'arbre via `russh-sftp` : aucune compilation supplémentaire.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 directories = "6"
 
 # Parsing du rapport de profiler Spark (protobuf `x-spark-sampler`) — structs à la main, sans protoc.

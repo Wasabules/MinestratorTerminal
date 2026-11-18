@@ -2855,6 +2855,7 @@ version = "0.6.1"
 dependencies = [
  "android-native-keyring-store",
  "base64 0.23.1",
+ "chrono",
  "directories",
  "fastnbt",
  "flate2",

@@ -55,13 +55,19 @@ export type AlertEntry = {
   server_id: number,
   server_name: string,
   /**
-   * `crash` | `cpu` | `ram` | `disk` | `expiry`
+   * `crash` | `cpu` | `ram` | `disk` | `expiry` | `auto_restart` | `task`
    */
   kind: string,
   /**
-   * `warning` | `critical`
+   * `info` | `warning` | `critical`
    */
   severity: string,
   message: string,
   ts: number,
+  /**
+   * Détail joint, déjà anonymisé (`redact`) : dernières lignes de console au moment d'un crash,
+   * erreur d'une tâche planifiée… Absent du JSON quand il n'y en a pas — une app ou un service
+   * de version antérieure lit et écrit donc la même forme qu'avant.
+   */
+  details?: string,
 };

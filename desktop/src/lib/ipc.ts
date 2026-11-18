@@ -24,6 +24,7 @@ import type {
   AppError,
   AppErrorKind,
   ArchiveEntry,
+  AutomationRun,
   Backup,
   ChatReply,
   CliStatus,
@@ -56,6 +57,9 @@ import type {
   PowerAction,
   PrivacyConfig,
   RegionChunk,
+  RestartRule,
+  ScheduledTask,
+  ServerAutomations,
   ServerDetails,
   ServersOverview,
   ServiceOverview,
@@ -64,8 +68,13 @@ import type {
   SmlVersion,
   Snapshot,
   SupervisorConfig,
+  TaskInfo,
+  UptimeReport,
   UserNotification,
   UserProfile,
+  WebhookDestination,
+  WebhookInfo,
+  WebhookKind,
 } from './types';
 
 /**
@@ -494,6 +503,37 @@ export const api = {
   serviceTakePendingSetup: () => invoke<boolean>('service_take_pending_setup'),
   /** Alertes récentes du service (survenues app fermée), sans notification. */
   serviceAlerts: (sinceSecs: number) => invoke<Alert[]>('service_alerts', { sinceSecs }),
+
+  // --- Automatisations, disponibilité, alertes externes (exécutées par l'app ou le service) ---
+  /** Redémarrage automatique et tâches planifiées d'un serveur, pour le compte courant. */
+  serverAutomations: (serverId: number) =>
+    invoke<ServerAutomations>('server_automations', { serverId }),
+  /** Active ou règle le redémarrage automatique après crash. */
+  setAutoRestart: (serverId: number, enabled: boolean, maxPerHour: number) =>
+    invoke<RestartRule>('set_auto_restart', { serverId, enabled, maxPerHour }),
+  /** Crée (`id` vide) ou modifie une tâche planifiée ; le cœur valide et attribue id/compte. */
+  saveScheduledTask: (task: ScheduledTask) => invoke<TaskInfo>('save_scheduled_task', { task }),
+  deleteScheduledTask: (taskId: string) => invoke<void>('delete_scheduled_task', { taskId }),
+  /** Journal des exécutions d'un serveur (app + service), récents d'abord. */
+  automationRuns: (serverId: number, limit = 50) =>
+    demo(invoke<AutomationRun[]>('automation_runs', { serverId, limit }), (runs) =>
+      runs.map((r) => ({
+        ...r,
+        message: fakeText(r.message),
+        details: r.details ? fakeText(r.details) : r.details,
+      })),
+    ),
+  /** Disponibilité 24 h / 7 j / 30 j et coupures, d'après la surveillance de l'app/du service. */
+  uptimeReport: (serverId: number) => invoke<UptimeReport>('uptime_report', { serverId }),
+  /** Destinations d'alertes : jamais l'URL (secret), seulement sa présence. */
+  listWebhooks: () => invoke<WebhookInfo[]>('list_webhooks'),
+  /** Crée ou modifie une destination. `url` : nouvelle URL (null = conserver l'actuelle). */
+  saveWebhook: (destination: WebhookDestination, url: string | null) =>
+    invoke<WebhookInfo>('save_webhook', { destination, url }),
+  deleteWebhook: (id: string) => invoke<void>('delete_webhook', { id }),
+  /** Envoie un message de test à l'URL saisie, ou à celle enregistrée pour `id`. */
+  testWebhook: (kind: WebhookKind, url: string | null, id: string | null) =>
+    invoke<void>('test_webhook', { kind, url, id }),
 
   /**
    * Déconnexion : retire le compte actif (clé et mots de passe SFTP). Renvoie le compte qui prend

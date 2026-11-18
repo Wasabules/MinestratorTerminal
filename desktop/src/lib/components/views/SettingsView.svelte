@@ -15,7 +15,7 @@
   import { closeBehavior, setCloseBehavior, type CloseBehavior } from '#lib/close.svelte.ts';
   import { isDebug, setDebug } from '#lib/debug.svelte.ts';
   import { isFake, setFake } from '#lib/fake.svelte.ts';
-  import { settingsRequest, clearSettingsRequest } from '#lib/settings/nav.svelte.ts';
+  import { settingsNav } from '#lib/settings/nav.svelte.ts';
   import type {
     Autonomy,
     CliStatus,
@@ -31,7 +31,7 @@
   import Icon from '../Icon.svelte';
   import ServiceSection from '../settings/ServiceSection.svelte';
   import AccountsSection from '../settings/AccountsSection.svelte';
-  import { settingsNav } from '#lib/stores/settingsNav.svelte.ts';
+  import WebhooksSection from '../settings/WebhooksSection.svelte';
 
   type Section =
     | 'general'
@@ -39,6 +39,7 @@
     | 'games'
     | 'supervisor'
     | 'service'
+    | 'webhooks'
     | 'mcp'
     | 'copilot'
     | 'privacy'
@@ -288,14 +289,13 @@
     }
   }
 
-  // Navigation demandée de l'extérieur (palette de commandes) : section, puis action éventuelle.
+  // Recherche de mise à jour demandée de l'extérieur (palette de commandes) : la section, elle,
+  // arrive par la synchronisation avec `settingsNav` ci-dessus.
   $effect(() => {
-    const req = settingsRequest();
-    if (!req) return;
+    if (!settingsNav.checkUpdates) return;
     untrack(() => {
-      clearSettingsRequest();
-      section = req.section as Section;
-      if (req.checkUpdates && !updChecking) void checkUpdates();
+      settingsNav.checkUpdates = false;
+      if (!updChecking) void checkUpdates();
     });
   });
 
@@ -566,6 +566,9 @@
     <button class="nav-item" class:on={section === 'service'} onclick={() => (section = 'service')}>
       {t('service.nav')}
     </button>
+    <button class="nav-item" class:on={section === 'webhooks'} onclick={() => (section = 'webhooks')}>
+      {t('webhooks.nav')}
+    </button>
     <button class="nav-item" class:on={section === 'mcp'} onclick={() => (section = 'mcp')}>
       {t('settings.mcp')}
     </button>
@@ -765,6 +768,8 @@
       </div>
     {:else if section === 'service'}
       <ServiceSection />
+    {:else if section === 'webhooks'}
+      <WebhooksSection />
     {:else if section === 'mcp' && mcp}
       <h1>{t('settings.mcp')}</h1>
 

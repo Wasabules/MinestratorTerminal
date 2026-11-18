@@ -37,6 +37,9 @@ pub const KEYRING_ACCOUNT_GAME_PREFIX: &str = "game-secret-";
 /// Préfixe de compte trousseau pour le mot de passe SFTP d'un serveur (`sftp-password-<id>`) :
 /// l'API ne le transmet plus, l'utilisateur le saisit une fois par serveur.
 pub const KEYRING_ACCOUNT_SFTP_PREFIX: &str = "sftp-password-";
+/// Préfixe de compte trousseau pour l'URL d'une destination d'alertes (`webhook-url-<id>`) : une
+/// URL de webhook Discord suffit à poster dans le salon, c'est donc un secret à part entière.
+pub const KEYRING_ACCOUNT_WEBHOOK_PREFIX: &str = "webhook-url-";
 
 /// Version d'API Anthropic (en-tête `anthropic-version`).
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";

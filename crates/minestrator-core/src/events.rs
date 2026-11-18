@@ -65,12 +65,18 @@ pub struct Alert {
     /// ID serveur, ou ID MyBox pour une alerte d'expiration.
     pub server_id: i64,
     pub server_name: String,
-    /// `crash` | `cpu` | `ram` | `disk` | `expiry`
+    /// `crash` | `cpu` | `ram` | `disk` | `expiry` | `auto_restart` | `task`
     pub kind: String,
-    /// `warning` | `critical`
+    /// `info` | `warning` | `critical`
     pub severity: String,
     pub message: String,
     pub ts: i64,
+    /// Détail joint, déjà anonymisé (`redact`) : dernières lignes de console au moment d'un crash,
+    /// erreur d'une tâche planifiée… Absent du JSON quand il n'y en a pas — une app ou un service
+    /// de version antérieure lit et écrit donc la même forme qu'avant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub details: Option<String>,
 }
 
 /// Une action concrète proposée par le Copilote, applicable via la couche d'outils.

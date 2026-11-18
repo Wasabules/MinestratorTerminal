@@ -14,7 +14,7 @@
 
 use crate::config::{
     KEYRING_ACCOUNT, KEYRING_ACCOUNT_GAME_PREFIX, KEYRING_ACCOUNT_KEY_PREFIX,
-    KEYRING_ACCOUNT_LLM_PREFIX, KEYRING_ACCOUNT_SFTP_PREFIX,
+    KEYRING_ACCOUNT_LLM_PREFIX, KEYRING_ACCOUNT_SFTP_PREFIX, KEYRING_ACCOUNT_WEBHOOK_PREFIX,
 };
 use crate::error::Result;
 
@@ -324,6 +324,27 @@ pub fn delete_sftp_password(server_id: i64) -> Result<()> {
     delete_account(&sftp_account(server_id))
 }
 
+// --- URL des destinations d'alertes (webhooks) ------------------------------
+
+fn webhook_account(id: &str) -> String {
+    format!("{KEYRING_ACCOUNT_WEBHOOK_PREFIX}{id}")
+}
+
+/// Enregistre (ou remplace) l'URL d'une destination d'alertes (webhook Discord ou JSON).
+pub fn store_webhook_url(id: &str, url: &str) -> Result<()> {
+    write_account(&webhook_account(id), url)
+}
+
+/// Lit l'URL d'une destination d'alertes. `Ok(None)` si aucune n'est enregistrée.
+pub fn read_webhook_url(id: &str) -> Result<Option<String>> {
+    read_account(&webhook_account(id))
+}
+
+/// Supprime l'URL d'une destination d'alertes. Ne renvoie pas d'erreur si absente.
+pub fn delete_webhook_url(id: &str) -> Result<()> {
+    delete_account(&webhook_account(id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,5 +358,6 @@ mod tests {
         assert_eq!(sftp_account(377829), "sftp-password-377829");
         assert_eq!(account_key_name(4242), "api-key-4242");
         assert_eq!(KEYRING_ACCOUNT, "api-key");
+        assert_eq!(webhook_account("wh-1a2b"), "webhook-url-wh-1a2b");
     }
 }

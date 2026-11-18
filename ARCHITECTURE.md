@@ -139,9 +139,31 @@ Regroupés par domaine (liste réelle des fichiers).
 ### 3.3 Surveillance, historique & persistance
 - **`supervisor`** — monitoring de fond : connexions **monitor** légères (stats/status + repérage
   WARN/ERROR), historique de métriques et **détection d'alertes** (crash, seuils CPU/RAM/disque, expiration).
-  Réglable via `SupervisorConfig` persistée ; état vivant dans `SupervisorState`.
+  Réglable via `SupervisorConfig` persistée ; état vivant dans `SupervisorState`. Classe chaque
+  transition d'état (`crash` / `stop`) et consigne les **observations d'état** (suivi de
+  disponibilité). À un crash, capture les dernières lignes de console (`GET …/console/logs`,
+  anonymisées par `redact`) et les joint à l'alerte (`Alert.details`), puis signale le crash aux
+  automatisations. L'état connu d'un serveur est oublié dès que sa connexion monitor tombe : un
+  arrêt volontaire survenu pendant la coupure ne passe jamais pour un crash.
+- **`automation`** — automatisations locales exécutées par le **superviseur actif** (l'app, ou le
+  service d'arrière-plan quand il supervise le même compte — jamais les deux) : **redémarrage
+  automatique après crash** (par serveur, délais 30 s / 2 min / 5 min, plafond horaire, alerte
+  critique au-delà) et **planificateur** (redémarrage avec annonces aux joueurs via
+  `GameCapabilities::broadcast`, snapshot, commandes ; quotidien, jours de la semaine ou intervalle,
+  heure locale via `chrono`, tolérance de 5 min sans rattrapage). Règles et tâches rattachées au
+  compte (`account_id`). Config `automations.json`, journal des exécutions en SQLite. Ce sont des
+  automatisations **de l'app** (ordinateur allumé), distinctes des tâches du panel web.
+- **`webhook`** — alertes vers **Discord** (embeds, aucune mention interprétée) et **webhook JSON** :
+  destinations non secrètes dans `webhooks.json`, **URL dans `secrets`** ; événements choisis par
+  destination ; tout passe par `redact` ; regroupement (5 s) et débit limité (un envoi / 10 s par
+  destination, file bornée). Erreurs journalisées sans URL.
+- **`uptime`** — suivi de disponibilité (pur) : observations → périodes surveillées → % sur
+  24 h / 7 j / 30 j et journal des coupures (cause `crash` / `stop` / inconnue). Les périodes non
+  surveillées (app fermée, PC éteint) ne comptent pas ; fusion avec l'historique du service.
 - **`store`** — historique local de métriques en **SQLite embarqué** (`rusqlite` *bundled*). L'API ne
   fournit aucun historique : l'app l'accumule elle-même (avantage structurel d'un client persistant).
+  Même base : journal d'alertes (avec `details`, colonne ajoutée par migration), observations d'état
+  (`uptime`) et journal des automatisations (`automation_runs`), gardés 32 jours.
 - **`cache`** — cache mémoire TTL des lectures d'API stables/semi-stables (au niveau du `Core`).
 - **`persist`** — config JSON persistée (load/get/set sous mutex) dans le dossier data de l'OS ;
   mutualise MCP, Copilote et confidentialité.
@@ -189,7 +211,8 @@ Regroupés par domaine (liste réelle des fichiers).
   que ses mots de passe. Testé sur le backend fichier d'un dossier temporaire, pannes injectées.
 - **`secrets`** — stockage sécurisé natif : clés API (compte actif `api-key`, comptes inactifs
   `api-key-<id>`), clés LLM par fournisseur (`llm-key-<slug>`),
-  secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`). Trousseau de l'OS
+  secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`), URL des destinations
+  d'alertes (`webhook-url-<id>` : une URL Discord suffit à poster). Trousseau de l'OS
   (`keyring`) sur desktop ; **Keystore Android** (`android-native-keyring-store` : AES-GCM, clé non
   exportable) sur Android, avec migration puis suppression de l'ancien `secrets.json` en clair.
   Backend **fichier** réservé au daemon (et à iOS, non livré) : dossier à accès restreint, jamais le
@@ -308,6 +331,8 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Marketplace** | `market_minecraft_versions`, `market_list`, `market_versions`, `install_mod`, `installed_mods`, `installed_plugins` |
 | **Copilote / chat** | `copilot_apply`, `copilot_diagnose_now`, `copilot_analyze`, `copilot_performance`, `chat_send`, `chat_reset`, `chat_warm`, `has/set/clear_copilot_key` |
 | **Configs** | `get/set_supervisor_config`, `get/set_mcp_config`, `get/set_privacy_config`, `get/set_copilot_config` |
+| **Automatisations / disponibilité** | `server_automations`, `set_auto_restart`, `save_scheduled_task`, `delete_scheduled_task`, `automation_runs`, `uptime_report` |
+| **Alertes externes** | `list_webhooks`, `save_webhook` (URL → stockage sécurisé), `delete_webhook`, `test_webhook` |
 | **Divers / paste / MCP** | `paste_upload`, `detect_clis`, `app_exe_path` (compose la config MCP de Claude) |
 
 > **Updater / version** : côté **front** via les plugins Tauri (`updater.ts` : `check` / `downloadAndInstall`
@@ -328,7 +353,7 @@ observer le même serveur indépendamment.
 | `console://stats` | `{ conn_id, cpu_absolute, memory_bytes, memory_limit_bytes, disk_bytes, uptime, state }` | jauges |
 | `console://status` | `{ conn_id, state }` | badge d'état |
 | `console://connection` | `{ conn_id, phase }` | `connecting \| open \| reconnecting \| closed \| hibernated \| suspended` |
-| `alert://new` | `{ server_id, kind, severity, message, ts }` | bandeau + **notif native** |
+| `alert://new` | `{ server_id, kind, severity, message, ts, details? }` (`kind` : `crash`, `cpu`, `ram`, `disk`, `expiry`, `auto_restart`, `task`) | bandeau + **notif native** ; `details` = logs du crash / erreur d'une tâche, dépliables dans le centre d'alertes |
 | `copilot://started` | `{ id, server_id, trigger }` | indicateur « analyse en cours » |
 | `copilot://progress` | `{ id, phase }` | log de progression |
 | `copilot://diagnosis` | `Diagnosis` (cause, fix, actions proposées) | rapport + **notif native** |
@@ -382,7 +407,7 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   onglets uniques **Réglages** et **Copilote**. Un onglet serveur cible un couple `(serverId, view)`.
   **Doublons autorisés** (`openNew` vs `focusOrOpen`), plus `close`/`closeOthers`/`closeLeft`/`closeRight`
   et `moveTo` (réordonnancement par glisser). `ServerView` = `overview \| console \| sftp \| players \|
-  mods \| assistant \| backups \| settings` (`settings` par-serveur non encore *ready*).
+  mods \| assistant \| backups \| automations \| settings`.
 - **`windows.ts`** — **fenêtres détachées** : `detachTab` ouvre une `WebviewWindow` (`/?detach=…`) ;
   chaque fenêtre est une instance indépendante avec son propre `TabManager`, l'auth étant partagée via le
   trousseau OS. `readDetachSpec` (dans `+page.svelte`) rouvre l'onglet demandé ; `isPointerOutsideWindow`
@@ -401,11 +426,15 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   et par l'event `account://switched`) ferme les onglets serveurs et recharge le profil ;
   `+page.svelte` remonte le workspace par `{#key}` sur l'id du compte, donc toutes les listes se
   rechargent. Sélecteur dans `UserMenu`, `AddAccountDialog`, Réglages → Comptes
-  (`settings/AccountsSection.svelte`, section mémorisée par `stores/settingsNav.svelte.ts`).
-- **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique), `ConsoleView`
+  (`settings/AccountsSection.svelte`, section mémorisée par `settings/nav.svelte.ts`, partagé avec la palette).
+- **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique +
+  `UptimeCard` : disponibilité 24 h / 7 j / 30 j et coupures), `ConsoleView`
   (xterm + envoi de commandes), `SftpView` (+ `FileEditor` CodeMirror, archives, NBT, `.mca`), `PlayersView`,
   `MarketplaceView` (mods/plugins), `AssistantView` (chat Copilote streamé), `BackupsView`
-  (backups + snapshots), `SettingsView`, `CopilotView`, `ComingSoon` (placeholder).
+  (backups + snapshots), `AutomationsView` (redémarrage automatique, tâches planifiées, historique
+  d'exécution — en précisant qu'elles tournent sur cet ordinateur, pas sur le panel web),
+  `SettingsView` (dont `settings/ServiceSection` et `settings/WebhooksSection`), `CopilotView`,
+  `ComingSoon` (placeholder).
 - **Couches transverses** — `ipc.ts` (façade `api` typée + `humanizeError`/i18n), `events.ts`
   (abonnements typés), `types.ts` (ré-export des types générés de `bindings/`, cf. §5.3), stores rune (`stores/auth.svelte.ts`, `servers/colors.svelte`, `sftp/columns.svelte`),
   `theme.ts` (clair/sombre), `i18n` (fr/en), `updater.ts` + `UpdateBanner.svelte`.
@@ -421,7 +450,8 @@ menu Afficher/Quitter + clic gauche = réafficher. Notifications natives pour al
 `tokio` (rt/sync/macros/time/fs/io-util/**io-std**/**process**) ; `tokio-tungstenite`
 (`rustls-tls-webpki-roots`) + `futures-util` ; **`russh` 0.65** (backend `ring`, clés d'hôte RSA ;
 pas `aws-lc-rs`, qui exige CMake/NASM) **/ `russh-sftp` 3** ; **`rusqlite` 0.43 *bundled*** +
-`directories` ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip` 9 (deflate **pur Rust**) ;
+`directories` ; **`chrono`** (`clock` : heure locale du planificateur d'automatisations, déjà
+présent via `russh-sftp`) ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip` 9 (deflate **pur Rust**) ;
 **`fastnbt`** ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 4** par OS
 (`windows-native` / `apple-native` / `zbus-secret-service`), **`android-native-keyring-store`** +
 `keyring-core` sur Android (Keystore). **`ts-rs` 12** *optionnel* (feature `ts`,

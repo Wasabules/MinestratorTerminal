@@ -1004,3 +1004,94 @@ pub async fn service_alerts(
 ) -> Result<Vec<minestrator_core::Alert>, Error> {
     core.service_alerts(since_secs).await
 }
+
+// --- Automatisations, disponibilité, alertes externes -----------------------------------
+// Exécutées par le superviseur actif (l'app ou le service d'arrière-plan) : l'UI ne fait que les
+// configurer et les consulter. Voir `crates/minestrator-core/src/automation.rs`.
+
+/// Redémarrage automatique et tâches planifiées d'un serveur (compte courant).
+#[tauri::command]
+pub async fn server_automations(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<minestrator_core::ServerAutomations, Error> {
+    core.server_automations(server_id).await
+}
+
+/// Active ou règle le redémarrage automatique après crash d'un serveur.
+#[tauri::command]
+pub async fn set_auto_restart(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    enabled: bool,
+    max_per_hour: u32,
+) -> Result<minestrator_core::RestartRule, Error> {
+    core.set_auto_restart(server_id, enabled, max_per_hour).await
+}
+
+/// Crée (`id` vide) ou modifie une tâche planifiée.
+#[tauri::command]
+pub async fn save_scheduled_task(
+    core: State<'_, Arc<Core>>,
+    task: minestrator_core::ScheduledTask,
+) -> Result<minestrator_core::TaskInfo, Error> {
+    core.save_scheduled_task(task).await
+}
+
+#[tauri::command]
+pub async fn delete_scheduled_task(core: State<'_, Arc<Core>>, task_id: String) -> Result<(), Error> {
+    core.delete_scheduled_task(&task_id).await
+}
+
+/// Journal des exécutions d'un serveur (local + service d'arrière-plan), récents d'abord.
+#[tauri::command]
+pub async fn automation_runs(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    limit: u32,
+) -> Result<Vec<minestrator_core::AutomationRun>, Error> {
+    core.automation_runs(server_id, limit).await
+}
+
+/// Disponibilité 24 h / 7 j / 30 j et coupures d'un serveur.
+#[tauri::command]
+pub async fn uptime_report(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<minestrator_core::UptimeReport, Error> {
+    core.uptime_report(server_id).await
+}
+
+/// Destinations d'alertes (jamais leurs URL, seulement leur présence).
+#[tauri::command]
+pub async fn list_webhooks(
+    core: State<'_, Arc<Core>>,
+) -> Result<Vec<minestrator_core::WebhookInfo>, Error> {
+    Ok(core.webhooks())
+}
+
+/// Crée ou modifie une destination ; `url` (secret) va au stockage sécurisé.
+#[tauri::command]
+pub async fn save_webhook(
+    core: State<'_, Arc<Core>>,
+    destination: minestrator_core::WebhookDestination,
+    url: Option<String>,
+) -> Result<minestrator_core::WebhookInfo, Error> {
+    core.save_webhook(destination, url).await
+}
+
+#[tauri::command]
+pub async fn delete_webhook(core: State<'_, Arc<Core>>, id: String) -> Result<(), Error> {
+    core.delete_webhook(&id).await
+}
+
+/// Message de test vers l'URL saisie, ou celle enregistrée pour `id`.
+#[tauri::command]
+pub async fn test_webhook(
+    core: State<'_, Arc<Core>>,
+    kind: minestrator_core::WebhookKind,
+    url: Option<String>,
+    id: Option<String>,
+) -> Result<(), Error> {
+    core.test_webhook(kind, url, id).await
+}

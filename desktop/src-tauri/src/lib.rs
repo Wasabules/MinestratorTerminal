@@ -3,7 +3,8 @@
 //! - expose le `Core` au webview via des commandes ;
 //! - relaie les `CoreEvent` (broadcast) vers le webview et, pour les alertes, en
 //!   **notifications natives** ;
-//! - démarre le superviseur ;
+//! - démarre le superviseur et les automatisations (redémarrage automatique, tâches planifiées,
+//!   webhooks) ;
 //! - vit en **tray** (fermer la fenêtre la masque, le superviseur continue).
 
 mod commands;
@@ -72,9 +73,12 @@ pub fn run() {
             // service d'arrière-plan : si le service supervise déjà ce compte, le superviseur
             // local reste en veille (pas de double collecte ni d'alertes en double) et les
             // alertes du service arrivent par le même bus d'events (docs/SERVICE.md).
+            // Automatisations (redémarrage automatique, tâches planifiées, webhooks) : exécutées
+            // ici seulement tant que l'app est le superviseur actif (sinon par le service).
             tauri::async_runtime::spawn(async move {
-                link_core.start_service_link().await;
+                link_core.clone().start_service_link().await;
                 supervisor.start();
+                link_core.start_automations();
             });
 
             // Copilote : écoute des alertes → diagnostic LLM automatique.
@@ -214,6 +218,16 @@ pub fn run() {
             commands::service_take_pending_setup,
             commands::service_restart,
             commands::service_alerts,
+            commands::server_automations,
+            commands::set_auto_restart,
+            commands::save_scheduled_task,
+            commands::delete_scheduled_task,
+            commands::automation_runs,
+            commands::uptime_report,
+            commands::list_webhooks,
+            commands::save_webhook,
+            commands::delete_webhook,
+            commands::test_webhook,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

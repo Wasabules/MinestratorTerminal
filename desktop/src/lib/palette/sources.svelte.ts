@@ -27,6 +27,7 @@ import { runtimeMeta, statusMeta } from '#lib/status.ts';
 import { toggleTheme } from '#lib/theme.ts';
 import { openSettingsSection } from '#lib/settings/nav.svelte.ts';
 import { setAlertCenterOpen } from '#lib/alerts/alerts.svelte.ts';
+import { accountsStore, applyAccountSwitch, openAddAccount } from '#lib/stores/accounts.svelte.ts';
 import type { PowerAction } from '#lib/types.ts';
 import {
   registerPaletteMode,
@@ -224,9 +225,11 @@ function commandEntry(s: PaletteServer, id: string, title: string): PaletteEntry
 /** Sections de `SettingsView` (id → clé i18n du libellé). Une nouvelle section s'ajoute ici. */
 const SETTINGS_SECTIONS: { id: string; label: string }[] = [
   { id: 'general', label: 'settings.general' },
+  { id: 'accounts', label: 'account.nav' },
   { id: 'games', label: 'settings.games' },
   { id: 'supervisor', label: 'settings.supervisor' },
   { id: 'service', label: 'service.nav' },
+  { id: 'webhooks', label: 'webhooks.nav' },
   { id: 'mcp', label: 'settings.mcp' },
   { id: 'copilot', label: 'settings.copilot' },
   { id: 'privacy', label: 'settings.privacy' },
@@ -351,6 +354,46 @@ export function installBuiltinPaletteSources(): void {
     label: () => t('palette.groups.settings'),
     order: 30,
     entries: () => settingsEntries(true),
+  });
+
+  // Comptes MineStrator (cf. stores/accounts.svelte.ts) : la liste est celle du menu utilisateur,
+  // déjà passée par le mode démo. Bascule et ajout ne sont pas mémorisés dans les récents.
+  registerPaletteSource({
+    id: 'accounts',
+    label: () => t('account.title'),
+    order: 35,
+    entries: () => [
+      ...accountsStore.list
+        .filter((a) => !a.active)
+        .map((a) => ({
+          id: `account:switch:${a.id}`,
+          title: `${t('account.switchTo')} ${a.pseudo}`,
+          icon: 'users',
+          keywords: [t('account.nav')],
+          searchOnly: true,
+          noRecent: true,
+          run: async () => {
+            await applyAccountSwitch(await api.accountSwitch(a.id));
+          },
+        })),
+      {
+        id: 'account:add',
+        title: t('account.add'),
+        icon: 'plus',
+        keywords: [t('account.nav')],
+        searchOnly: true,
+        noRecent: true,
+        run: () => openAddAccount(),
+      },
+      {
+        id: 'account:manage',
+        title: t('account.manage'),
+        icon: 'settings',
+        keywords: [t('account.nav')],
+        searchOnly: true,
+        run: () => openSettingsSection('accounts'),
+      },
+    ],
   });
 
   registerPaletteSource({
