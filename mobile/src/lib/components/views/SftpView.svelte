@@ -2,11 +2,12 @@
   import { api, humanizeError } from "../../ipc";
   import { activeCount, uploadTo, downloadFrom, transferItems } from "../../stores/transfers.svelte";
   import TransferCenter from "../TransferCenter.svelte";
+  import SftpPasswordCard from "../SftpPasswordCard.svelte";
   import { t } from "../../i18n";
   import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
   import CodeEditor from "../CodeEditor.svelte";
-  import type { ArchiveEntry, SftpEntry } from "../../types";
+  import type { AppError, ArchiveEntry, SftpEntry } from "../../types";
 
   let { serverId, active }: { serverId: number; active: boolean } = $props();
 
@@ -39,6 +40,24 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
+  /** Mot de passe SFTP manquant ou refusé : l'API ne le transmet plus (cf. SftpPasswordCard). */
+  let pwCard = $state<"required" | "rejected" | "change" | null>(null);
+
+  /** Affiche une erreur ; un mot de passe SFTP manquant ou refusé ouvre directement sa saisie. */
+  function fail(err: unknown) {
+    const kind = (err as Partial<AppError> | undefined)?.kind;
+    if (kind === "sftp_password_required" || kind === "sftp_auth") {
+      pwCard = kind === "sftp_auth" ? "rejected" : "required";
+      error = null;
+      return;
+    }
+    error = humanizeError(err);
+  }
+
+  function passwordSaved() {
+    pwCard = null;
+    void load();
+  }
 
   // Éditeur de fichier (overlay).
   let opened = $state<{
@@ -75,7 +94,7 @@
     try {
       results = await api.sftpSearch(serverId, cwd, q);
     } catch (err) {
-      error = humanizeError(err);
+      fail(err);
       results = null;
     } finally {
       searching = false;
@@ -128,7 +147,7 @@
       );
       entries = list;
     } catch (err) {
-      error = humanizeError(err);
+      fail(err);
     } finally {
       loading = false;
     }
@@ -149,7 +168,7 @@
       try {
         preview = { name: entry.name, src: await api.sftpReadDataUri(serverId, entry.path) };
       } catch (err) {
-        error = humanizeError(err);
+        fail(err);
       }
       return;
     }
@@ -162,7 +181,7 @@
           entries: await api.sftpArchiveList(serverId, entry.path),
         };
       } catch (err) {
-        error = humanizeError(err);
+        fail(err);
       }
       return;
     }
@@ -204,7 +223,7 @@
       notice = t("files.saved");
       setTimeout(() => (notice = null), 1500);
     } catch (err) {
-      error = humanizeError(err);
+      fail(err);
     } finally {
       opened.saving = false;
     }
@@ -224,7 +243,7 @@
       }
       await load();
     } catch (err) {
-      error = humanizeError(err);
+      fail(err);
     }
   }
 
@@ -262,6 +281,14 @@
     <button class="ic" onclick={load} aria-label={t("servers.refresh")}>
       <Icon name="refresh" size={18} />
     </button>
+    <button
+      class="ic"
+      class:on={pwCard !== null}
+      onclick={() => (pwCard = pwCard ? null : "change")}
+      aria-label={t("files.password.button")}
+    >
+      <Icon name="key" size={18} />
+    </button>
   </div>
 
   <!-- Recherche dépliée depuis la loupe : sur mobile, un champ permanent occupe une ligne
@@ -288,6 +315,9 @@
     </div>
   {/if}
 
+  {#if pwCard}
+    <SftpPasswordCard {serverId} reason={pwCard} onsaved={passwordSaved} onclose={() => (pwCard = null)} />
+  {/if}
   {#if notice}<p class="ok">{notice}</p>{/if}
   {#if error}<p class="err selectable">{error}</p>{/if}
 
@@ -316,7 +346,8 @@
   {:else if loading}
     <p class="dim pad">…</p>
   {:else if entries.length === 0}
-    <p class="dim pad">{t("files.empty")}</p>
+    <!-- Sans mot de passe, le dossier n'a pas pu être lu : « vide » serait faux. -->
+    {#if pwCard !== "required" && pwCard !== "rejected"}<p class="dim pad">{t("files.empty")}</p>{/if}
   {:else}
     <ul>
       {#each entries as e (e.path)}

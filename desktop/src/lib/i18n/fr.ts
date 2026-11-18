@@ -650,6 +650,23 @@ export const fr = {
     overwriteBody: 'Déjà présent : {names}',
     overwrite: 'Écraser',
     dontAskAgain: 'Ne plus demander',
+    password: {
+      button: 'Mot de passe SFTP',
+      title: 'Mot de passe SFTP',
+      required:
+        'MineStrator ne transmet plus le mot de passe SFTP : saisis-le une fois pour ce serveur.',
+      rejected: 'Le serveur SFTP a refusé ce mot de passe. Vérifie-le dans le panel.',
+      change: 'Le mot de passe enregistré pour ce serveur est utilisé automatiquement.',
+      where: 'Il figure dans l’onglet « Accès » du serveur, sur le panel MineStrator.',
+      stored: 'Il est conservé dans le stockage sécurisé de ton appareil, uniquement pour ce serveur.',
+      placeholder: 'Mot de passe SFTP',
+      show: 'Afficher',
+      hide: 'Masquer',
+      save: 'Vérifier et enregistrer',
+      checking: 'Vérification…',
+      forget: 'Oublier',
+      forgotten: 'Mot de passe oublié pour ce serveur.',
+    },
   },
   errors: {
     unauthorized: 'Clé refusée : vérifie qu’elle est correcte et toujours active.',
@@ -658,7 +675,9 @@ export const fr = {
     network: 'Impossible de joindre l’API. Vérifie ta connexion.',
     no_key: 'Aucune clé enregistrée.',
     sftp_auth:
-      'Le serveur SFTP a refusé les identifiants fournis par MineStrator. Vérifie ton accès SFTP dans le panel (mot de passe SFTP), puis réessaie.',
+      'Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l’onglet « Accès » du panel MineStrator, puis saisis-le à nouveau dans l’onglet Fichiers.',
+    sftp_password_required:
+      'Mot de passe SFTP requis : saisis-le une fois dans l’onglet Fichiers de ce serveur.',
   },
   // Service d'arrière-plan (supervision machine) — espace de noms dédié, voir docs/SERVICE.md.
   service: {

@@ -122,6 +122,11 @@ export const api = {
   // --- SFTP ---
   sftpList: (serverId: number, path: string) =>
     invoke<SftpEntry[]>("sftp_list", { serverId, path }),
+  /** Vérifie le mot de passe SFTP (session ouverte) puis l'enregistre dans le Keystore. */
+  sftpSetPassword: (serverId: number, password: string) =>
+    invoke<void>("sftp_set_password", { serverId, password }),
+  sftpForgetPassword: (serverId: number) => invoke<void>("sftp_forget_password", { serverId }),
+  sftpHasPassword: (serverId: number) => invoke<boolean>("sftp_has_password", { serverId }),
   sftpReadText: (serverId: number, path: string) =>
     invoke<string>("sftp_read_text", { serverId, path }),
   sftpWriteText: (serverId: number, path: string, content: string) =>

@@ -110,6 +110,10 @@ Regroupés par domaine (liste réelle des fichiers).
   ré-auth sur `token expiring`/`token expired`. Publie des `CoreEvent`.
 - **`sftp`** — client SFTP natif (`russh`/`russh-sftp`) : `SftpManager` à **sessions poolées** par serveur
   (rouvertes à la volée si empoisonnées), list/read/write/mkdir/delete/rename/upload/download/walk/search.
+  Hôte/port/utilisateur viennent de `GET /server/{id}` ; le **mot de passe n'y figure plus** (retiré
+  par MineStrator fin 2026, toujours documenté) : saisi une fois par serveur, vérifié par une session
+  avant d'être enregistré (`set_sftp_password`), puis essayé avant celui de l'API si elle en renvoie
+  un. Sans mot de passe : erreur `sftp_password_required`, que l'UI traduit en saisie.
 - **`models`** — structs `serde` : miroirs typés des réponses d'API et de leurs enveloppes brutes
   (`UserProfile`, `ServersOverview`/`MyBoxSummary`, `ServerDetails`, `LiveLight`, `Startup`, `MarketPage`,
   `Backup`, `Snapshot`, `InstalledItem`, `SftpEntry`…).
@@ -166,9 +170,12 @@ Regroupés par domaine (liste réelle des fichiers).
   garde le SFTP fin + les outils exclusifs (`inspect_region`, Spark, docteur démarrage).
 
 ### 3.5 Sécurité & confidentialité
-- **`secrets`** — trousseau natif de l'OS (`keyring`) : clé API + clés LLM par fournisseur
-  (`llm-key-<slug>`). Fonctionne aussi en headless. Backend **fichier** (mobile, daemon) : dossier de
-  données de l'app, jamais le répertoire temporaire, `secrets.json` en `0600` sous Unix.
+- **`secrets`** — stockage sécurisé natif : clé API, clés LLM par fournisseur (`llm-key-<slug>`),
+  secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`). Trousseau de l'OS
+  (`keyring`) sur desktop ; **Keystore Android** (`android-native-keyring-store` : AES-GCM, clé non
+  exportable) sur Android, avec migration puis suppression de l'ancien `secrets.json` en clair.
+  Backend **fichier** réservé au daemon (et à iOS, non livré) : dossier à accès restreint, jamais le
+  répertoire temporaire, `0600` sous Unix, **chiffré DPAPI** (compte du service) sous Windows.
 - **`cli_agent::RunDir`** — dossier éphémère de la config d'un agent CLI (qui peut porter la clé API) :
   privé, effacé à la fin du processus, orphelins purgés. Les outils natifs des agents (shell, disque)
   sont retirés — cf. `COPILOT.md`.
@@ -381,10 +388,11 @@ menu Afficher/Quitter + clic gauche = réafficher. Notifications natives pour al
 **`minestrator-core`** — `serde`/`serde_json` ; `reqwest` (`rustls-tls`, sans OpenSSL) + `base64` ;
 `tokio` (rt/sync/macros/time/fs/io-util/**io-std**/**process**) ; `tokio-tungstenite`
 (`rustls-tls-webpki-roots`) + `futures-util` ; **`russh` 0.65** (backend `ring`, clés d'hôte RSA ;
-pas `aws-lc-rs`, qui exige CMake/NASM) **/ `russh-sftp` 2** ; **`rusqlite` 0.43 *bundled*** +
+pas `aws-lc-rs`, qui exige CMake/NASM) **/ `russh-sftp` 3** ; **`rusqlite` 0.43 *bundled*** +
 `directories` ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip` 9 (deflate **pur Rust**) ;
-**`fastnbt`** ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 3** par OS
-(`windows-native` / `apple-native` / `sync-secret-service`). **`ts-rs` 12** *optionnel* (feature `ts`,
+**`fastnbt`** ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 4** par OS
+(`windows-native` / `apple-native` / `zbus-secret-service`), **`android-native-keyring-store`** +
+`keyring-core` sur Android (Keystore). **`ts-rs` 12** *optionnel* (feature `ts`,
 génération des bindings TypeScript uniquement).
 
 **`src-tauri`** — `tauri` 2 (feature `tray-icon`) ; plugins `opener`, `dialog`, `notification`,

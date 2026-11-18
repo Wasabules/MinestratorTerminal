@@ -31,7 +31,8 @@ administrateur requis.
 
 ## Dossier de données
 
-La clé API (`secrets.json`), l'historique (`metrics.db`, alertes) et les réglages vivent dans :
+La clé API (`secrets.json`, chiffré DPAPI sous Windows), l'historique (`metrics.db`, alertes) et
+les réglages vivent dans :
 
 1. `MINESTRATOR_DATA_DIR` s'il est défini (l'unité systemd et le plist le posent) ;
 2. sinon, en service ou en root, l'emplacement machine protégé :

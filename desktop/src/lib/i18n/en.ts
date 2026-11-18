@@ -650,6 +650,22 @@ export const en: Dict = {
     overwriteBody: 'Already there: {names}',
     overwrite: 'Overwrite',
     dontAskAgain: 'Don’t ask again',
+    password: {
+      button: 'SFTP password',
+      title: 'SFTP password',
+      required: 'MineStrator no longer sends the SFTP password: enter it once for this server.',
+      rejected: 'The SFTP server rejected this password. Check it in the panel.',
+      change: 'The password saved for this server is used automatically.',
+      where: 'You will find it in the server’s “Access” tab on the MineStrator panel.',
+      stored: 'It is kept in your device’s secure storage, for this server only.',
+      placeholder: 'SFTP password',
+      show: 'Show',
+      hide: 'Hide',
+      save: 'Check and save',
+      checking: 'Checking…',
+      forget: 'Forget',
+      forgotten: 'Password forgotten for this server.',
+    },
   },
   errors: {
     unauthorized: 'Key rejected: make sure it is correct and still active.',
@@ -658,7 +674,8 @@ export const en: Dict = {
     network: 'Cannot reach the API. Check your connection.',
     no_key: 'No key stored.',
     sftp_auth:
-      'The SFTP server rejected the credentials provided by MineStrator. Check your SFTP access in the panel (SFTP password), then try again.',
+      'The SFTP server rejected the password. Check it in the “Access” tab of the MineStrator panel, then enter it again in the Files tab.',
+    sftp_password_required: 'SFTP password required: enter it once in this server’s Files tab.',
   },
   // Background service (machine-wide supervision) — dedicated namespace, see docs/SERVICE.md.
   service: {

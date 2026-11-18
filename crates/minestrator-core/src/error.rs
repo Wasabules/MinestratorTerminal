@@ -33,10 +33,15 @@ pub enum Error {
     #[error("Erreur API ({code}).")]
     Api { code: String },
 
-    /// Le serveur SFTP a refusé les identifiants transmis par l'API (distinct d'une clé API
-    /// invalide : l'API a répondu, c'est l'authentification SSH qui échoue).
-    #[error("Le serveur SFTP a refusé les identifiants fournis par MineStrator.")]
+    /// Le serveur SFTP a refusé le mot de passe (distinct d'une clé API invalide : l'API a
+    /// répondu, c'est l'authentification SSH qui échoue).
+    #[error("Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l'onglet « Accès » du panel MineStrator.")]
     SftpAuth,
+
+    /// Aucun mot de passe SFTP connu pour ce serveur : l'API ne le transmet plus et l'utilisateur
+    /// ne l'a pas encore enregistré (onglet Fichiers du serveur dans l'app).
+    #[error("Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.")]
+    SftpPasswordRequired,
 
     /// Service d'arrière-plan (IPC, installation, élévation). `code` est un identifiant stable
     /// (`unreachable`, `forbidden`, `elevation_cancelled`…) que l'UI traduit via `service.errors.*`.
@@ -69,6 +74,7 @@ pub enum ErrorKind {
     Keyring,
     Api,
     SftpAuth,
+    SftpPasswordRequired,
     /// Service d'arrière-plan : le sous-cas est dans `code` (cf. [`ErrorPayload::code`]).
     Service,
 }
@@ -86,6 +92,7 @@ impl ErrorKind {
             ErrorKind::Keyring => "keyring",
             ErrorKind::Api => "api",
             ErrorKind::SftpAuth => "sftp_auth",
+            ErrorKind::SftpPasswordRequired => "sftp_password_required",
             ErrorKind::Service => "service",
         }
     }
@@ -119,6 +126,7 @@ impl Error {
             Error::Keyring(_) => ErrorKind::Keyring,
             Error::Api { .. } => ErrorKind::Api,
             Error::SftpAuth => ErrorKind::SftpAuth,
+            Error::SftpPasswordRequired => ErrorKind::SftpPasswordRequired,
             Error::Service { .. } => ErrorKind::Service,
         }
     }
@@ -149,7 +157,8 @@ impl From<reqwest::Error> for Error {
     }
 }
 
-// `keyring` n'existe pas sur mobile (Android/iOS → backend fichier) → pas de conversion là-bas.
+// `keyring` (crate) n'existe pas sur mobile : Android passe par `keyring-core` directement, iOS par
+// le backend fichier → pas de conversion là-bas.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 impl From<keyring::Error> for Error {
     fn from(e: keyring::Error) -> Self {
@@ -185,7 +194,12 @@ mod tests {
             (
                 Error::SftpAuth,
                 "sftp_auth",
-                "Le serveur SFTP a refusé les identifiants fournis par MineStrator.",
+                "Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l'onglet « Accès » du panel MineStrator.",
+            ),
+            (
+                Error::SftpPasswordRequired,
+                "sftp_password_required",
+                "Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.",
             ),
         ]
     }

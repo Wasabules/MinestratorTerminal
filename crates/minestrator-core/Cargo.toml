@@ -78,6 +78,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
     "Win32_System_Pipes",
     "Win32_System_Registry",
     "Win32_System_Threading",
@@ -94,3 +95,9 @@ keyring = "4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 keyring = "4"
+
+# Keystore Android (secrets chiffrés par une clé matérielle non exportable). Même écosystème que
+# `keyring` 4, qui ne fournit pas lui-même de backend Android.
+[target.'cfg(target_os = "android")'.dependencies]
+keyring-core = "1"
+android-native-keyring-store = "1"

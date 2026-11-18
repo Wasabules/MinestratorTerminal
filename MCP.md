@@ -72,6 +72,10 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 #### Fichiers & configuration (SFTP)
 
+> L'API MineStrator ne transmet plus le mot de passe SFTP : il doit avoir été saisi une fois pour le
+> serveur dans l'onglet Fichiers de l'app (rangé dans le trousseau, partagé avec le MCP). Sinon ces
+> outils renvoient une erreur qui le dit.
+
 | Outil | | Entrées | Renvoie |
 |---|---|---|---|
 | `list_files` | | `server_id`, `path` | Contenu d'un répertoire (nom, chemin, dossier/fichier, taille). |

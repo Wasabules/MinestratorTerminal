@@ -1116,14 +1116,27 @@ pub struct SftpData {
     pub sftp: Option<SftpCreds>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct SftpCreds {
     pub host: String,
     #[serde(default = "default_sftp_port")]
     pub port: u16,
     pub user: String,
+    /// Vide quand l'API ne le transmet pas (cas actuel) : voir `sftp::connect`.
     #[serde(default)]
     pub password: String,
+}
+
+/// `Debug` écrit à la main : le mot de passe ne doit jamais finir dans un journal.
+impl std::fmt::Debug for SftpCreds {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SftpCreds")
+            .field("host", &self.host)
+            .field("port", &self.port)
+            .field("user", &self.user)
+            .field("password", &if self.password.is_empty() { "<absent>" } else { "<masqué>" })
+            .finish()
+    }
 }
 
 fn default_sftp_port() -> u16 {
