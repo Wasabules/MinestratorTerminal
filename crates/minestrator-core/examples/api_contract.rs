@@ -52,6 +52,13 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
     ),
     // Non documenté (panel web) : tâches planifiées du panel.
     ("/server/{id}/schedules", &["api.data.schedules"]),
+    // Non documenté (panel web) : mises à jour des mods, plugins et datapacks (`updates.rs`),
+    // vérifié sur les serveurs Minecraft seulement. Les listes peuvent être vides : seule leur
+    // présence est exigée (les champs des éléments sont lus avec tolérance).
+    ("/server/{id}/minecraft_version", &["api.data.version"]),
+    ("/server/{id}/plugins", &["api.data.plugins"]),
+    ("/server/{id}/mods", &["api.data.mods"]),
+    ("/server/{id}/datapacks", &["api.data.level_name", "api.data.datapacks"]),
     // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
     (
         "/server/{id}/sftp",
@@ -321,6 +328,22 @@ async fn main() {
                     report.call(&label("GET /server/{id} (accès SFTP)"), core.sftp_host_key(server.id)).await;
                     if server.capabilities.properties {
                         report.call(&label("GET /server/{id}/properties"), core.server_properties(server.id)).await;
+                    }
+                    if server.capabilities.mods == "minecraft" {
+                        for kind in ["minecraft_version", "plugins", "mods", "datapacks"] {
+                            raw_checks(
+                                &mut report,
+                                &http,
+                                &key,
+                                &format!("/server/{{id}}/{kind}"),
+                                &format!("/server/{}/{kind}", server.id),
+                                &tag,
+                            )
+                            .await;
+                        }
+                        report.call(&label("GET /server/{id}/plugins"), core.installed_plugins(server.id)).await;
+                        report.call(&label("GET /server/{id}/mods"), core.installed_mods(server.id)).await;
+                        report.call(&label("GET /server/{id}/datapacks"), core.installed_datapacks(server.id)).await;
                     }
                 }
             }

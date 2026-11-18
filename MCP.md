@@ -47,14 +47,14 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (43)
+## 5. Capacités — catalogue d'outils (45)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **28 outils de lecture**
-> + **15 modifiants**.
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **29 outils de lecture**
+> + **16 modifiants**.
 
 #### Découverte & état
 
@@ -117,6 +117,8 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `market_search` | | `kind?`, `source?`, `query?`, `loader?`, `game_version?`, `page?` | Recherche Modrinth / CurseForge / SpigotMC (id/slug, nom, downloads, loaders, versions de jeu). |
 | `list_mod_versions` | | `source?`, `slug`, `loader?`, `game_version?` | Versions d'un projet → les `version_id` requis pour installer. |
 | `install_mod` | ✎ | `server_id`, `source?`, `kind?`, `slug`, `version_id`, `loader?` | Installe un mod/plugin. **Modrinth** = mods **et** plugins (`{slug, version_id}`) ; **Spigot** = plugins (`slug` = id numérique, `version_id` = id de version). Refuse le premium/external (403). |
+| `check_updates` | | `server_id`, `kind?`, `force?` | **Mises à jour** des mods, plugins et datapacks installés : version installée → nouvelle, d'après la vérification de l'hébergeur (`POST /server/{id}/{type}/updates`, non documenté, pure comparaison) tenant compte de la version de Minecraft et du loader. Passe par un **garde-fou** : les propositions qui visent une autre plateforme (variante Velocity d'un plugin Paper…) ou une version identique/plus ancienne sont **écartées** et listées à part. Donne la **clé** de chaque élément. Résultat gardé 15 min (`force` revérifie). |
+| `update_mods` | ✎ | `server_id`, `kind?`, `keys?` | Applique des mises à jour : revérifie, installe la version retenue (mêmes endpoints que le panel) puis supprime l'ancien fichier si son nom change. `keys` = clés de `check_updates` ; vide = toutes celles des éléments **actifs** (filtrées par `kind`). Jamais une proposition écartée. Bilan par élément (mis à jour, ancien fichier conservé, échec, non appliqué) ; **effet au prochain redémarrage**. |
 
 #### Mods Satisfactory (ficsit.app) — serveurs Satisfactory uniquement
 
@@ -161,7 +163,8 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 - **Démarrage / JVM** : `read_startup`, `set_startup_params` (mémoire, GC, Aikar…)
 - **Réglages du serveur** : `read_properties`, `set_property` (`server.properties` via l'API, sans SFTP)
 - **Mods & plugins** : `market_search`, `list_mod_versions`, `install_mod`, `list_installed_mods`,
-  `list_installed_plugins` (chercher → choisir une version → installer ; inventaire)
+  `list_installed_plugins` (chercher → choisir une version → installer ; inventaire),
+  `check_updates` → `update_mods` (mises à jour des mods, plugins et datapacks, puis redémarrage)
 - **Mods Satisfactory** : `ficsit_search`, `ficsit_versions`, `install_ficsit_mod` (ficsit.app / SMR)
 - **Sauvegardes / filet** : `list_backups`, `list_snapshots`, `create_snapshot`
 - **Diagnostic de panne** : `diagnose_startup` (crash-loop), `inspect_region` (maps corrompues),
@@ -175,7 +178,7 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
   (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
   `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `set_property`, `install_mod`,
-  `install_ficsit_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
+  `update_mods`, `install_ficsit_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
   lecture/diagnostic restent disponibles. Idéal pour donner un accès *observation* sans risque.
 
 **Garde-fous by design :**
@@ -237,6 +240,12 @@ Build du binaire autonome : `cargo build -p minestrator-mcp --release`
   repli. Les blocs de consommation sont absents d'un serveur éteint.
 - L'historique de `server_metrics` n'existe que si l'app desktop (superviseur) a tourné.
 - Le marketplace ignore les projets **premium/external** (non installables → `install_mod` renvoie 403).
+- La vérification des mises à jour de l'hébergeur ne reçoit **aucun loader pour les plugins** : elle
+  propose parfois la variante d'une autre plateforme à version égale (relevé du 2026-11-18 :
+  `LuckPerms-Bukkit-5.5.71.jar` → `LuckPerms-Velocity-5.5.71.jar` sur un serveur Paper). `check_updates`
+  les écarte (plateforme nommée dans le fichier, le loader du mod ou la plateforme du serveur ; numéro
+  de version identique ou plus ancien) ; un élément au numéro illisible garde la proposition de
+  l'hébergeur. Les projets non identifiés par l'hébergeur (plugins maison) ne sont pas suivis.
 
 ## 9. Extensions prévues (scope futur)
 

@@ -15,6 +15,7 @@ use crate::models::{
     WsBulkData, WsCredentials, WsCredentialsData,
 };
 use crate::panel_schedules::{PanelSchedule, PanelScheduleInput, PanelTaskInput, SchedulesData};
+use crate::updates::{ContentKind, ContentList, McVersion};
 use base64::Engine;
 use reqwest::{header, Response, StatusCode};
 use serde::de::DeserializeOwned;
@@ -602,6 +603,119 @@ impl ApiClient {
     pub async fn installed_plugins(&self, token: &str, id: i64) -> Result<Vec<InstalledItem>> {
         let raw: InstalledRaw = self.get(token, &format!("/server/{id}/plugins")).await?;
         Ok(raw.mods.into_iter().map(InstalledItem::from).collect())
+    }
+
+    // --- Mises à jour des mods, plugins et datapacks (non documenté, voir `updates.rs`) ---
+
+    /// Version de Minecraft détectée par l'hébergeur (`GET /server/{id}/minecraft_version`).
+    pub(crate) async fn minecraft_version(&self, token: &str, id: i64) -> Result<McVersion> {
+        let data: Value = self.get(token, &format!("/server/{id}/minecraft_version")).await?;
+        Ok(McVersion::from_value(&data))
+    }
+
+    /// Contenu installé d'un type, lu avec tolérance (`GET /server/{id}/{mods|plugins|datapacks}`).
+    pub(crate) async fn content_list(&self, token: &str, id: i64, kind: ContentKind) -> Result<ContentList> {
+        let data: Value = self.get(token, &format!("/server/{id}/{}", kind.as_str())).await?;
+        Ok(ContentList::from_value(kind, &data))
+    }
+
+    /// Vérification des mises à jour d'un type (`POST /server/{id}/{type}/updates`) : pure
+    /// comparaison côté hébergeur, rien n'est installé. Réponse brute, lue par `updates.rs`.
+    pub(crate) async fn check_content_updates(
+        &self,
+        token: &str,
+        id: i64,
+        kind: ContentKind,
+        body: &Value,
+    ) -> Result<Value> {
+        self.post_data(token, &format!("/server/{id}/{}/updates", kind.as_str()), body).await
+    }
+
+    /// Installe une version Modrinth d'un mod (`POST /server/{id}/modrinth/mod`), comme le panel
+    /// pour ses mises à jour de mods : `{slug, version_id, loader}`.
+    pub async fn install_modrinth_mod(
+        &self,
+        token: &str,
+        server_id: i64,
+        slug: &str,
+        version_id: &str,
+        loader: &str,
+    ) -> Result<()> {
+        self.post_ok(
+            token,
+            &format!("/server/{server_id}/modrinth/mod"),
+            &json!({ "slug": slug, "version_id": version_id, "loader": loader }),
+        )
+        .await
+    }
+
+    /// Installe un fichier CurseForge d'un mod (`POST /server/{id}/curseforge/mod`) :
+    /// `{modId, fileId, loader}`.
+    pub async fn install_curseforge_mod(
+        &self,
+        token: &str,
+        server_id: i64,
+        mod_id: i64,
+        file_id: i64,
+        loader: &str,
+    ) -> Result<()> {
+        self.post_ok(
+            token,
+            &format!("/server/{server_id}/curseforge/mod"),
+            &json!({ "modId": mod_id, "fileId": file_id, "loader": loader }),
+        )
+        .await
+    }
+
+    /// Installe une version Modrinth d'un datapack (`POST /server/{id}/modrinth/datapack`).
+    pub async fn install_modrinth_datapack(
+        &self,
+        token: &str,
+        server_id: i64,
+        slug: &str,
+        version_id: &str,
+    ) -> Result<()> {
+        self.post_ok(
+            token,
+            &format!("/server/{server_id}/modrinth/datapack"),
+            &json!({ "slug": slug, "version_id": version_id }),
+        )
+        .await
+    }
+
+    /// Installe un fichier CurseForge d'un datapack (`POST /server/{id}/curseforge/datapack`).
+    pub async fn install_curseforge_datapack(
+        &self,
+        token: &str,
+        server_id: i64,
+        mod_id: i64,
+        file_id: i64,
+    ) -> Result<()> {
+        self.post_ok(
+            token,
+            &format!("/server/{server_id}/curseforge/datapack"),
+            &json!({ "modId": mod_id, "fileId": file_id }),
+        )
+        .await
+    }
+
+    /// Supprime un mod installé par son nom de fichier (`DELETE /server/{id}/mod/{fichier}`).
+    pub async fn delete_mod_file(&self, token: &str, server_id: i64, filename: &str) -> Result<()> {
+        let path = format!("/server/{server_id}/mod/{}", crate::updates::encode_component(filename));
+        self.send_job_no_body(reqwest::Method::DELETE, token, &path).await.map(|_| ())
+    }
+
+    /// Supprime un plugin installé par son nom de fichier (`DELETE /server/{id}/plugin/{fichier}`).
+    pub async fn delete_plugin_file(&self, token: &str, server_id: i64, filename: &str) -> Result<()> {
+        let path = format!("/server/{server_id}/plugin/{}", crate::updates::encode_component(filename));
+        self.send_job_no_body(reqwest::Method::DELETE, token, &path).await.map(|_| ())
+    }
+
+    /// Supprime des fichiers du serveur par l'API fichiers (`POST /server/{id}/files/delete`,
+    /// chemins relatifs à la racine, comme le panel pour un datapack).
+    pub async fn delete_files(&self, token: &str, server_id: i64, paths: &[String]) -> Result<()> {
+        self.post_ok(token, &format!("/server/{server_id}/files/delete"), &json!({ "files": paths }))
+            .await
     }
 
     /// Backups quotidiens automatiques d'un serveur (récents d'abord).

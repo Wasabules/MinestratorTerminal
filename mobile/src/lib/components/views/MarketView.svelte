@@ -8,18 +8,25 @@
    * installation ne prend effet qu'au prochain démarrage du serveur.
    *
    * Monté en permanence dans le pager : rien n'est chargé avant le premier affichage de l'onglet.
+   *
+   * Mises à jour : la section du haut liste celles des mods, plugins et datapacks installés
+   * (vérification de l'hébergeur passée au garde-fou du core), avec une feuille de confirmation
+   * et un rappel du redémarrage nécessaire.
    */
   import { api, humanizeError, openExternal } from "../../ipc";
   import { t } from "../../i18n";
   import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
   import type {
+    ContentUpdate,
     InstalledItem,
     MarketItem,
     MarketKind,
     MarketSource,
     MarketVersion,
+    UpdateReport,
   } from "../../types";
+  import { applyUpdates, loadUpdates, serverUpdates, updateFor } from "../../stores/updates.svelte";
 
   let { serverId, active }: { serverId: number; active: boolean } = $props();
 
@@ -89,12 +96,16 @@
 
   async function start() {
     started = true;
-    const [mods, plugins, versions] = await Promise.all([
+    // Vérification des mises à jour en parallèle (résultat partagé avec l'Aperçu, gardé 15 min).
+    void loadUpdates(serverId);
+    const [mods, plugins, versions, packs] = await Promise.all([
       api.installedMods(serverId).catch(() => [] as InstalledItem[]),
       api.installedPlugins(serverId).catch(() => [] as InstalledItem[]),
       api.marketMinecraftVersions().catch(() => [] as string[]),
+      api.installedDatapacks(serverId).catch(() => [] as InstalledItem[]),
     ]);
     mcVersions = versions;
+    datapacks = packs;
     if (mods.length > 0) {
       kind = "mods";
       loader = normalizeLoader(mods[0].loader) ?? "fabric";
@@ -231,6 +242,72 @@
     }
   }
 
+  // --- Mises à jour (mods, plugins, datapacks) -----------------------------
+
+  let datapacks = $state<InstalledItem[]>([]);
+  let showDatapacks = $state(false);
+  const upd = $derived(serverUpdates(serverId));
+  const updates = $derived(upd.data?.updates ?? []);
+  /** « Tout mettre à jour » : les éléments actifs (un désactivé serait réinstallé actif). */
+  const bulk = $derived(updates.filter((u) => u.enabled));
+  /** Mises à jour en attente de confirmation (feuille). */
+  let confirming = $state<ContentUpdate[] | null>(null);
+  let applying = $state(false);
+  let applyError = $state<string | null>(null);
+  let report = $state<UpdateReport | null>(null);
+  let pendingRestart = $state(false);
+  let restarting = $state(false);
+
+  const checkedAt = $derived(
+    upd.data
+      ? new Date(upd.data.checked_at * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "",
+  );
+  const problems = $derived(report?.outcomes.filter((o) => o.status !== "updated") ?? []);
+  const updatedCount = $derived(report?.outcomes.filter((o) => o.status === "updated").length ?? 0);
+
+  /** Traduction avec paramètres `{nom}` (le `t` mobile n'en prend pas). */
+  function tr(key: string, params: Record<string, string | number>): string {
+    let s = t(key);
+    for (const [k, v] of Object.entries(params)) s = s.split(`{${k}}`).join(String(v));
+    return s;
+  }
+
+  async function confirmApply() {
+    if (!confirming || applying) return;
+    applying = true;
+    applyError = null;
+    report = null;
+    try {
+      const items = confirming.map((u) => ({ kind: u.kind, key: u.key }));
+      report = await applyUpdates(serverId, items);
+      if (report.restart_needed) pendingRestart = true;
+      confirming = null;
+      void loadInstalled();
+      if (items.some((i) => i.kind === "datapacks")) {
+        datapacks = await api.installedDatapacks(serverId).catch(() => datapacks);
+      }
+    } catch (e) {
+      applyError = humanizeError(e);
+    } finally {
+      applying = false;
+    }
+  }
+
+  async function restartServer() {
+    restarting = true;
+    applyError = null;
+    try {
+      await api.powerAction(serverId, "restart");
+      pendingRestart = false;
+      flash(t("props.restarted"));
+    } catch (e) {
+      applyError = humanizeError(e);
+    } finally {
+      restarting = false;
+    }
+  }
+
   function fmtCount(n: number): string {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} M`;
     if (n >= 1000) return `${Math.round(n / 1000)} k`;
@@ -296,6 +373,102 @@
 
   {#if notice}<p class="ok"><Icon name="check" size={15} /> {notice}</p>{/if}
 
+  {#if pendingRestart}
+    <div class="restart" role="status">
+      <span>{t("market.upd.pendingRestart")}</span>
+      <button class="primary" onclick={restartServer} disabled={restarting}>
+        <Icon name="restart" size={15} />
+        {restarting ? t("props.restarting") : t("props.restartNow")}
+      </button>
+    </div>
+  {/if}
+
+  <!-- Mises à jour des mods, plugins et datapacks installés -->
+  <section class="updates">
+    <div class="sec static">
+      <span class="u-title">
+        {t("market.upd.title")}
+        {#if updates.length > 0}<span class="badge accent">{updates.length}</span>{/if}
+      </span>
+      <button class="ghost sm" onclick={() => loadUpdates(serverId, true)} disabled={upd.loading || applying}>
+        <Icon name="refresh" size={14} />
+        {upd.loading ? t("market.upd.checking") : t("market.upd.check")}
+      </button>
+    </div>
+    {#if upd.data?.mc_version}
+      <p class="dim small">{tr("market.upd.checkedFor", { version: upd.data.mc_version, time: checkedAt })}</p>
+    {/if}
+
+    {#if applyError}<p class="err selectable">{applyError}</p>{/if}
+    {#if report}
+      {#if updatedCount > 0}
+        <p class="ok small"><Icon name="check" size={14} /> {tr("market.upd.done", { count: updatedCount })}</p>
+      {/if}
+      {#each problems as o (o.kind + o.key)}
+        <p class="small selectable" class:warn={o.status === "old_kept"} class:err={o.status === "failed"}>
+          {#if o.status === "old_kept"}
+            {tr("market.upd.oldKept", { name: o.name, file: o.key })}
+          {:else if o.status === "failed"}
+            {tr("market.upd.failed", { name: o.name })}{o.error ? ` — ${humanizeError(o.error)}` : ""}
+          {:else}
+            {tr("market.upd.skipped", { name: o.name })} — {t(`market.upd.reason.${o.reason ?? "up_to_date"}`)}
+          {/if}
+        </p>
+      {/each}
+    {/if}
+
+    {#if upd.error}
+      <p class="err selectable">{upd.error}</p>
+    {:else if !upd.data}
+      {#if upd.loading}<p class="dim small">{t("market.upd.checking")}</p>{/if}
+    {:else if !upd.data.mc_version}
+      <p class="dim small">{t("market.upd.noVersion")}</p>
+    {:else}
+      {#if updates.length === 0}
+        <p class="dim small">{t("market.upd.none")}</p>
+      {:else}
+        <ul class="inst">
+          {#each updates as u (u.kind + u.key)}
+            <li class:off={!u.enabled}>
+              <span class="i-name selectable">{u.name}</span>
+              <span class="i-meta dim">
+                {t(`market.upd.kind.${u.kind}`)} · {u.current_version || "?"} → {u.new_version}
+                {#if !u.enabled}· {t("market.disabled")}{/if}
+              </span>
+              <button class="ghost sm u-btn" onclick={() => (confirming = [u])} disabled={applying}>
+                <Icon name="download" size={14} />
+                {t("market.upd.update")}
+              </button>
+            </li>
+          {/each}
+        </ul>
+        {#if bulk.length > 1}
+          <button class="primary more" onclick={() => (confirming = bulk)} disabled={applying}>
+            {tr("market.upd.updateAll", { count: bulk.length })}
+          </button>
+        {/if}
+      {/if}
+      {#if upd.data.ignored.length > 0}
+        <details class="ignored">
+          <summary class="dim small">{tr("market.upd.ignored", { count: upd.data.ignored.length })}</summary>
+          <ul>
+            {#each upd.data.ignored as i (i.kind + i.key)}
+              <li class="small">
+                {i.name} · {i.current_version || "?"} → {i.new_version} — {t(`market.upd.reason.${i.reason}`)}
+              </li>
+            {/each}
+          </ul>
+        </details>
+      {/if}
+      {#if upd.data.untracked > 0}
+        <p class="dim small">{tr("market.upd.untracked", { count: upd.data.untracked })}</p>
+      {/if}
+      {#each upd.data.errors as e (e.kind)}
+        <p class="err small">{t(`market.upd.kind.${e.kind}`)} — {humanizeError(e.error)}</p>
+      {/each}
+    {/if}
+  </section>
+
   <section class="installed">
     <button class="sec" onclick={() => (showInstalled = !showInstalled)} aria-expanded={showInstalled}>
       <span class="caret" class:open={showInstalled}><Icon name="chevronRight" size={16} /></span>
@@ -308,18 +481,50 @@
       {:else}
         <ul class="inst">
           {#each installed as m (m.filename || m.name)}
+            {@const u = updateFor(serverId, kind, m.filename)}
             <li class:off={!m.enabled}>
               <span class="i-name selectable">{m.name}</span>
               <span class="i-meta dim">
                 {[m.version, m.loader].filter(Boolean).join(" · ")}
                 {#if !m.enabled}· {t("market.disabled")}{/if}
               </span>
+              {#if u}
+                <button class="upbadge" onclick={() => (confirming = [u])} disabled={applying}>
+                  ↑ {u.new_version}
+                </button>
+              {/if}
             </li>
           {/each}
         </ul>
       {/if}
     {/if}
   </section>
+
+  {#if datapacks.length > 0}
+    <!-- Datapacks du monde actif : pas de catalogue ici, seulement leurs mises à jour. -->
+    <section class="installed">
+      <button class="sec" onclick={() => (showDatapacks = !showDatapacks)} aria-expanded={showDatapacks}>
+        <span class="caret" class:open={showDatapacks}><Icon name="chevronRight" size={16} /></span>
+        <span>{t("market.upd.datapacks")}</span>
+        <span class="badge">{datapacks.length}</span>
+      </button>
+      {#if showDatapacks}
+        <ul class="inst">
+          {#each datapacks as d (d.filename)}
+            {@const u = updateFor(serverId, "datapacks", d.filename)}
+            <li>
+              <span class="i-name selectable">{d.name}</span>
+              {#if u}
+                <button class="upbadge" onclick={() => (confirming = [u])} disabled={applying}>
+                  ↑ {u.new_version}
+                </button>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
 
   <section class="catalog">
     <div class="sec static">
@@ -391,6 +596,44 @@
     {/if}
   </section>
 </div>
+
+{#if confirming}
+  <div
+    class="scrim"
+    use:portal
+    role="button"
+    tabindex="-1"
+    onclick={() => !applying && (confirming = null)}
+    onkeydown={(e) => e.key === "Escape" && !applying && (confirming = null)}
+  ></div>
+  <div class="sheet" use:portal role="alertdialog" aria-label={t("market.upd.title")}>
+    <div class="s-head">
+      <span class="s-title">
+        {confirming.length === 1
+          ? tr("market.upd.confirmOne", { name: confirming[0].name, version: confirming[0].new_version })
+          : tr("market.upd.confirmMany", { count: confirming.length })}
+      </span>
+    </div>
+    {#if confirming.length > 1}
+      <ul class="inst c-list">
+        {#each confirming as u (u.kind + u.key)}
+          <li>
+            <span class="i-name">{u.name}</span>
+            <span class="i-meta dim">{u.current_version || "?"} → {u.new_version}</span>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    <p class="dim small">{t("market.upd.confirmHint")}</p>
+    {#if confirming.some((u) => !u.enabled)}<p class="warn small">{t("market.upd.reenableWarn")}</p>{/if}
+    <div class="s-acts">
+      <button class="ghost" onclick={() => (confirming = null)} disabled={applying}>{t("market.cancel")}</button>
+      <button class="primary" onclick={confirmApply} disabled={applying}>
+        {applying ? t("market.upd.applying") : t("market.upd.confirm")}
+      </button>
+    </div>
+  </div>
+{/if}
 
 {#if picking}
   <div
@@ -849,5 +1092,81 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+  .s-acts button {
+    min-height: 44px;
+  }
+
+  /* Mises à jour */
+  .restart {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+    font-size: 14px;
+  }
+  .restart .primary {
+    min-height: 44px;
+  }
+  .updates {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .updates p {
+    margin: 0;
+  }
+  .u-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge.accent {
+    background: var(--brand-primary);
+    color: #fff;
+  }
+  .sm {
+    min-height: 36px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .u-btn {
+    align-self: flex-start;
+    margin-top: 4px;
+  }
+  .more.primary {
+    min-height: 44px;
+  }
+  .upbadge {
+    align-self: flex-start;
+    margin-top: 4px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 50%, var(--border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
+    color: var(--brand-primary);
+    font: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
+  .warn {
+    color: var(--state-pending);
+  }
+  .ignored summary {
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+  }
+  .ignored ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+  .c-list {
+    max-height: 40vh;
+    overflow-y: auto;
   }
 </style>

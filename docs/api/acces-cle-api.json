@@ -1,5 +1,5 @@
 {
- "_source": "Tests du 2026-11-18 avec une clé API, lectures seules (GET, plus deux POST de pure lecture : servers/live/light/bulk et files/exists). Structures : noms de champs et types, aucune valeur.",
+ "_source": "Tests du 2026-11-18 avec une clé API, lectures seules (GET, plus des POST de pure lecture : servers/live/light/bulk, files/exists, et les vérifications de mises à jour mods/plugins/datapacks — celles des mods et datapacks avec un élément fictif). Structures : noms de champs et types, aucune valeur.",
  "resultats": {
   "GET /mybox/{x}": {
    "status": 200,
@@ -1685,6 +1685,50 @@
   },
   "GET /user/{x}/transactions": {
    "status": 200
+  },
+  "POST /server/{x}/plugins/updates": {
+   "status": 200,
+   "data": {
+    "updates": {
+     "{fichier}": {
+      "has_update": "bool",
+      "source": "str",
+      "target": {
+       "filename": "str",
+       "slug": "str",
+       "version_id": "str",
+       "version_number": "str"
+      }
+     }
+    },
+    "updates_available": "int"
+   }
+  },
+  "POST /server/{x}/mods/updates": {
+   "status": 200,
+   "data": {
+    "updates": {
+     "{fichier}": {
+      "has_update": "bool",
+      "source": "null",
+      "target": "null"
+     }
+    },
+    "updates_available": "int"
+   }
+  },
+  "POST /server/{x}/datapacks/updates": {
+   "status": 200,
+   "data": {
+    "updates": {
+     "{nom}": {
+      "has_update": "bool",
+      "source": "null",
+      "target": "null"
+     }
+    },
+    "updates_available": "int"
+   }
   }
  }
 }

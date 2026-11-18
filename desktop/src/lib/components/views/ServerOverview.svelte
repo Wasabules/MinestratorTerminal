@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, untrack } from 'svelte';
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { api } from '#lib/ipc.ts';
@@ -9,6 +9,7 @@
   import { fmtBytes } from '#lib/copilot/format.ts';
   import { tabs, type ServerTab, type ServerView } from '#lib/tabs/tabs.svelte.ts';
   import { serverCaps, availableViews } from '#lib/games/capabilities.svelte.ts';
+  import { loadUpdates, updateCount } from '#lib/mods/updates.svelte.ts';
   import type {
     ConsoleStats,
     LiveLight,
@@ -51,6 +52,13 @@
 
   const caps = $derived(serverCaps(serverId));
   const openable = $derived(availableViews(caps).filter((v) => v.id !== 'overview'));
+  /** Mises à jour de mods/plugins/datapacks (vérification partagée avec la Marketplace). */
+  const updates = $derived(updateCount(serverId));
+  $effect(() => {
+    const id = serverId;
+    // `untrack` : l'effet dépend des capacités, pas du store qu'il alimente.
+    if (caps?.mods === 'minecraft') untrack(() => void loadUpdates(id));
+  });
   const rt = $derived(runtimeMeta(runState));
   const running = $derived(isRunning(runState));
 
@@ -248,6 +256,14 @@
     <div class="note">{t('overview.hibernated')}</div>
   {/if}
 
+  {#if updates > 0}
+    <button class="note upd" onclick={() => open('mods')}>
+      <Icon name="package" size={15} />
+      <span>{t('overview.updatesAvailable', { count: updates })}</span>
+      <span class="upd-go">{t('overview.updatesOpen')} →</span>
+    </button>
+  {/if}
+
   {#if item?.last_backup_url || item?.support_ref}
     <div class="srvmeta dim">
       {#if item?.last_backup_url}
@@ -384,6 +400,9 @@
           <button class="vmain" onclick={() => open(v.id)}>
             <span class="vg"><Icon name={v.icon} size={17} /></span>
             <span class="vl">{t(`view.${v.id}`)}</span>
+            {#if v.id === 'mods' && updates > 0}
+              <span class="ubadge" title={t('overview.updatesAvailable', { count: updates })}>{updates}</span>
+            {/if}
             {#if !v.ready}<span class="soon">{t('common.comingSoon')}</span>{/if}
           </button>
           <button class="vnew" title="+" onclick={() => open(v.id, true)}>+</button>
@@ -395,6 +414,38 @@
 </div>
 
 <style>
+  .note.upd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    font: inherit;
+    font-size: 13.5px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+  }
+  .note.upd span:first-of-type {
+    flex: 1;
+  }
+  .upd-go {
+    font-weight: 600;
+    color: var(--brand-primary);
+  }
+  .ubadge {
+    margin-left: auto;
+    min-width: 18px;
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--brand-primary);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+  }
   .acts {
     display: flex;
     flex-direction: column;

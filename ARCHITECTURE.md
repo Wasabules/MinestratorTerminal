@@ -125,6 +125,16 @@ Regroupés par domaine (liste réelle des fichiers).
 - **`models`** — structs `serde` : miroirs typés des réponses d'API et de leurs enveloppes brutes
   (`UserProfile`, `ServersOverview`/`MyBoxSummary`, `ServerDetails`, `LiveLight`, `Startup`, `MarketPage`,
   `Backup`, `Snapshot`, `InstalledItem`, `SftpEntry`…).
+- **`updates`** — mises à jour des **mods, plugins et datapacks** Minecraft installés (endpoints
+  non documentés du panel, §4.3) : version détectée (`/minecraft_version`), installés, vérification
+  par l'hébergeur (pure comparaison), puis **garde-fou local** (`assess`) qui écarte les propositions
+  visant une autre plateforme ou une version identique/plus ancienne. Application = installation de
+  la cible par les endpoints d'installation, puis suppression de l'ancien fichier si son nom change,
+  élément par élément après une nouvelle vérification ; bilan détaillé (`UpdateReport`), redémarrage
+  nécessaire. Résultat gardé 15 min par serveur (`UpdatesCache`), oublié après une installation ou
+  une mise à jour et au changement de compte. Desktop : section « Mises à jour » de la Marketplace,
+  badges sur les installés, compteur de l'Aperçu ; mobile : onglet Mods et Aperçu ; MCP :
+  `check_updates` (lecture), `update_mods` (modifiant).
 - **`config`** — constantes (URLs, `Origin` Wings, comptes trousseau, version Anthropic, variables d'env MCP).
 - **`error`** — `Error` unifié, sérialisé `{ kind, message }` (via `ErrorPayload`, discriminant typé
   `ErrorKind`) pour un traitement par cas côté frontend.
@@ -298,6 +308,34 @@ les usages critiques gardent un **repli** sur le chemin éprouvé.
 > ⚠️ `context` peut contenir ce que l'utilisateur a tapé en console : le passer par
 > [`redact`](../crates/minestrator-core/src/redact.rs) avant tout envoi vers un LLM ou un paste.
 
+### 4.3 Mises à jour des mods, plugins et datapacks (endpoints du panel, relevé du 2026-11-18)
+
+Non documentés : formats lus dans le code public du panel web, vérifications appelées pour de vrai
+(lecture et comparaison seulement), installations jamais déclenchées depuis l'app pendant le relevé.
+
+| Endpoint | Rôle | Usage dans le core |
+|---|---|---|
+| `GET /server/{id}/minecraft_version` | `{version, source, confidence}` ; `source` = plateforme (`paper`…) ou `explicit_jar` | version envoyée à la vérification, plateforme de repli du garde-fou |
+| `GET /server/{id}/{mods,plugins,datapacks}` | installés : `filename`, `sha1`, `version`, `enabled`, `loader` (mods) ; datapacks : `level_name` + `name` | `ApiClient::content_list` (lecture tolérante) |
+| `POST /server/{id}/{type}/updates` | **comparaison sans effet de bord** — le panel l'appelle seul à l'ouverture de ses onglets. Corps `{items, mc_version}` (plugins `{filename, sha1}`, mods `+loader`, datapacks `{name}`) → `{updates: {clé: {has_update, source, target}}, updates_available}`. Liste vide → `API_MISSING_REQUIRED_FIELDS`, sans version → `API_INVALID_MC_VERSION` | `updates::check` |
+| `POST /server/{id}/modrinth` `{slug, version_id}` | installation d'un plugin (même appel que le catalogue) | mise à jour d'un plugin |
+| `POST /server/{id}/modrinth/mod` `{slug, version_id, loader}`, `POST /server/{id}/curseforge/mod` `{modId, fileId, loader}` | installation d'un mod (panel actuel) | mise à jour d'un mod |
+| `POST /server/{id}/{modrinth,curseforge}/datapack` | installation d'un datapack (`{slug, version_id}` / `{modId, fileId}`) | mise à jour d'un datapack |
+| `DELETE /server/{id}/{mod,plugin}/{fichier}`, `POST /server/{id}/files/delete` `{files: ["<monde>/datapacks/<nom>"]}` | suppression de l'ancien fichier, seulement si la nouvelle version porte un autre nom | après installation ; un échec donne `old_kept` (deux versions coexistent) |
+
+> **Faux positifs de l'hébergeur** : le corps des plugins ne porte aucun loader, et la vérification
+> propose parfois la variante d'une **autre plateforme** à version égale. Relevé réel sur un serveur
+> Paper : `LuckPerms-Bukkit-5.5.71.jar` → `LuckPerms-Velocity-5.5.71.jar`,
+> `packetevents-spigot-2.14.0.jar` → `packetevents-velocity-2.14.0.jar`. Le panel les afficherait et
+> les appliquerait ; `updates::assess` les écarte (plateforme nommée dans le fichier installé, à
+> défaut le loader du mod ou la plateforme du serveur ; numéros comparés après retrait de la version
+> de Minecraft). Un numéro illisible laisse passer la proposition.
+>
+> **Installation de mods** : `install_mod` (catalogue) poste toujours `POST /server/{id}/modrinth`
+> sans loader, vérifié en juillet 2026, quand `/modrinth/mod` répondait 404. Le panel de novembre
+> 2026 utilise `/modrinth/mod` avec `loader` (et `/curseforge/mod`) pour installer **et** mettre à
+> jour un mod : les mises à jour suivent le panel ; l'alignement d'`install_mod` reste à vérifier.
+
 **Champs déjà servis par l'API et longtemps ignorés au parsing** (aucun appel supplémentaire) :
 `/user/{id}/servers` porte `id_egg`, `last_backup`, `poweraction_message_restart`/`_stop`, `note`,
 `tend`, `hashsupport` par serveur, et `is_trial`/`has_bonus`/`tend` par MyBox.
@@ -338,7 +376,8 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
 | **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |
 | **Backups / snapshots** | `list_backups`, `restore_backup`, `list_snapshots`, `create_snapshot`, `restore_snapshot`, `delete_snapshot` |
-| **Marketplace** | `market_minecraft_versions`, `market_list`, `market_versions`, `install_mod`, `installed_mods`, `installed_plugins` |
+| **Marketplace** | `market_minecraft_versions`, `market_list`, `market_versions`, `install_mod`, `installed_mods`, `installed_plugins`, `installed_datapacks` |
+| **Mises à jour de contenu** | `content_updates` (vérification gardée 15 min, `force`), `apply_content_updates` (sélection `{kind, key}` → `UpdateReport`) |
 | **Copilote / chat** | `copilot_apply`, `copilot_diagnose_now`, `copilot_analyze`, `copilot_performance`, `chat_send`, `chat_reset`, `chat_warm`, `has/set/clear_copilot_key` |
 | **Configs** | `get/set_supervisor_config`, `get/set_mcp_config`, `get/set_privacy_config`, `get/set_copilot_config` |
 | **Automatisations / disponibilité** | `server_automations`, `set_auto_restart`, `save_scheduled_task`, `delete_scheduled_task`, `automation_runs`, `uptime_report` |
@@ -440,7 +479,8 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
 - **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique +
   `UptimeCard` : disponibilité 24 h / 7 j / 30 j et coupures), `ConsoleView`
   (xterm + envoi de commandes), `SftpView` (+ `FileEditor` CodeMirror, archives, NBT, `.mca`), `PlayersView`,
-  `MarketplaceView` (mods/plugins), `AssistantView` (chat Copilote streamé), `BackupsView`
+  `MarketplaceView` (mods/plugins, mises à jour avec confirmation et rappel du redémarrage ; état
+  partagé avec le compteur de l'Aperçu par `mods/updates.svelte.ts`), `AssistantView` (chat Copilote streamé), `BackupsView`
   (backups + snapshots), `AutomationsView` (redémarrage automatique, tâches planifiées, historique
   d'exécution — en précisant qu'elles tournent sur cet ordinateur, pas sur le panel web),
   `SettingsView` (dont `settings/ServiceSection` et `settings/WebhooksSection`), `CopilotView`,

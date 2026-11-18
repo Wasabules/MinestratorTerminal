@@ -10,6 +10,7 @@ use minestrator_core::{
     MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
     MetricSample, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
     ServersOverview, SftpEntry, SftpHostKey, SmlVersion, Snapshot, SupervisorConfig, UserNotification, UserProfile,
+    ContentUpdates, UpdateReport, UpdateSelection,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -768,6 +769,34 @@ pub async fn installed_plugins(
     server_id: i64,
 ) -> Result<Vec<InstalledItem>, Error> {
     core.installed_plugins(server_id).await
+}
+
+#[tauri::command]
+pub async fn installed_datapacks(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<Vec<InstalledItem>, Error> {
+    core.installed_datapacks(server_id).await
+}
+
+/// Mises à jour disponibles des mods, plugins et datapacks (gardées 15 min, `force` revérifie).
+#[tauri::command]
+pub async fn content_updates(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    force: bool,
+) -> Result<ContentUpdates, Error> {
+    core.content_updates(server_id, force).await
+}
+
+/// Applique des mises à jour (nouvelle version installée, ancien fichier supprimé).
+#[tauri::command]
+pub async fn apply_content_updates(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    items: Vec<UpdateSelection>,
+) -> Result<UpdateReport, Error> {
+    core.apply_content_updates(server_id, items).await
 }
 
 // --- Mods Satisfactory (ficsit.app) ---------------------------------------
