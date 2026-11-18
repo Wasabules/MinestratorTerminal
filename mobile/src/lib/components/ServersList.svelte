@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, humanizeError } from "../ipc";
   import { auth } from "../stores/auth.svelte";
+  import { applyAccountSwitch } from "../stores/accounts.svelte";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
   import GameIcon from "./GameIcon.svelte";
@@ -52,10 +53,11 @@
     }
   }
 
+  /** Retire le compte actif : bascule sur un autre compte s'il en reste, sinon écran de connexion. */
   async function doLogout() {
     try {
-      await api.logout();
-    } finally {
+      await applyAccountSwitch(await api.logout());
+    } catch {
       auth.setUser(null);
     }
   }

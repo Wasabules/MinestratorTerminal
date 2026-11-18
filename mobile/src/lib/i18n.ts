@@ -196,7 +196,24 @@ const fr: Dict = {
   "error.no_key": "Aucune clé API enregistrée.",
   "error.sftp_auth": "Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l’onglet « Accès » du panel MineStrator, puis saisis-le à nouveau dans l’onglet Fichiers.",
   "error.sftp_password_required": "Mot de passe SFTP requis : saisis-le une fois dans l’onglet Fichiers de ce serveur.",
+  "error.account_exists": "Ce compte MineStrator est déjà enregistré sur cet appareil.",
+  "error.account_not_found": "Compte introuvable : sa clé n’est plus enregistrée sur cet appareil. Retire-le puis ajoute-le à nouveau.",
   "logout": "Se déconnecter",
+
+  // Plusieurs comptes MineStrator (Réglages → Comptes). `{pseudo}` est remplacé par l'appelant.
+  "account.title": "Comptes",
+  "account.active": "Actif",
+  "account.switch": "Basculer",
+  "account.remove": "Retirer",
+  "account.add": "Ajouter un compte",
+  "account.addHint": "Clé API de l’autre compte (Panel → Compte → Clés API). Elle est vérifiée puis rangée dans le Keystore Android.",
+  "account.placeholder": "Clé API",
+  "account.adding": "Validation…",
+  "account.added": "Compte {pseudo} ajouté.",
+  "account.removed": "Compte {pseudo} retiré.",
+  "account.confirmRemove": "Retirer le compte {pseudo} ? Sa clé API et ses mots de passe SFTP enregistrés seront effacés de cet appareil.",
+  "account.confirmRemoveActive": "Retirer le compte actif {pseudo} ? Sa clé API et ses mots de passe SFTP enregistrés seront effacés de cet appareil ; l’app basculera sur un autre compte enregistré, ou reviendra à l’écran de connexion.",
+  "account.activeHint": "Le compte actif est celui de la liste des serveurs, des consoles et de la surveillance en arrière-plan.",
 };
 
 const en: Dict = {
@@ -373,7 +390,23 @@ const en: Dict = {
   "error.no_key": "No API key stored.",
   "error.sftp_auth": "The SFTP server rejected the password. Check it in the “Access” tab of the MineStrator panel, then enter it again in the Files tab.",
   "error.sftp_password_required": "SFTP password required: enter it once in this server’s Files tab.",
+  "error.account_exists": "This MineStrator account is already registered on this device.",
+  "error.account_not_found": "Account not found: its key is no longer stored on this device. Remove it, then add it again.",
   "logout": "Log out",
+
+  "account.title": "Accounts",
+  "account.active": "Active",
+  "account.switch": "Switch",
+  "account.remove": "Remove",
+  "account.add": "Add an account",
+  "account.addHint": "The other account’s API key (Panel → Account → API keys). It is checked, then stored in the Android Keystore.",
+  "account.placeholder": "API key",
+  "account.adding": "Validating…",
+  "account.added": "Account {pseudo} added.",
+  "account.removed": "Account {pseudo} removed.",
+  "account.confirmRemove": "Remove the account {pseudo}? Its API key and saved SFTP passwords will be erased from this device.",
+  "account.confirmRemoveActive": "Remove the active account {pseudo}? Its API key and saved SFTP passwords will be erased from this device; the app will switch to another registered account, or go back to the sign-in screen.",
+  "account.activeHint": "The active account is the one behind the server list, consoles and background monitoring.",
 };
 
 export function t(key: string): string {

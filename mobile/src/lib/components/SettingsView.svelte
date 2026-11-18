@@ -5,6 +5,7 @@
   import { t } from "../i18n";
   import { isFake, setFake } from "../fake.svelte";
   import Icon from "./Icon.svelte";
+  import AccountsCard from "./AccountsCard.svelte";
   import type { UpdateInfo } from "../types";
 
   let { onBack }: { onBack: () => void } = $props();
@@ -137,6 +138,9 @@
   </header>
 
   <div class="body">
+    <!-- Comptes MineStrator : bascule, ajout, retrait -->
+    <AccountsCard />
+
     <!-- Thème -->
     <section>
       <h3>{t("settings.theme")}</h3>
