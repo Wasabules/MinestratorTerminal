@@ -1,7 +1,8 @@
 //! Boucle principale du daemon, commune au premier plan (`run`) et au service (`service`).
 //!
-//! Elle crée un `Core` sur le dossier de données machine, démarre le superviseur, consigne chaque
-//! alerte (relue par l'app via IPC), la pousse en FCM si configuré, et sert le canal IPC.
+//! Elle crée un `Core` sur le dossier de données machine, démarre le superviseur et les
+//! automatisations (redémarrage automatique, tâches planifiées, webhooks), consigne chaque alerte
+//! (relue par l'app via IPC), la pousse en FCM si configuré, et sert le canal IPC.
 
 use crate::config::{EnvConfig, FcmConfig};
 use crate::{fcm, ipc, tokens};
@@ -122,6 +123,9 @@ pub async fn run(opts: Options, env: EnvConfig, shutdown: impl Future<Output = (
 
     let mut events = core.subscribe();
     core.supervisor().start();
+    // Automatisations (redémarrage automatique, tâches planifiées) et webhooks : reçus de l'app par
+    // IPC, exécutés ici tant que le service supervise (l'app, elle, se met alors en veille).
+    core.clone().start_automations();
     tracing::info!(data_dir = %shared.data_dir, managed = opts.managed, "daemon démarré");
 
     // Compte surveillé (affiché par l'app, et condition pour qu'elle lui délègue la supervision).

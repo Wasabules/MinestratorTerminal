@@ -172,6 +172,11 @@ export type GameCapabilities = {
    * SFTP. Minecraft (Java et Bedrock) : le seul jeu dont l'hôte expose ce fichier.
    */
   properties: boolean,
+  /**
+   * Commande console qui diffuse un message à tous les joueurs (`{message}` = le texte), pour
+   * les annonces avant un redémarrage programmé. `null` : le jeu n'en a pas, aucune annonce.
+   */
+  broadcast: string | null,
 };
 
 /**
@@ -707,15 +712,21 @@ export type Alert = {
   server_id: number,
   server_name: string,
   /**
-   * `crash` | `cpu` | `ram` | `disk` | `expiry`
+   * `crash` | `cpu` | `ram` | `disk` | `expiry` | `auto_restart` | `task`
    */
   kind: string,
   /**
-   * `warning` | `critical`
+   * `info` | `warning` | `critical`
    */
   severity: string,
   message: string,
   ts: number,
+  /**
+   * Détail joint, déjà anonymisé (`redact`) : dernières lignes de console au moment d'un crash,
+   * erreur d'une tâche planifiée… Absent du JSON quand il n'y en a pas — une app ou un service
+   * de version antérieure lit et écrit donc la même forme qu'avant.
+   */
+  details?: string,
 };
 
 /**
@@ -1307,4 +1318,250 @@ export type SupervisorHeartbeat = {
    */
   monitored: number,
   suspended: boolean,
+};
+
+// --- Automatisations : redémarrage automatique, tâches planifiées (automation.rs) ---
+
+/**
+ * Automatisations configurées (persistées dans `automations.json`, transmises au service).
+ */
+export type AutomationConfig = {
+  restart_rules: Array<RestartRule>,
+  tasks: Array<ScheduledTask>,
+};
+
+/**
+ * Redémarrage automatique après crash d'un serveur.
+ */
+export type RestartRule = {
+  /**
+   * Compte MineStrator propriétaire de la règle.
+   */
+  account_id: number,
+  server_id: number,
+  enabled: boolean,
+  max_per_hour: number,
+};
+
+/**
+ * Tâche planifiée d'un serveur.
+ */
+export type ScheduledTask = {
+  /**
+   * Identifiant attribué par le cœur (vide à la création).
+   */
+  id: string,
+  /**
+   * Compte MineStrator propriétaire (attribué par le cœur).
+   */
+  account_id: number,
+  server_id: number,
+  /**
+   * Libellé libre (facultatif).
+   */
+  name: string,
+  enabled: boolean,
+  action: TaskAction,
+  schedule: Schedule,
+  /**
+   * Dernière modification (secondes Unix, attribuée par le cœur) : aucune occurrence antérieure
+   * n'est exécutée, et c'est l'origine des intervalles.
+   */
+  updated_at: number,
+};
+
+/**
+ * Action d'une tâche.
+ */
+export type TaskAction = { "type": "restart", warnings: Array<number>, message: string, } | { "type": "snapshot", name: string, } | { "type": "commands", commands: Array<string>, };
+
+/**
+ * Récurrence d'une tâche, en heure locale de la machine qui l'exécute.
+ */
+export type Schedule = { "kind": "daily", hour: number, minute: number, } | { "kind": "weekly", days: Array<number>, hour: number, minute: number, } | { "kind": "interval", every_minutes: number, };
+
+/**
+ * Tâche + sa prochaine exécution (vue UI).
+ */
+export type TaskInfo = {
+  task: ScheduledTask,
+  /**
+   * Prochaine occurrence (secondes Unix), `null` si la tâche est désactivée.
+   */
+  next_run: number | null,
+};
+
+/**
+ * Automatisations d'un serveur, pour le compte courant (vue UI).
+ */
+export type ServerAutomations = {
+  server_id: number,
+  account_id: number,
+  restart: RestartRule,
+  tasks: Array<TaskInfo>,
+  /**
+   * Qui exécute en ce moment : `app` | `service`.
+   */
+  executor: 'app' | 'service',
+  /**
+   * Retard maximal toléré d'une occurrence (secondes).
+   */
+  tolerance_s: number,
+  /**
+   * Délais avant chaque tentative de redémarrage automatique (secondes).
+   */
+  backoff_s: Array<number>,
+  /**
+   * Commande de diffusion du jeu (`null` : pas d'annonce possible).
+   */
+  broadcast: string | null,
+};
+
+/**
+ * Une exécution consignée (tâche planifiée ou redémarrage automatique).
+ */
+export type AutomationRun = {
+  /**
+   * Identifiant dans la base de la machine qui l'a exécutée (app ou service : pas unique entre
+   * les deux).
+   */
+  id: number,
+  account_id: number,
+  server_id: number,
+  /**
+   * Tâche planifiée (`null` : redémarrage automatique).
+   */
+  task_id: string | null,
+  /**
+   * Libellé de la tâche au moment de l'exécution.
+   */
+  task_name: string | null,
+  /**
+   * `restart` | `snapshot` | `commands` | `auto_restart`
+   */
+  kind: 'restart' | 'snapshot' | 'commands' | 'auto_restart',
+  /**
+   * Occurrence planifiée (tâches).
+   */
+  scheduled_ts: number | null,
+  started_ts: number,
+  finished_ts: number | null,
+  /**
+   * `ok` | `failed` | `skipped` | `missed` | `gave_up`
+   */
+  status: 'ok' | 'failed' | 'skipped' | 'missed' | 'gave_up',
+  /**
+   * Résultat lisible (français).
+   */
+  message: string,
+  /**
+   * Détail anonymisé (erreur, logs de crash).
+   */
+  details: string | null,
+};
+
+// --- Suivi de disponibilité (uptime.rs) ---
+
+/**
+ * Rapport de disponibilité d'un serveur.
+ */
+export type UptimeReport = {
+  server_id: number,
+  generated_at: number,
+  /**
+   * 24 h, 7 j, 30 j (dans cet ordre).
+   */
+  windows: Array<UptimeWindow>,
+  /**
+   * Coupures des 30 derniers jours, des plus récentes aux plus anciennes.
+   */
+  outages: Array<Outage>,
+  /**
+   * Début de l'historique disponible (première observation), `null` si aucune.
+   */
+  since: number | null,
+};
+
+/**
+ * Disponibilité sur une fenêtre glissante.
+ */
+export type UptimeWindow = {
+  /**
+   * Durée de la fenêtre (secondes) : 86 400, 604 800 ou 2 592 000.
+   */
+  seconds: number,
+  /**
+   * Temps effectivement surveillé dans la fenêtre.
+   */
+  monitored_s: number,
+  /**
+   * Dont en service.
+   */
+  up_s: number,
+  /**
+   * `up_s / monitored_s` en % ; `null` si rien n'a été surveillé.
+   */
+  percent: number | null,
+};
+
+/**
+ * Une coupure (période hors service surveillée).
+ */
+export type Outage = {
+  start: number,
+  /**
+   * `null` : coupure en cours.
+   */
+  end: number | null,
+  duration_s: number,
+  /**
+   * `crash` | `stop` | `unknown`
+   */
+  cause: 'crash' | 'stop' | 'unknown',
+  /**
+   * `false` : la surveillance s'est interrompue pendant la coupure — sa fin réelle est inconnue
+   * (`end` est alors la dernière observation).
+   */
+  end_known: boolean,
+};
+
+// --- Alertes externes : webhooks (webhook.rs) ---
+
+/**
+ * Destinations configurées (persistées dans `webhooks.json`).
+ */
+export type WebhookConfig = {
+  destinations: Array<WebhookDestination>,
+};
+
+/**
+ * Destination d'alertes (partie **non secrète** : l'URL est dans le stockage sécurisé).
+ */
+export type WebhookDestination = {
+  /**
+   * Attribué par le cœur (vide à la création).
+   */
+  id: string,
+  name: string,
+  kind: WebhookKind,
+  enabled: boolean,
+  events: Array<WebhookEvent>,
+};
+
+/**
+ * Format d'envoi.
+ */
+export type WebhookKind = "discord" | "json";
+
+/**
+ * Événement transmis aux destinations.
+ */
+export type WebhookEvent = "crash" | "auto_restart" | "threshold" | "mybox" | "task_success" | "task_failure";
+
+/**
+ * Destination vue par l'UI : jamais l'URL, seulement sa présence.
+ */
+export type WebhookInfo = {
+  destination: WebhookDestination,
+  has_url: boolean,
 };

@@ -4,6 +4,11 @@
 //! Il peut être **mis en veille** à chaud (`SupervisorState::set_suspended`) : l'app le fait
 //! quand le service d'arrière-plan supervise déjà le même compte (voir [`crate::service`]),
 //! pour éviter une double collecte et des alertes en double.
+//!
+//! Il consigne aussi les **observations d'état** des serveurs (suivi de disponibilité, voir
+//! [`crate::uptime`]) et, à chaque crash, capture les dernières lignes de console (anonymisées)
+//! avant d'émettre l'alerte, puis signale le crash aux automatisations
+//! ([`SupervisorState::subscribe_crashes`], redémarrage automatique : [`crate::automation`]).
 
 use crate::api::ApiClient;
 use crate::console::ConsoleManager;
@@ -16,7 +21,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use tokio::sync::{broadcast, Notify};
+use tokio::sync::{broadcast, mpsc, Notify};
 
 const SAMPLE_EVERY_S: i64 = 10;
 const RETENTION_S: i64 = 14 * 24 * 3600;
@@ -27,6 +32,28 @@ const CRASH_COOLDOWN_S: i64 = 120;
 const EXPIRED_SOON_DAYS: i64 = 3;
 const EXPIRY_COOLDOWN_S: i64 = 12 * 3600;
 const EXPECTED_STOP_WINDOW_S: i64 = 60;
+/// Lignes de console jointes à une alerte de crash (les plus récentes), et leur taille maximale.
+const CRASH_LOG_LINES: usize = 40;
+const CRASH_LOG_MAX_BYTES: usize = 4000;
+/// Délai maximal de la capture des logs : l'alerte part sans eux au-delà.
+const CRASH_LOG_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Crash détecté, signalé aux automatisations (redémarrage automatique) une fois l'alerte émise.
+#[derive(Debug, Clone)]
+pub(crate) struct CrashEvent {
+    pub server_id: i64,
+    pub ts: i64,
+    /// Dernières lignes de console, anonymisées (absentes si la capture a échoué).
+    pub details: Option<String>,
+}
+
+/// Crash en attente de ses logs (recorder → tâche de capture).
+struct PendingCrash {
+    server_id: i64,
+    ts: i64,
+    /// Alerte à émettre (absente : désactivée, ou dans le délai anti-répétition).
+    alert: Option<Alert>,
+}
 
 /// Réglages du superviseur (modifiables depuis l'UI, persistés).
 ///
@@ -77,6 +104,8 @@ pub struct SupervisorState {
     monitored: AtomicUsize,
     /// Réveille le poller sans attendre la fin de sa pause (veille, nouvelle clé…).
     wake: Notify,
+    /// Crashes détectés, pour les automatisations (redémarrage automatique).
+    crashes: broadcast::Sender<CrashEvent>,
 }
 
 /// État observable du superviseur (exposé par le service d'arrière-plan).
@@ -103,6 +132,58 @@ impl SupervisorState {
             last_poll: AtomicI64::new(0),
             monitored: AtomicUsize::new(0),
             wake: Notify::new(),
+            crashes: broadcast::channel(64).0,
+        }
+    }
+
+    /// Abonnement aux crashes détectés (redémarrage automatique).
+    pub(crate) fn subscribe_crashes(&self) -> broadcast::Receiver<CrashEvent> {
+        self.crashes.subscribe()
+    }
+
+    /// Dernier état Wings connu d'un serveur sous connexion monitor (`None` : inconnu, connexion
+    /// fermée ou en cours de reconnexion).
+    pub(crate) fn current_state(&self, id: i64) -> Option<String> {
+        self.states.lock().unwrap().get(&id).cloned()
+    }
+
+    /// Oublie l'état d'un serveur : à la prochaine connexion, son premier état sera seulement
+    /// enregistré, jamais comparé à un état périmé. Sans cela, un serveur arrêté volontairement
+    /// pendant que la connexion monitor était coupée (veille, reconnexion) passerait pour un
+    /// crash à son retour — et serait redémarré par le redémarrage automatique.
+    fn forget_state(&self, id: i64) {
+        self.states.lock().unwrap().remove(&id);
+    }
+
+    /// Premier état connu d'un serveur (réponse à `send stats` à l'ouverture de la connexion,
+    /// y compris serveur éteint). `true` s'il n'était pas encore connu (à consigner).
+    fn first_observation(&self, id: i64, st: &str) -> bool {
+        if st.is_empty() {
+            return false;
+        }
+        let mut states = self.states.lock().unwrap();
+        if states.contains_key(&id) {
+            return false;
+        }
+        states.insert(id, st.to_string());
+        true
+    }
+
+    /// Phase d'une connexion monitor. Renvoie l'état à consigner, le cas échéant (hibernation).
+    fn on_monitor_phase(&self, id: i64, phase: &str) -> Option<&'static str> {
+        match phase {
+            // Nouvelle session : le premier état viendra de `send stats`.
+            "open" | "reconnecting" | "closed" | "suspended" => {
+                self.forget_state(id);
+                None
+            }
+            // Serveur arrêté et mis en sommeil par l'hébergeur (pas de WebSocket) : hors service.
+            // La phase revient toutes les 15 s : seule la première est consignée.
+            "hibernated" => {
+                let prev = self.states.lock().unwrap().insert(id, "hibernated".into());
+                (prev.as_deref() != Some("hibernated")).then_some("hibernated")
+            }
+            _ => None,
         }
     }
 
@@ -204,11 +285,39 @@ impl Supervisor {
     }
 
     pub fn start(&self) {
-        self.spawn_recorder();
+        let (crash_tx, crash_rx) = mpsc::unbounded_channel();
+        self.spawn_crash_handler(crash_rx);
+        self.spawn_recorder(crash_tx);
         self.spawn_poller();
     }
 
-    fn spawn_recorder(&self) {
+    /// Crash détecté → capture des dernières lignes de console (un GET, borné dans le temps),
+    /// anonymisées, jointes à l'alerte ; puis signalement aux automatisations.
+    fn spawn_crash_handler(&self, mut rx: mpsc::UnboundedReceiver<PendingCrash>) {
+        let api = self.api.clone();
+        let events = self.events.clone();
+        let state = self.state.clone();
+        tokio::spawn(async move {
+            while let Some(crash) = rx.recv().await {
+                let (api, events, state) = (api.clone(), events.clone(), state.clone());
+                // Une tâche par crash : la capture d'un serveur ne retarde pas l'alerte d'un autre.
+                tokio::spawn(async move {
+                    let details = capture_crash_logs(&api, crash.server_id).await;
+                    if let Some(mut alert) = crash.alert {
+                        alert.details = details.clone();
+                        let _ = events.send(CoreEvent::Alert(alert));
+                    }
+                    let _ = state.crashes.send(CrashEvent {
+                        server_id: crash.server_id,
+                        ts: crash.ts,
+                        details,
+                    });
+                });
+            }
+        });
+    }
+
+    fn spawn_recorder(&self, crash_tx: mpsc::UnboundedSender<PendingCrash>) {
         let store = self.store.clone();
         let events = self.events.clone();
         let state = self.state.clone();
@@ -222,6 +331,9 @@ impl Supervisor {
                             continue;
                         };
                         let now = now_secs();
+                        if state.first_observation(id, &s.state) {
+                            let _ = store.insert_state(id, now, &s.state, None);
+                        }
                         if last.get(&id).is_none_or(|t| now - t >= SAMPLE_EVERY_S) {
                             last.insert(id, now);
                             let _ = store.insert(
@@ -238,7 +350,25 @@ impl Supervisor {
                     }
                     Ok(CoreEvent::ConsoleStatus(s)) => {
                         if let Some(id) = monitor_id(&s.conn_id) {
-                            detect_crash(&events, &state, id, &s.state);
+                            let now = now_secs();
+                            let change = observe_status(&state, id, &s.state);
+                            if change.changed {
+                                let _ = store.insert_state(id, now, &s.state, change.cause);
+                            }
+                            if change.crashed {
+                                let _ = crash_tx.send(PendingCrash {
+                                    server_id: id,
+                                    ts: now,
+                                    alert: change.alert,
+                                });
+                            }
+                        }
+                    }
+                    Ok(CoreEvent::ConsoleConnection(c)) => {
+                        if let Some(id) = monitor_id(&c.conn_id) {
+                            if let Some(st) = state.on_monitor_phase(id, &c.phase) {
+                                let _ = store.insert_state(id, now_secs(), st, None);
+                            }
                         }
                     }
                     Ok(_) => {}
@@ -260,6 +390,7 @@ impl Supervisor {
             // Id utilisateur résolu une fois PAR CLÉ (stable) → pas de GET /user à chaque tour de
             // poll ; une nouvelle clé (éventuellement d'un autre compte) force une résolution.
             let mut user: Option<(String, i64)> = None;
+            let mut last_long_prune = 0i64;
             loop {
                 let cfg = state.config();
                 // En veille, tout se passe comme sans clé : les connexions monitor sont fermées.
@@ -271,6 +402,7 @@ impl Supervisor {
                 if let Ok(None) = key {
                     for id in opened.drain() {
                         console.disconnect(&monitor_conn_id(id));
+                        state.forget_state(id);
                     }
                     user = None;
                 }
@@ -279,6 +411,7 @@ impl Supervisor {
                         // Clé changée : les connexions monitor ouvertes portent l'ancienne.
                         for id in opened.drain() {
                             console.disconnect(&monitor_conn_id(id));
+                            state.forget_state(id);
                         }
                         user = api.get_user(&token).await.ok().map(|u| (token.clone(), u.id));
                     }
@@ -325,6 +458,7 @@ impl Supervisor {
                         }
                         for id in opened.difference(&desired).copied().collect::<Vec<_>>() {
                             console.disconnect(&monitor_conn_id(id));
+                            state.forget_state(id);
                             opened.remove(&id);
                         }
                         for id in &desired {
@@ -338,6 +472,19 @@ impl Supervisor {
                         }
                     }
                     let _ = store.prune(now_secs() - RETENTION_S);
+                    // Tables à longue rétention (bien plus de lignes) : une purge par heure suffit.
+                    if now_secs() - last_long_prune >= 3600 {
+                        last_long_prune = now_secs();
+                        let _ = store.prune_long(last_long_prune - crate::uptime::RETENTION_S);
+                    }
+                }
+                // Observation périodique (suivi de disponibilité) : seulement les serveurs dont
+                // la connexion monitor a rapporté un état — sinon la période reste non surveillée.
+                let now = now_secs();
+                for id in &opened {
+                    if let Some(st) = state.current_state(*id) {
+                        let _ = store.insert_state(*id, now, &st, None);
+                    }
                 }
                 state.monitored.store(opened.len(), Ordering::SeqCst);
                 tokio::select! {
@@ -424,39 +571,106 @@ fn check_expiry(
     }
 }
 
-fn detect_crash(
-    events: &broadcast::Sender<CoreEvent>,
-    state: &SupervisorState,
-    id: i64,
-    new_state: &str,
-) {
+/// Changement d'état observé sur une connexion monitor.
+#[derive(Debug, Default)]
+struct StatusChange {
+    /// Nouvel état (ou premier état connu) : à consigner pour le suivi de disponibilité.
+    changed: bool,
+    /// Passage hors service d'origine connue : `crash` | `stop`.
+    cause: Option<&'static str>,
+    /// Crash détecté — même si l'alerte est désactivée ou retenue par l'anti-répétition : le
+    /// redémarrage automatique doit voir chaque crash d'une boucle de crashes.
+    crashed: bool,
+    /// Alerte de crash à émettre (réglages et anti-répétition respectés).
+    alert: Option<Alert>,
+}
+
+/// Enregistre le nouvel état d'un serveur et classe la transition.
+///
+/// Wings ne passe par `stopping` que pour un arrêt DEMANDÉ (power action : panel web, API, app) ;
+/// un plantage va directement de `running`/`starting` à `offline`. Un arrêt demandé par l'app
+/// elle-même ([`SupervisorState::mark_expected_stop`]) n'est pas un crash non plus.
+fn observe_status(state: &SupervisorState, id: i64, new_state: &str) -> StatusChange {
     let prev = state.states.lock().unwrap().insert(id, new_state.to_string());
-    let Some(prev) = prev else { return };
+    let Some(prev) = prev else {
+        // Premier état connu : seulement enregistré, jamais comparé.
+        return StatusChange { changed: true, ..Default::default() };
+    };
+    if prev == new_state {
+        return StatusChange::default();
+    }
+    let from_live = prev != "offline" && prev != "stopping" && prev != "hibernated";
+    let expected = state
+        .expected_stops
+        .lock()
+        .unwrap()
+        .get(&id)
+        .is_some_and(|t| now_secs() - t < EXPECTED_STOP_WINDOW_S);
+    let cause = match new_state {
+        "stopping" => Some("stop"),
+        "offline" if prev == "stopping" => Some("stop"),
+        "offline" if from_live && expected => Some("stop"),
+        "offline" if from_live => Some("crash"),
+        _ => None,
+    };
+    let crashed = cause == Some("crash");
     let cfg = state.config();
-    if !cfg.enabled || !cfg.crash_detection {
-        return;
-    }
-    // Wings ne passe par `stopping` que pour un arrêt DEMANDÉ (power action : panel web, API,
-    // app) ; un plantage va directement de `running`/`starting` à `offline`.
-    if prev != "offline" && prev != "stopping" && new_state == "offline" {
-        let expected = state
-            .expected_stops
-            .lock()
-            .unwrap()
-            .get(&id)
-            .is_some_and(|t| now_secs() - t < EXPECTED_STOP_WINDOW_S);
-        if !expected && state.cooled(id, "crash", CRASH_COOLDOWN_S) {
-            let name = state.name(id);
-            alert(
-                events,
-                id,
-                &name,
-                "crash",
-                "critical",
-                format!("« {name} » s'est arrêté de façon inattendue."),
-            );
+    let alert = (crashed
+        && cfg.enabled
+        && cfg.crash_detection
+        && state.cooled(id, "crash", CRASH_COOLDOWN_S))
+    .then(|| {
+        let name = state.name(id);
+        Alert {
+            server_id: id,
+            server_name: name.clone(),
+            kind: "crash".into(),
+            severity: "critical".into(),
+            message: format!("« {name} » s'est arrêté de façon inattendue."),
+            ts: now_secs(),
+            details: None,
         }
+    });
+    StatusChange { changed: true, cause, crashed, alert }
+}
+
+/// Dernières lignes de console d'un serveur qui vient de planter (`GET /server/{id}/console/logs`),
+/// prêtes à joindre à l'alerte. `None` si l'appel échoue ou dépasse [`CRASH_LOG_TIMEOUT`].
+async fn capture_crash_logs(api: &ApiClient, id: i64) -> Option<String> {
+    let token = secrets::read_key().ok().flatten()?;
+    let lines = tokio::time::timeout(CRASH_LOG_TIMEOUT, api.get_console_logs(&token, id))
+        .await
+        .ok()?
+        .ok()?;
+    format_crash_logs(&lines)
+}
+
+/// Extrait joint à une alerte de crash : les [`CRASH_LOG_LINES`] dernières lignes, sans couleurs
+/// ANSI, **toujours anonymisées** (`redact` : mots de passe, IP, e-mails, secrets) puisqu'il peut
+/// partir vers un webhook — et au plus [`CRASH_LOG_MAX_BYTES`] octets, la fin étant conservée
+/// (c'est là qu'est la cause du crash).
+pub(crate) fn format_crash_logs(lines: &[String]) -> Option<String> {
+    let start = lines.len().saturating_sub(CRASH_LOG_LINES);
+    let text = lines[start..]
+        .iter()
+        .map(|l| crate::paste::strip_ansi(l).trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let text = crate::redact::redact(text.trim());
+    if text.is_empty() {
+        return None;
     }
+    if text.len() <= CRASH_LOG_MAX_BYTES {
+        return Some(text);
+    }
+    let mut cut = text.len() - CRASH_LOG_MAX_BYTES;
+    while !text.is_char_boundary(cut) {
+        cut += 1;
+    }
+    // Repart d'un début de ligne pour ne pas afficher une ligne tronquée.
+    let tail = &text[cut..];
+    let tail = tail.find('\n').map(|i| &tail[i + 1..]).unwrap_or(tail);
+    Some(format!("…\n{tail}"))
 }
 
 fn check_thresholds(
@@ -515,6 +729,7 @@ fn alert(
         severity: severity.to_string(),
         message,
         ts: now_secs(),
+        details: None,
     }));
 }
 
@@ -593,8 +808,13 @@ mod tests {
             fx
         }
 
-        fn status(&self, id: i64, state: &str) {
-            detect_crash(&self.tx, &self.state, id, state);
+        /// Nouvel état d'un serveur : comme le recorder, émet l'alerte de crash éventuelle.
+        fn status(&self, id: i64, state: &str) -> StatusChange {
+            let change = observe_status(&self.state, id, state);
+            if let Some(a) = change.alert.clone() {
+                let _ = self.tx.send(CoreEvent::Alert(a));
+            }
+            change
         }
 
         fn stats(&self, id: i64, s: &ConsoleStats) {
@@ -961,6 +1181,126 @@ mod tests {
         let mut fx = Fixture::new();
         check_expiry(&fx.tx, &fx.state, 1, "a", MyBoxDeadline { auto_renew: true, ..soon(1) });
         assert!(fx.alerts().is_empty());
+    }
+
+    // --- Causes, crashes pour le redémarrage automatique, observations ----------------
+
+    #[test]
+    fn transitions_carry_their_cause() {
+        let mut fx = Fixture::new();
+        // Premier état : consigné, sans cause.
+        let c = fx.status(1, "running");
+        assert!(c.changed && c.cause.is_none() && !c.crashed);
+        // Même état : rien à consigner.
+        assert!(!fx.status(1, "running").changed);
+        // Arrêt demandé (panel) : `stopping` puis `offline`, tous deux « stop ».
+        assert_eq!(fx.status(1, "stopping").cause, Some("stop"));
+        assert_eq!(fx.status(1, "offline").cause, Some("stop"));
+        // Redémarrage : toujours hors service, sans nouvelle cause.
+        assert_eq!(fx.status(1, "starting").cause, None);
+        assert_eq!(fx.status(1, "running").cause, None);
+        // Arrêt demandé par l'app elle-même.
+        fx.state.mark_expected_stop(1);
+        assert_eq!(fx.status(1, "offline").cause, Some("stop"));
+        // Crash.
+        fx.status(2, "running");
+        let c = fx.status(2, "offline");
+        assert_eq!(c.cause, Some("crash"));
+        assert!(c.crashed);
+        assert_eq!(fx.alerts().len(), 1);
+    }
+
+    #[test]
+    fn every_crash_is_reported_even_when_the_alert_is_held_back() {
+        let mut fx = Fixture::new();
+        fx.status(1, "running");
+        assert!(fx.status(1, "offline").crashed);
+        fx.status(1, "starting");
+        // Deuxième crash dans le délai anti-répétition : pas d'alerte, mais bien un crash (le
+        // redémarrage automatique doit suivre la boucle de crashes).
+        let c = fx.status(1, "offline");
+        assert!(c.crashed && c.alert.is_none());
+        assert_eq!(fx.alerts().len(), 1);
+        // Alertes de crash désactivées : le crash reste détecté.
+        let mut fx = Fixture::with_config(|c| c.crash_detection = false);
+        fx.status(1, "running");
+        let c = fx.status(1, "offline");
+        assert!(c.crashed && c.alert.is_none());
+        assert!(fx.alerts().is_empty());
+    }
+
+    #[test]
+    fn a_lost_connection_never_turns_a_stop_into_a_crash() {
+        let mut fx = Fixture::new();
+        fx.status(1, "running");
+        // Connexion monitor coupée (veille, reconnexion…) ; le serveur est arrêté entre-temps.
+        assert_eq!(fx.state.on_monitor_phase(1, "reconnecting"), None);
+        assert_eq!(fx.state.current_state(1), None);
+        // Au retour, `offline` est un premier état, pas une transition depuis `running`.
+        let c = fx.status(1, "offline");
+        assert!(c.changed && !c.crashed && c.cause.is_none());
+        assert!(fx.alerts().is_empty());
+        // Idem après une mise en veille du superviseur (connexion fermée par le poller).
+        fx.status(1, "running");
+        fx.state.forget_state(1);
+        assert!(!fx.status(1, "offline").crashed);
+    }
+
+    #[test]
+    fn first_observation_comes_from_stats() {
+        let fx = Fixture::new();
+        assert!(fx.state.first_observation(1, "offline"));
+        assert!(!fx.state.first_observation(1, "running"), "déjà connu : ignoré");
+        assert_eq!(fx.state.current_state(1).as_deref(), Some("offline"));
+        assert!(!fx.state.first_observation(2, ""), "état vide ignoré");
+        // Nouvelle session : l'état sera réinitialisé par la réponse à `send stats`.
+        fx.state.on_monitor_phase(1, "open");
+        assert!(fx.state.first_observation(1, "running"));
+    }
+
+    #[test]
+    fn hibernation_is_recorded_once() {
+        let fx = Fixture::new();
+        assert_eq!(fx.state.on_monitor_phase(1, "hibernated"), Some("hibernated"));
+        // La phase revient toutes les 15 s (via `connecting`, sans effet) : une seule ligne.
+        assert_eq!(fx.state.on_monitor_phase(1, "connecting"), None);
+        assert_eq!(fx.state.on_monitor_phase(1, "hibernated"), None);
+        assert_eq!(fx.state.current_state(1).as_deref(), Some("hibernated"));
+        // Un serveur hiberné qui redémarre n'est jamais un crash.
+        let mut fx2 = Fixture::new();
+        fx2.state.on_monitor_phase(1, "hibernated");
+        fx2.status(1, "offline");
+        assert!(fx2.alerts().is_empty());
+    }
+
+    #[test]
+    fn crash_logs_are_anonymised_and_bounded() {
+        let lines: Vec<String> = (0..100)
+            .map(|i| format!("\u{1b}[31m[12:00:{i:02}] [Server thread/INFO]: ligne {i}\u{1b}[0m"))
+            .chain([
+                "[12:01:00] [Server thread/INFO]: Alex[/203.0.113.7:51234] logged in".to_string(),
+                "[12:01:01] [Server thread/ERROR]: rcon.password=hunter2".to_string(),
+            ])
+            .collect();
+        let text = format_crash_logs(&lines).unwrap();
+        // Les dernières lignes seulement, sans ANSI, anonymisées.
+        assert_eq!(text.lines().count(), CRASH_LOG_LINES);
+        assert!(!text.contains('\u{1b}'));
+        assert!(!text.contains("203.0.113.7"), "{text}");
+        assert!(!text.contains("hunter2"), "{text}");
+        assert!(text.contains("ligne 99"));
+        assert!(!text.contains("ligne 50"));
+
+        // Trop long : on garde la fin, à partir d'un début de ligne.
+        let long: Vec<String> = (0..40).map(|i| format!("{i:03} {}", "x".repeat(300))).collect();
+        let text = format_crash_logs(&long).unwrap();
+        assert!(text.len() <= CRASH_LOG_MAX_BYTES + 4);
+        assert!(text.starts_with("…\n"));
+        assert!(text.ends_with(&"x".repeat(300)));
+        assert!(text.lines().nth(1).unwrap().len() == 304, "ligne complète après la coupe");
+
+        assert_eq!(format_crash_logs(&[]), None);
+        assert_eq!(format_crash_logs(&["   ".to_string()]), None);
     }
 
     #[test]

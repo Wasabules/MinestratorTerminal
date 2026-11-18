@@ -140,6 +140,45 @@ async fn dispatch(shared: &Shared, req: Request) -> Response {
             shared.request_restart();
             Response::Done
         }
+        Request::SetAutomations { config } => {
+            let (tasks, rules) = (config.tasks.len(), config.restart_rules.len());
+            match core.apply_automation_config(config) {
+                Ok(()) => {
+                    tracing::info!(tasks, rules, "automatisations reçues de l'app");
+                    Response::Done
+                }
+                Err(e) => invalid_input(e),
+            }
+        }
+        Request::SetWebhooks { config, urls } => {
+            let n = config.destinations.len();
+            // Ni les URL ni l'erreur détaillée (qui ne les contient pas) ne sont journalisées.
+            match core.apply_webhooks(config, urls) {
+                Ok(()) => {
+                    tracing::info!(destinations = n, "destinations d'alertes reçues de l'app");
+                    Response::Done
+                }
+                Err(e) => invalid_input(e),
+            }
+        }
+        Request::Uptime { server_id, from, to } => match core.local_uptime_spans(server_id, from, to) {
+            Ok(spans) => Response::Uptime(spans),
+            Err(e) => core_error(e),
+        },
+        Request::AutomationRuns { account_id, server_id, limit } => {
+            match core.local_automation_runs(account_id, server_id, limit.unwrap_or(50).min(500)) {
+                Ok(runs) => Response::AutomationRuns(runs),
+                Err(e) => core_error(e),
+            }
+        }
+    }
+}
+
+/// Données refusées à la validation (`bad_request`), erreur de stockage sinon.
+fn invalid_input(e: Error) -> Response {
+    match e {
+        Error::Unexpected(msg) => error("bad_request", msg),
+        other => core_error(other),
     }
 }
 
@@ -250,7 +289,10 @@ mod imp {
 mod tests {
     use super::*;
     use minestrator_core::service::{call, request, ENDPOINT_ENV};
-    use minestrator_core::{Alert, Core, SupervisorConfig};
+    use minestrator_core::{
+        Alert, AutomationConfig, Core, RestartRule, Schedule, ScheduledTask, SupervisorConfig,
+        TaskAction, WebhookConfig, WebhookDestination, WebhookEvent, WebhookKind,
+    };
 
     /// Bout en bout : vrai serveur (socket Unix ou canal nommé avec sa DACL) + client du core.
     /// Sans réseau : seules les opérations locales sont exercées.
@@ -314,6 +356,7 @@ mod tests {
             severity: "critical".into(),
             message: "arrêt".into(),
             ts: 1_000,
+            details: Some("[ERROR] dernières lignes".into()),
         };
         let id = core.record_alert(&alert).unwrap();
         let req = Request::Alerts { after_id: None, since_ts: None, limit: None };
@@ -322,6 +365,8 @@ mod tests {
                 assert_eq!(last_id, id);
                 assert_eq!(items.len(), 1);
                 assert_eq!(items[0].alert.server_id, 9);
+                // Le détail joint (logs du crash) traverse l'IPC.
+                assert_eq!(items[0].alert.details.as_deref(), Some("[ERROR] dernières lignes"));
             }
             other => panic!("inattendu : {other:?}"),
         }
@@ -355,6 +400,77 @@ mod tests {
         let err = call(&endpoint, &Request::Restart, t).await.unwrap_err();
         assert!(matches!(err, Error::Service { ref code, .. } if code == "unsupported"));
         assert!(matches!(call(&endpoint, &Request::ClearKey, t).await.unwrap(), Response::Done));
+
+        // Automatisations : validées comme une saisie de l'UI, appliquées.
+        let task = ScheduledTask {
+            id: "task-1".into(),
+            account_id: 7,
+            server_id: 9,
+            name: " Nuit ".into(),
+            enabled: true,
+            action: TaskAction::Commands { commands: vec![" save-all ".into()] },
+            schedule: Schedule::Daily { hour: 4, minute: 0 },
+            updated_at: 1,
+        };
+        let config = AutomationConfig {
+            restart_rules: vec![RestartRule { account_id: 7, server_id: 9, enabled: true, max_per_hour: 99 }],
+            tasks: vec![task.clone()],
+        };
+        assert!(matches!(
+            call(&endpoint, &Request::SetAutomations { config }, t).await.unwrap(),
+            Response::Done
+        ));
+        let applied = core.automation_config();
+        assert_eq!(applied.tasks[0].name, "Nuit");
+        assert_eq!(applied.restart_rules[0].max_per_hour, 10, "plafond borné");
+        let bad = AutomationConfig {
+            tasks: vec![ScheduledTask {
+                action: TaskAction::Commands { commands: vec!["a\nb".into()] },
+                ..task
+            }],
+            ..Default::default()
+        };
+        let err = call(&endpoint, &Request::SetAutomations { config: bad }, t).await.unwrap_err();
+        assert!(matches!(err, Error::Service { ref code, .. } if code == "bad_request"));
+
+        // Webhooks : URL rangée dans le fichier de secrets du service (dossier temporaire du
+        // test, jamais le trousseau), effacée quand la destination disparaît.
+        let dest = WebhookDestination {
+            id: "wh-test".into(),
+            name: "Salon".into(),
+            kind: WebhookKind::Discord,
+            enabled: true,
+            events: vec![WebhookEvent::Crash],
+        };
+        let url = "https://discord.com/api/webhooks/1/jeton-de-test";
+        let req = Request::SetWebhooks {
+            config: WebhookConfig { destinations: vec![dest.clone()] },
+            urls: [("wh-test".to_string(), url.to_string())].into(),
+        };
+        assert!(matches!(call(&endpoint, &req, t).await.unwrap(), Response::Done));
+        let infos = core.webhooks();
+        assert_eq!(infos.len(), 1);
+        assert!(infos[0].has_url);
+        assert!(!std::fs::read_to_string(dir.join("webhooks.json")).unwrap().contains("jeton-de-test"),
+            "l'URL n'est jamais dans la configuration persistée");
+        let req = Request::SetWebhooks {
+            config: WebhookConfig { destinations: vec![dest.clone()] },
+            urls: [("wh-test".to_string(), "https://evil.example/x".to_string())].into(),
+        };
+        let err = call(&endpoint, &req, t).await.unwrap_err();
+        assert!(matches!(err, Error::Service { ref code, .. } if code == "bad_request"));
+        let req = Request::SetWebhooks { config: WebhookConfig::default(), urls: Default::default() };
+        assert!(matches!(call(&endpoint, &req, t).await.unwrap(), Response::Done));
+        assert!(core.webhooks().is_empty());
+
+        // Disponibilité et journal : vides, mais servis.
+        let req = Request::Uptime { server_id: 9, from: 0, to: 10_000 };
+        assert!(matches!(call(&endpoint, &req, t).await.unwrap(), Response::Uptime(ref v) if v.is_empty()));
+        let req = Request::AutomationRuns { account_id: 7, server_id: Some(9), limit: None };
+        assert!(matches!(
+            call(&endpoint, &req, t).await.unwrap(),
+            Response::AutomationRuns(ref v) if v.is_empty()
+        ));
 
         drop(core);
         let _ = std::fs::remove_dir_all(&dir);

@@ -27,6 +27,24 @@ pub struct GameCapabilities {
     /// Vue Paramètres : réglages du serveur (`server.properties`) lus et modifiés via l'API, sans
     /// SFTP. Minecraft (Java et Bedrock) : le seul jeu dont l'hôte expose ce fichier.
     pub properties: bool,
+    /// Commande console qui diffuse un message à tous les joueurs (`{message}` = le texte), pour
+    /// les annonces avant un redémarrage programmé. `null` : le jeu n'en a pas, aucune annonce.
+    pub broadcast: Option<String>,
+}
+
+/// Commande de diffusion d'un jeu (voir [`GameCapabilities::broadcast`]). Prudence : on n'en
+/// déclare que pour les jeux dont la console l'accepte à coup sûr — une commande inconnue serait
+/// au mieux ignorée, au pire interprétée autrement.
+fn broadcast_for(family: &str) -> Option<String> {
+    match family {
+        // Java comme Bedrock : `say` diffuse dans le chat, préfixé de `[Server]`.
+        "minecraft" => Some("say {message}".into()),
+        // Console du serveur dédié : une ligne sans `/` est envoyée dans le chat.
+        "factorio" => Some("{message}".into()),
+        // Commande console native du serveur Rust (RCON), avec ou sans Oxide/uMod.
+        "rust" => Some("say {message}".into()),
+        _ => None,
+    }
 }
 
 /// Mots-clés d'egg identifiant la famille Minecraft (loaders, forks, proxys). ⚠️ PAS de « vanilla »
@@ -56,6 +74,7 @@ fn caps(
         mods: mods.into(),
         backups: true,
         properties: family == "minecraft",
+        broadcast: broadcast_for(family),
     }
 }
 
@@ -206,6 +225,19 @@ mod tests {
             assert!(!c.players, "egg {id} ne doit pas exposer de joueurs");
             assert_eq!(c.mods, "none");
         }
+    }
+
+    #[test]
+    fn broadcast_only_for_games_that_support_it() {
+        assert_eq!(capabilities_for("Paper 1.21", false).broadcast.as_deref(), Some("say {message}"));
+        assert_eq!(capabilities_for("Nukkit", true).broadcast.as_deref(), Some("say {message}"));
+        assert_eq!(capabilities_for("Factorio", false).broadcast.as_deref(), Some("{message}"));
+        assert_eq!(capabilities_for("Rust", false).broadcast.as_deref(), Some("say {message}"));
+        // Pas de commande connue : aucune annonce plutôt qu'une commande au hasard.
+        assert_eq!(capabilities_for("Satisfactory", false).broadcast, None);
+        assert_eq!(capabilities_for("Valheim", false).broadcast, None);
+        assert_eq!(capabilities_for("Palworld", false).broadcast, None);
+        assert_eq!(capabilities_for_egg(Some(15), "Redis 7", false).broadcast, None);
     }
 
     #[test]

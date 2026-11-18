@@ -9,17 +9,23 @@
 //! - **Élévation** des commandes d'administration (`minestrator-daemon enable|uninstall`) :
 //!   UAC sous Windows, `pkexec` sous Linux, `osascript` sous macOS.
 //! - **Lien côté app** : tâche de fond qui relaie les alertes du service sur le bus d'events du
-//!   `Core` (notifications du tray, Copilote) et fusionne son historique de métriques.
+//!   `Core` (notifications du tray, Copilote) et fusionne son historique de métriques, de
+//!   disponibilité et d'automatisations. Quand le service prend la main, l'app lui transmet ses
+//!   automatisations et ses destinations d'alertes (avec leurs URL, par IPC uniquement).
 //!
 //! Conception complète : `docs/SERVICE.md`. Rien ici ne dépend d'une UI.
 
+use crate::automation::{AutomationConfig, AutomationRun};
 use crate::error::{Error, Result};
 use crate::events::{Alert, CoreEvent};
 use crate::persist::PersistedConfig;
 use crate::store::{now_secs, MetricSample, StoredAlert};
 use crate::supervisor::{SupervisorConfig, SupervisorHeartbeat};
+use crate::uptime::{self, UptimeReport, UptimeSpan};
+use crate::webhook::WebhookConfig;
 use crate::Core;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -31,7 +37,12 @@ use tokio::sync::Notify;
 
 /// Version du protocole IPC. Une app et un service de versions différentes ne coopèrent pas :
 /// l'app garde alors son propre superviseur.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// 2 : automatisations (`set_automations`, `automation_runs`), webhooks (`set_webhooks`),
+/// disponibilité (`uptime`). Un service resté en version 1 ne saurait pas exécuter les
+/// automatisations : l'app ne lui délègue donc plus la supervision (et le signale « à mettre à
+/// jour ») — elles restent exécutées une fois, par l'app.
+pub const PROTOCOL_VERSION: u32 = 2;
 /// Nom du binaire du service (livré à côté de l'exécutable de l'app).
 pub const DAEMON_BIN: &str = "minestrator-daemon";
 /// Nom du service Windows (SCM).
@@ -46,8 +57,9 @@ pub const LAUNCHD_PLIST_PATH: &str =
 /// Variable d'environnement qui remplace le point de contact IPC par défaut (dev, tests, daemon
 /// lancé hors service).
 pub const ENDPOINT_ENV: &str = "MINESTRATOR_DAEMON_SOCKET";
-/// Taille maximale d'une requête (le service refuse au-delà).
-pub const MAX_REQUEST_BYTES: u64 = 64 * 1024;
+/// Taille maximale d'une requête (le service refuse au-delà). `set_automations` peut porter des
+/// dizaines de tâches et leurs commandes.
+pub const MAX_REQUEST_BYTES: u64 = 1024 * 1024;
 /// Taille maximale d'une réponse (un historique de 14 jours fait quelques Mio).
 pub const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 /// Au-delà, un service qui n'a pas réussi de tour de poll est jugé bloqué.
@@ -104,6 +116,24 @@ pub enum Request {
     ClearKey,
     /// Redémarre le service (via son gestionnaire : systemd, launchd ou SCM).
     Restart,
+    /// Remplace les automatisations (tâches planifiées, redémarrage automatique). Le service
+    /// n'exécute que celles du compte dont il détient la clé.
+    SetAutomations { config: AutomationConfig },
+    /// Remplace les destinations d'alertes et leurs URL (secrets : rangées dans le stockage
+    /// machine du service ; celles des destinations retirées y sont effacées).
+    SetWebhooks {
+        config: WebhookConfig,
+        urls: BTreeMap<String, String>,
+    },
+    /// Périodes surveillées d'un serveur (suivi de disponibilité) entre `from` et `to` (secondes
+    /// Unix) : `to` est fixé par l'app, pour que les deux chronologies se raccordent.
+    Uptime { server_id: i64, from: i64, to: i64 },
+    /// Journal des automatisations d'un compte (d'un serveur si `server_id`), récents d'abord.
+    AutomationRuns {
+        account_id: i64,
+        server_id: Option<i64>,
+        limit: Option<u32>,
+    },
 }
 
 impl Request {
@@ -119,15 +149,42 @@ impl Request {
             Request::SetKey { .. } => "set_key",
             Request::ClearKey => "clear_key",
             Request::Restart => "restart",
+            Request::SetAutomations { .. } => "set_automations",
+            Request::SetWebhooks { .. } => "set_webhooks",
+            Request::Uptime { .. } => "uptime",
+            Request::AutomationRuns { .. } => "automation_runs",
         }
     }
 }
 
-/// `Debug` maison : la clé API ne doit jamais finir dans un journal.
+/// `Debug` maison : ni la clé API ni les URL de webhook (des secrets) ne doivent finir dans un
+/// journal.
 impl std::fmt::Debug for Request {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Request::SetKey { .. } => f.write_str("SetKey { key: \"***\" }"),
+            Request::SetWebhooks { config, urls } => f
+                .debug_struct("SetWebhooks")
+                .field("destinations", &config.destinations.len())
+                .field("urls", &format_args!("\"***\" ({})", urls.len()))
+                .finish(),
+            Request::SetAutomations { config } => f
+                .debug_struct("SetAutomations")
+                .field("tasks", &config.tasks.len())
+                .field("restart_rules", &config.restart_rules.len())
+                .finish(),
+            Request::Uptime { server_id, from, to } => f
+                .debug_struct("Uptime")
+                .field("server_id", server_id)
+                .field("from", from)
+                .field("to", to)
+                .finish(),
+            Request::AutomationRuns { account_id, server_id, limit } => f
+                .debug_struct("AutomationRuns")
+                .field("account_id", account_id)
+                .field("server_id", server_id)
+                .field("limit", limit)
+                .finish(),
             Request::History { server_id, since_secs } => f
                 .debug_struct("History")
                 .field("server_id", server_id)
@@ -153,6 +210,8 @@ pub enum Response {
     History(Vec<MetricSample>),
     Alerts { items: Vec<StoredAlert>, last_id: i64 },
     Config(SupervisorConfig),
+    Uptime(Vec<UptimeSpan>),
+    AutomationRuns(Vec<AutomationRun>),
     Done,
     /// `code` stable (`forbidden`, `bad_request`, `invalid_key`, `unsupported`, `internal`…).
     Error { code: String, message: String },
@@ -717,6 +776,9 @@ struct LinkCursor {
 /// État du lien app ↔ service, porté par le [`Core`] de l'app.
 pub(crate) struct ServiceLink {
     service_mode: AtomicBool,
+    /// Le lien tourne (app) : les automatisations vérifient auprès du service, avant d'agir,
+    /// qu'il n'a pas pris la main. Faux dans le service lui-même et dans le MCP.
+    started: AtomicBool,
     cursor: PersistedConfig<LinkCursor>,
     wake: Notify,
     /// Sérialise les tours (tâche de fond et commandes) : une alerte n'est relayée qu'une fois.
@@ -727,6 +789,7 @@ impl ServiceLink {
     pub(crate) fn new(dir: &Path) -> Self {
         Self {
             service_mode: AtomicBool::new(false),
+            started: AtomicBool::new(false),
             cursor: PersistedConfig::load(dir, "service_link.json"),
             wake: Notify::new(),
             tick: tokio::sync::Mutex::new(()),
@@ -804,6 +867,7 @@ impl Core {
     /// Le premier tour est fait **avant** de rendre la main : démarrer le superviseur local
     /// ensuite évite qu'il ouvre ses connexions monitor pour rien quand le service supervise déjà.
     pub async fn start_service_link(self: Arc<Self>) {
+        self.service_link.started.store(true, Ordering::SeqCst);
         self.service_tick().await;
         tokio::spawn(async move {
             loop {
@@ -842,8 +906,106 @@ impl Core {
         }
         self.sup_state.set_suspended(decision == Supervision::Service);
         if decision == Supervision::Service {
+            // Le service prend la main : il reçoit les automatisations et destinations d'alertes
+            // de l'app, source de vérité (modifiées pendant qu'il ne supervisait pas, par exemple).
+            if !was_service {
+                self.push_automations_to(&endpoint).await;
+            }
             self.pull_service_alerts(&endpoint).await;
         }
+    }
+
+    /// Transmet automatisations et destinations d'alertes (URL comprises) au service.
+    async fn push_automations_to(&self, endpoint: &str) {
+        let req = Request::SetAutomations { config: self.automation_config() };
+        if let Err(e) = call(endpoint, &req, QUICK_TIMEOUT).await {
+            tracing::warn!("automatisations non transmises au service : {e}");
+        }
+        let req = Request::SetWebhooks { config: self.webhook_config(), urls: self.webhook_urls() };
+        if let Err(e) = call(endpoint, &req, QUICK_TIMEOUT).await {
+            tracing::warn!("destinations d'alertes non transmises au service : {e}");
+        }
+    }
+
+    /// Le service d'arrière-plan supervise-t-il à la place de l'app (dernière décision) ?
+    pub(crate) fn service_mode(&self) -> bool {
+        self.service_link.is_service_mode()
+    }
+
+    /// Ce processus est-il le superviseur actif, celui qui exécute les automatisations ?
+    /// Superviseur en veille : non. Dans l'app, une décision fraîche est prise auprès du service
+    /// juste avant d'agir (il a pu prendre la main depuis le dernier tour du lien). Dans le
+    /// service lui-même : oui.
+    pub(crate) async fn is_active_supervisor(&self) -> bool {
+        if self.sup_state.is_suspended() {
+            return false;
+        }
+        if !self.service_link.started.load(Ordering::SeqCst) {
+            return true;
+        }
+        self.service_tick().await;
+        !self.service_link.is_service_mode()
+    }
+
+    /// Transmet les automatisations au service s'il supervise (après une modification).
+    pub(crate) async fn sync_automations(&self) {
+        if !self.service_link.is_service_mode() {
+            return;
+        }
+        let req = Request::SetAutomations { config: self.automation_config() };
+        if let Err(e) = call(&default_endpoint(), &req, QUICK_TIMEOUT).await {
+            tracing::warn!("automatisations non transmises au service : {e}");
+        }
+    }
+
+    /// Transmet les destinations d'alertes (et leurs URL) au service s'il supervise.
+    pub(crate) async fn sync_webhooks(&self) {
+        if !self.service_link.is_service_mode() {
+            return;
+        }
+        let req = Request::SetWebhooks { config: self.webhook_config(), urls: self.webhook_urls() };
+        if let Err(e) = call(&default_endpoint(), &req, QUICK_TIMEOUT).await {
+            tracing::warn!("destinations d'alertes non transmises au service : {e}");
+        }
+    }
+
+    /// Rapport de disponibilité d'un serveur (24 h / 7 j / 30 j, coupures) : historique local,
+    /// complété par celui du service quand c'est lui qui supervise.
+    pub async fn uptime_report(&self, server_id: i64) -> Result<UptimeReport> {
+        let now = now_secs();
+        let from = now - uptime::WINDOWS[2] - uptime::MAX_GAP_S;
+        let local = self.local_uptime_spans(server_id, from, now)?;
+        let remote = if self.service_link.is_service_mode() {
+            let req = Request::Uptime { server_id, from, to: now };
+            match call(&default_endpoint(), &req, HISTORY_TIMEOUT).await {
+                Ok(Response::Uptime(spans)) => spans,
+                _ => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        Ok(uptime::report(server_id, &uptime::merge_spans(local, remote), now))
+    }
+
+    /// Journal des automatisations d'un serveur (compte courant) : local, complété par celui du
+    /// service quand c'est lui qui supervise. Récents d'abord.
+    pub async fn automation_runs(&self, server_id: i64, limit: u32) -> Result<Vec<AutomationRun>> {
+        let account = self.user_id().await?;
+        let limit = limit.clamp(1, 200);
+        let mut runs = self.local_automation_runs(account, Some(server_id), limit)?;
+        if self.service_link.is_service_mode() {
+            let req = Request::AutomationRuns {
+                account_id: account,
+                server_id: Some(server_id),
+                limit: Some(limit),
+            };
+            if let Ok(Response::AutomationRuns(remote)) = call(&default_endpoint(), &req, QUICK_TIMEOUT).await {
+                runs.extend(remote);
+            }
+        }
+        runs.sort_by_key(|r| std::cmp::Reverse(r.started_ts));
+        runs.truncate(limit as usize);
+        Ok(runs)
     }
 
     /// Relaie les alertes du service postérieures au curseur. La première fois, positionne
@@ -985,6 +1147,7 @@ impl Core {
         if let Err(e) = call(&endpoint, &config, QUICK_TIMEOUT).await {
             tracing::warn!("réglages non transmis au service : {e}");
         }
+        self.push_automations_to(&endpoint).await;
         self.service_tick().await;
         Ok(self.service_overview().await)
     }
@@ -1276,6 +1439,88 @@ mod tests {
         let dbg = format!("{:?}", Request::SetKey { key: "ma-cle-api".into() });
         assert!(!dbg.contains("ma-cle-api"));
         assert!(dbg.contains("***"));
+    }
+
+    fn webhooks_request() -> Request {
+        use crate::webhook::{WebhookDestination, WebhookEvent, WebhookKind};
+        Request::SetWebhooks {
+            config: WebhookConfig {
+                destinations: vec![WebhookDestination {
+                    id: "wh-1".into(),
+                    name: "Salon staff".into(),
+                    kind: WebhookKind::Discord,
+                    enabled: true,
+                    events: vec![WebhookEvent::Crash],
+                }],
+            },
+            urls: BTreeMap::from([(
+                "wh-1".to_string(),
+                "https://discord.com/api/webhooks/123/jeton-secret".to_string(),
+            )]),
+        }
+    }
+
+    #[test]
+    fn les_url_de_webhook_napparaissent_jamais_dans_debug() {
+        let dbg = format!("{:?}", webhooks_request());
+        assert!(!dbg.contains("jeton-secret"), "{dbg}");
+        assert!(!dbg.contains("discord.com"), "{dbg}");
+        assert!(dbg.contains("***") && dbg.contains("destinations: 1"), "{dbg}");
+        assert_eq!(webhooks_request().op(), "set_webhooks");
+    }
+
+    #[test]
+    fn nouvelles_requetes_serialisees() {
+        use crate::automation::{RestartRule, Schedule, ScheduledTask, TaskAction};
+        let task = ScheduledTask {
+            id: "task-1".into(),
+            account_id: 7,
+            server_id: 3,
+            name: "Nuit".into(),
+            enabled: true,
+            action: TaskAction::Snapshot { name: String::new() },
+            schedule: Schedule::Daily { hour: 4, minute: 0 },
+            updated_at: 10,
+        };
+        let req = Request::SetAutomations {
+            config: AutomationConfig {
+                restart_rules: vec![RestartRule::disabled(7, 3)],
+                tasks: vec![task.clone()],
+            },
+        };
+        let v = serde_json::to_value(&req).unwrap();
+        assert_eq!(v["op"], "set_automations");
+        assert_eq!(v["config"]["tasks"][0]["schedule"]["kind"], "daily");
+        let back: Request = serde_json::from_value(v).unwrap();
+        assert!(matches!(back, Request::SetAutomations { ref config } if config.tasks == vec![task.clone()]));
+        assert_eq!(format!("{req:?}"), "SetAutomations { tasks: 1, restart_rules: 1 }");
+
+        let v = serde_json::to_value(webhooks_request()).unwrap();
+        assert_eq!(v["op"], "set_webhooks");
+        assert_eq!(v["urls"]["wh-1"], "https://discord.com/api/webhooks/123/jeton-secret");
+        assert!(matches!(serde_json::from_value::<Request>(v).unwrap(), Request::SetWebhooks { .. }));
+
+        let v = serde_json::to_value(Request::Uptime { server_id: 3, from: 1, to: 2 }).unwrap();
+        assert_eq!(v, serde_json::json!({ "op": "uptime", "server_id": 3, "from": 1, "to": 2 }));
+        let r: Request = serde_json::from_str(r#"{"op":"automation_runs","account_id":7}"#).unwrap();
+        assert!(matches!(r, Request::AutomationRuns { account_id: 7, server_id: None, limit: None }));
+
+        // Réponses.
+        let span = UptimeSpan { start: 1, end: 2, up: true, cause: None, ended: false };
+        let json = serde_json::to_string(&Response::Uptime(vec![span.clone()])).unwrap();
+        assert!(json.starts_with(r#"{"type":"uptime","data":["#));
+        assert!(matches!(serde_json::from_str::<Response>(&json).unwrap(), Response::Uptime(ref s) if s == &vec![span.clone()]));
+        let json = serde_json::to_string(&Response::AutomationRuns(Vec::new())).unwrap();
+        assert_eq!(json, r#"{"type":"automation_runs","data":[]}"#);
+    }
+
+    #[test]
+    fn un_service_en_protocole_1_nest_pas_delegue() {
+        // Un service resté en version précédente ne sait pas exécuter les automatisations :
+        // l'app garde la supervision (elles s'exécutent alors une fois, chez elle).
+        let mut s = status(Some(1), Some(9_970));
+        s.protocol = 1;
+        assert_eq!(decide(Some(1), Some(&s), 10_000), Supervision::App);
     }
 
     #[test]

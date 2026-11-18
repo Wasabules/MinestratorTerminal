@@ -21,6 +21,7 @@ export const GENERIC_CAPS: GameCapabilities = {
   mods: 'none',
   backups: true,
   properties: false,
+  broadcast: null,
 };
 
 const store = $state<{
