@@ -1,6 +1,8 @@
 # Feuille de route — Minestrator Terminal
 
-> Client desktop (Tauri 2 + SvelteKit) pour l'API MineStrator. **v0.2.1** · public · GPL-3.0.
+> Client **desktop** (Windows, macOS, Linux) et **Android** pour l'API MineStrator. Dernière version
+> publiée : **v0.6.1** · public · GPL-3.0. Les fonctionnalités marquées *(main)* sont fusionnées et
+> testées en CI, et partiront avec la prochaine version.
 >
 > Le principe reste le même : ne pas refaire le panel web, mais exploiter ce qu'une app
 > **persistante et locale** peut faire et que le site ne peut pas — historique, événements,
@@ -8,50 +10,98 @@
 
 ## ✅ Livré
 
-- **Superviseur + tray** — surveille tous les serveurs en tâche de fond, même fenêtre fermée.
-- **Historique CPU/RAM/disque** — séries temporelles stockées en local (SQLite) + graphiques.
-- **Alertes natives** — crash, seuils CPU/RAM/disque, expiration MyBox (`tend_days`).
-- **Snapshots** — listing (`GET /user/{id}/snapshots`), création, restauration, suppression ; suivi
-  des créations en cours.
-- **Tableau expiration & crédits** — comptes à rebours MyBox, solde, rappels avant suspension.
-- **Serveur MCP intégré** — expose l'app à Claude (statut, commandes, power, logs, métriques, SFTP).
-- **Marketplace mods/plugins** — recherche Modrinth / CurseForge / Spigot → upload SFTP.
-- **Mises à jour automatiques** — updater Tauri signé.
+### Supervision et automatisation
 
-## 🚀 Livré au-delà du plan initial
+- **Superviseur + tray** — surveille tous les serveurs, fenêtre fermée.
+- **Service d'arrière-plan** (Windows, Linux, macOS) — supervision même application fermée ou
+  session déconnectée ; l'app s'efface quand il surveille le même compte.
+- **Historique CPU/RAM/disque** — séries temporelles locales (SQLite) et graphiques.
+- **Alertes natives** — crash, seuils, échéance et suppression des MyBox (sauf renouvellement auto).
+- **Redémarrage automatique après crash** *(main)* — par serveur, délais croissants, plafond
+  horaire, dernières lignes de console jointes à l'alerte.
+- **Automatisations planifiées** *(main)* — redémarrage avec annonces aux joueurs, snapshot,
+  commandes ; exécutées par l'app ou le service, distinctes des tâches du panel web.
+- **Alertes Discord et webhooks** *(main)* — par événement, anonymisées, regroupées.
+- **Suivi de disponibilité** *(main)* — 24 h / 7 j / 30 j et journal des coupures, sans compter
+  les périodes non surveillées.
 
-- **Copilote IA multi-fournisseur** — Anthropic + tout endpoint OpenAI-compatible, plus des
-  agents CLI locaux (Claude Code / OpenCode / Gemini).
-- **MCP officiel MineStrator** — intégration du serveur MCP officiel, en plus du MCP maison.
-- **Inspecteur NBT** — arbre typé (lecture seule), vue/copie SNBT, recherche ; **carte des régions** `.mca`.
-- **Ouverture d'archives** — lecture directe de `.zip` / `.tar` / `.gz`.
-- **Export vers services de paste** — logs et fichiers vers mclo.gs / pastes.dev.
-- **Analyse de performance** — rapports Spark + docteur de démarrage.
-- **i18n & thèmes** — français / anglais, clair / sombre.
+### Serveurs
+
+- **Console live** (WebSocket Wings), autocomplétion et coloration adaptées au jeu.
+- **Fichiers SFTP complets** — éditeur, archives, inspecteur NBT, carte des régions `.mca`,
+  transferts reprenables, recherche.
+- **Paramètres `server.properties`** via l'API, valeurs secrètes masquées.
+- **Snapshots et backups**, journal d'activité, notifications de l'hébergeur.
+- **Joueurs** — kick, ban, op, whitelist.
+- **Marketplaces** — Modrinth / CurseForge / Spigot, mods Satisfactory (ficsit), Factorio,
+  Thunderstore, uMod.
+- **Adaptation par jeu** — vues, outils et commandes selon le jeu détecté.
+
+### Comptes et sécurité
+
+- **Plusieurs comptes MineStrator** et changement de compte *(main)*.
+- **Secrets en stockage sécurisé** — trousseau de l'OS, Keystore Android, fichier chiffré DPAPI
+  pour le service Windows ; aucun identifiant en clair.
+- **Mot de passe SFTP par serveur** (l'API ne le transmet plus), vérifié avant enregistrement.
+- **Vérification de l'identité du serveur SFTP** *(main)* — empreinte mémorisée, connexion bloquée
+  avant l'envoi du mot de passe si elle change.
+- **Confidentialité** — anonymisation avant tout envoi à une IA, un paste ou un webhook ;
+  journaux anonymisés ; mode « données de démo » pour les captures.
+
+### IA
+
+- **Copilote multi-fournisseur** — Anthropic, tout endpoint OpenAI-compatible, agents CLI locaux
+  (Claude Code, OpenCode, Gemini CLI) privés de shell et de disque.
+- **Serveur MCP intégré** (deny-by-default) et **MCP officiel MineStrator**.
+- **Analyse de performance** (rapports Spark) et docteur de démarrage.
+
+### Confort
+
+- **Palette de commandes Ctrl+K / ⌘K** *(main)* — serveurs, vues, actions, commandes console,
+  réglages, comptes.
+- Onglets persistants, fenêtres détachées, français / anglais, thèmes clair / sombre.
+- **Mises à jour automatiques signées** (desktop et APK Android).
+
+### Application Android
+
+- Aperçu (jauges, historique 1 h / 6 h / 24 h *(main)*, alertes récentes *(main)*), console,
+  joueurs, fichiers, sauvegardes, notifications de l'hébergeur.
+- **Paramètres du serveur, centre d'alertes, mods et plugins** *(main)*.
+- Comptes *(main)*, surveillance en arrière-plan, transferts avec notification.
+
+### Outillage
+
+- CI sur les 3 OS, audit de sécurité hebdomadaire, types TypeScript générés depuis Rust.
+- **Surveillance quotidienne de l'API MineStrator** *(main)* — contrat des réponses et structure de
+  la documentation OpenAPI ; un écart ouvre une issue.
+- **Contrôle des traductions** fr/en en CI *(main)*.
 
 ## 🔧 À finir
 
-- **Auto-restart avec backoff** — la détection de crash existe (simple alerte aujourd'hui) ;
-  reste le redémarrage automatique borné + capture de la console autour du crash.
-- **Suivi de disponibilité** — uptime %, journal des downtimes, style SLA.
-- **Console intelligente** — surlignage regex, autocomplétion des commandes MC, clic-pseudo,
-  marque-pages.
-- **Éditeurs de config en formulaire** — `server.properties`, `ops.json`, `whitelist.json` via SFTP.
-- **Finitions natives** — autostart au démarrage de session + raccourcis globaux.
+- **Valider en conditions réelles** ce qui n'a été testé qu'en CI et en simulation : installeur
+  Windows et activation du service, service installé, automatisations, multi-comptes, palette.
+- **Endpoints non documentés** — recenser ceux qu'utilise le panel web (accès SFTP, gestion des
+  MyBox…) et intégrer ceux accessibles avec une clé API.
+- **Console intelligente** — surlignage personnalisé, clic sur un pseudo, marque-pages.
+- **Éditeurs en formulaire** — `ops.json`, `whitelist.json`.
+- **Finitions natives** — lancement à l'ouverture de session, raccourcis globaux.
+- **Mobile** — disponibilité et automatisations en lecture, Copilote.
+- **Service Windows** — compte de service virtuel dédié (`NT SERVICE\…`) au lieu de `LocalService`.
+- **Signature de code** Windows et macOS (avertissements SmartScreen et Gatekeeper).
+- **TypeScript 7**, dès que SvelteKit le prendra en charge.
 
 ## 🗺️ Backlog
 
-- **Planificateur cron local** — redémarrages, annonces et snapshots programmés.
-- **Moteur de règles** — event → action (« si CPU > 90 % 5 min → restart + notif »).
+- **Moteur de règles** — généraliser le redémarrage auto : événement → action
+  (« si CPU > 90 % pendant 5 min → redémarrage + notification »).
 - **Macros de commandes** — séquences enregistrées, un clic = N commandes.
-- **Actions bulk multi-serveurs** — redémarrer tout, diffuser un message partout.
-- **Analytics joueurs** — playtime, first/last seen, pics de connexion.
-- **Sync SFTP local ↔ distant** — surveillance de dossier + diff (workflow dev de plugins).
-- **Palette de commandes (Ctrl+K)** — navigation et actions en recherche floue.
-- **Console unifiée multi-serveurs** — vue « tour de contrôle » + recherche globale des logs.
-- **Intégrations Discord / webhooks** — alertes poussées vers les communautés.
-- **Page de statut / overlay OBS** — joueurs en ligne et uptime, partageables.
-- **Multi-comptes** — plusieurs clés API, vue agrégée.
+- **Actions groupées multi-serveurs** — tout redémarrer, diffuser un message partout.
+- **Statistiques joueurs** — temps de jeu, première et dernière connexion, pics.
+- **Synchronisation SFTP local ↔ distant** — surveillance de dossier et diff (développement de
+  plugins).
+- **Console unifiée multi-serveurs** — vue « tour de contrôle » et recherche globale des logs.
+- **Page de statut / overlay OBS** — joueurs en ligne et disponibilité, partageables.
 - **Journal d'audit local** — chaque action faite via l'app, exportable.
-- **Création de serveurs par templates** — `POST /mybox/{id_mybox}/server` (+ `GET
-  /server/catalog/eggs` et `/server/catalog/locations`) + presets d'eggs réutilisables.
+- **Création de serveurs par modèles** — `POST /mybox/{id_mybox}/server` + catalogues d'eggs et de
+  localisations, préréglages réutilisables.
+- **iOS**.
