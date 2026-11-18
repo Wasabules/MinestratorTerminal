@@ -1139,6 +1139,20 @@ impl std::fmt::Debug for SftpCreds {
     }
 }
 
+/// Identité du serveur SFTP d'un serveur, pour la confirmer après un changement d'empreinte.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct SftpHostKey {
+    /// `hôte:port`.
+    pub host: String,
+    /// Empreinte mémorisée (`SHA256:…`), absente avant le premier contact.
+    pub known_fingerprint: Option<String>,
+    pub known_algorithm: Option<String>,
+    /// Empreinte présentée par le serveur lors du dernier refus, à accepter ou non.
+    pub presented_fingerprint: Option<String>,
+    pub presented_algorithm: Option<String>,
+}
+
 fn default_sftp_port() -> u16 {
     2022
 }

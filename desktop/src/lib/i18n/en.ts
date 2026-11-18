@@ -666,6 +666,19 @@ export const en: Dict = {
       forget: 'Forget',
       forgotten: 'Password forgotten for this server.',
     },
+    hostKey: {
+      title: 'The SFTP server’s identity has changed',
+      intro:
+        'The file server no longer presents the same fingerprint as in previous connections. The connection is blocked and your password was not sent.',
+      causes:
+        'This is expected if MineStrator reinstalled or moved the server. On a public or unknown network it may also be an interception attempt: if in doubt, do not accept and check with MineStrator support.',
+      host: 'Server',
+      known: 'Known fingerprint',
+      presented: 'New fingerprint',
+      none: 'None — reconnect to see it.',
+      trust: 'Trust the new fingerprint',
+      trusting: 'Saving…',
+    },
   },
   errors: {
     unauthorized: 'Key rejected: make sure it is correct and still active.',
@@ -676,6 +689,8 @@ export const en: Dict = {
     sftp_auth:
       'The SFTP server rejected the password. Check it in the “Access” tab of the MineStrator panel, then enter it again in the Files tab.',
     sftp_password_required: 'SFTP password required: enter it once in this server’s Files tab.',
+    sftp_host_key_changed:
+      'The SFTP server’s identity has changed: connection blocked. Open this server’s Files tab to check and confirm the new fingerprint.',
   },
   // Background service (machine-wide supervision) — dedicated namespace, see docs/SERVICE.md.
   service: {

@@ -3,6 +3,7 @@
   import { activeCount, uploadTo, downloadFrom, transferItems } from "../../stores/transfers.svelte";
   import TransferCenter from "../TransferCenter.svelte";
   import SftpPasswordCard from "../SftpPasswordCard.svelte";
+  import SftpHostKeyCard from "../SftpHostKeyCard.svelte";
   import { t } from "../../i18n";
   import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
@@ -42,8 +43,13 @@
   let notice = $state<string | null>(null);
   /** Mot de passe SFTP manquant ou refusé : l'API ne le transmet plus (cf. SftpPasswordCard). */
   let pwCard = $state<"required" | "rejected" | "change" | null>(null);
+  /** Identité du serveur SFTP changée : connexion bloquée jusqu'à confirmation (SftpHostKeyCard). */
+  let hostKeyCard = $state(false);
 
-  /** Affiche une erreur ; un mot de passe SFTP manquant ou refusé ouvre directement sa saisie. */
+  /**
+   * Affiche une erreur. Un mot de passe SFTP manquant ou refusé ouvre sa saisie ; une identité de
+   * serveur changée ouvre la comparaison des empreintes.
+   */
   function fail(err: unknown) {
     const kind = (err as Partial<AppError> | undefined)?.kind;
     if (kind === "sftp_password_required" || kind === "sftp_auth") {
@@ -51,7 +57,17 @@
       error = null;
       return;
     }
+    if (kind === "sftp_host_key_changed") {
+      hostKeyCard = true;
+      error = null;
+      return;
+    }
     error = humanizeError(err);
+  }
+
+  function hostKeyTrusted() {
+    hostKeyCard = false;
+    void load();
   }
 
   function passwordSaved() {
@@ -315,7 +331,9 @@
     </div>
   {/if}
 
-  {#if pwCard}
+  {#if hostKeyCard}
+    <SftpHostKeyCard {serverId} ontrusted={hostKeyTrusted} onclose={() => (hostKeyCard = false)} />
+  {:else if pwCard}
     <SftpPasswordCard {serverId} reason={pwCard} onsaved={passwordSaved} onclose={() => (pwCard = null)} />
   {/if}
   {#if notice}<p class="ok">{notice}</p>{/if}
@@ -347,7 +365,7 @@
     <p class="dim pad">…</p>
   {:else if entries.length === 0}
     <!-- Sans mot de passe, le dossier n'a pas pu être lu : « vide » serait faux. -->
-    {#if pwCard !== "required" && pwCard !== "rejected"}<p class="dim pad">{t("files.empty")}</p>{/if}
+    {#if pwCard !== "required" && pwCard !== "rejected" && !hostKeyCard}<p class="dim pad">{t("files.empty")}</p>{/if}
   {:else}
     <ul>
       {#each entries as e (e.path)}

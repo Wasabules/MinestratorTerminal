@@ -25,7 +25,7 @@ export type AppError = {
  * Discriminant d'une [`Error`], tel qu'il part dans le champ `kind` du JSON (type TypeScript
  * `AppErrorKind`). Un variant d'[`Error`] ajouté doit être rattaché ici via [`Error::error_kind`].
  */
-export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "sftp_password_required" | "service";
+export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "sftp_password_required" | "sftp_host_key_changed" | "service";
 
 // --- Compte, serveurs, journal (models.rs, games.rs) ---
 
@@ -565,6 +565,26 @@ export type SftpEntry = {
   is_dir: boolean,
   size: number,
   modified: number | null,
+};
+
+/**
+ * Identité du serveur SFTP d'un serveur, pour la confirmer après un changement d'empreinte.
+ */
+export type SftpHostKey = {
+  /**
+   * `hôte:port`.
+   */
+  host: string,
+  /**
+   * Empreinte mémorisée (`SHA256:…`), absente avant le premier contact.
+   */
+  known_fingerprint: string | null,
+  known_algorithm: string | null,
+  /**
+   * Empreinte présentée par le serveur lors du dernier refus, à accepter ou non.
+   */
+  presented_fingerprint: string | null,
+  presented_algorithm: string | null,
 };
 
 /**

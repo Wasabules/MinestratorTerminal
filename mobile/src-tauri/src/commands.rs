@@ -4,7 +4,7 @@
 
 use minestrator_core::{
     ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, LiveLight, LivePlayers, MetricSample, ServerDetails,
-    ServersOverview, SftpEntry, Snapshot, UserNotification, UserProfile,
+    ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -183,6 +183,22 @@ pub fn sftp_forget_password(core: State<'_, Arc<Core>>, server_id: i64) -> Resul
 #[tauri::command]
 pub fn sftp_has_password(core: State<'_, Arc<Core>>, server_id: i64) -> bool {
     core.has_sftp_password(server_id)
+}
+
+/// Identité du serveur SFTP (empreinte mémorisée, et celle présentée lors d'un refus).
+#[tauri::command]
+pub async fn sftp_host_key(core: State<'_, Arc<Core>>, server_id: i64) -> Result<SftpHostKey, Error> {
+    core.sftp_host_key(server_id).await
+}
+
+/// Accepte la nouvelle empreinte présentée par le serveur SFTP (après confirmation explicite).
+#[tauri::command]
+pub async fn sftp_trust_host_key(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    fingerprint: String,
+) -> Result<(), Error> {
+    core.trust_sftp_host_key(server_id, &fingerprint).await
 }
 
 #[tauri::command]

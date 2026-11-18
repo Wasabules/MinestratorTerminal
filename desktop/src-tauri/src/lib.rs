@@ -154,6 +154,8 @@ pub fn run() {
             commands::sftp_set_password,
             commands::sftp_forget_password,
             commands::sftp_has_password,
+            commands::sftp_host_key,
+            commands::sftp_trust_host_key,
             commands::get_copilot_config,
             commands::set_copilot_config,
             commands::has_copilot_key,

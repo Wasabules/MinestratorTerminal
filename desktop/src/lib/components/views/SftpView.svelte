@@ -30,6 +30,7 @@
   } from '#lib/sftp/columns.svelte.ts';
   import FileEditor from './FileEditor.svelte';
   import SftpPasswordDialog from './SftpPasswordDialog.svelte';
+  import SftpHostKeyDialog from './SftpHostKeyDialog.svelte';
   import NbtTree from '../NbtTree.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
@@ -42,6 +43,9 @@
   // Mot de passe SFTP manquant ou refusé : l'API ne le transmet plus (cf. SftpPasswordDialog).
   let needPassword = $state(false);
   let pwDialog = $state<'required' | 'rejected' | 'change' | null>(null);
+  // Identité du serveur SFTP changée : connexion bloquée jusqu'à confirmation (SftpHostKeyDialog).
+  let hostKeyBlocked = $state(false);
+  let hostKeyDialog = $state(false);
   let dragOver = $state(false);
   let colsMenu = $state(false);
 
@@ -145,13 +149,26 @@
     return out;
   }
 
-  /** Affiche une erreur ; un mot de passe SFTP manquant ou refusé ouvre directement sa saisie. */
+  /**
+   * Affiche une erreur. Un mot de passe SFTP manquant ou refusé ouvre directement sa saisie ; une
+   * identité de serveur changée ouvre la comparaison des empreintes.
+   */
   function fail(e: unknown) {
     error = humanizeError(e);
     if (isAppError(e) && (e.kind === 'sftp_password_required' || e.kind === 'sftp_auth')) {
       needPassword = true;
       pwDialog = e.kind === 'sftp_auth' ? 'rejected' : 'required';
+    } else if (isAppError(e) && e.kind === 'sftp_host_key_changed') {
+      hostKeyBlocked = true;
+      hostKeyDialog = true;
     }
+  }
+
+  function hostKeyTrusted() {
+    hostKeyDialog = false;
+    hostKeyBlocked = false;
+    error = null;
+    void load(cwd);
   }
 
   function passwordSaved() {
@@ -165,6 +182,7 @@
     loading = true;
     error = null;
     needPassword = false;
+    hostKeyBlocked = false;
     try {
       entries = await api.sftpList(serverId, path);
       cwd = path;
@@ -646,6 +664,8 @@
       {error}
       {#if needPassword}
         <button class="btn small pwbtn" onclick={() => (pwDialog = 'required')}><Icon name="key" size={13} /> {t('sftp.password.button')}</button>
+      {:else if hostKeyBlocked}
+        <button class="btn small pwbtn" onclick={() => (hostKeyDialog = true)}>{t('sftp.hostKey.title')}</button>
       {/if}
     </div>
   {/if}
@@ -693,7 +713,7 @@
       <div class="center"><span class="spinner"></span></div>
     {:else if sorted.length === 0}
       <!-- Sans mot de passe, le dossier n'a pas pu être lu : « vide » serait faux. -->
-      {#if !needPassword}<div class="center dim">{t('sftp.empty')}</div>{/if}
+      {#if !needPassword && !hostKeyBlocked}<div class="center dim">{t('sftp.empty')}</div>{/if}
     {:else}
       {#each sorted as entry (entry.path)}
         <div class="row" class:sel={selected.has(entry.path)}>
@@ -740,6 +760,9 @@
   {#if dragOver}<div class="dropzone">{t('sftp.dropHere')}</div>{/if}
   {#if pwDialog}
     <SftpPasswordDialog {serverId} reason={pwDialog} onsaved={passwordSaved} onclose={() => (pwDialog = null)} />
+  {/if}
+  {#if hostKeyDialog}
+    <SftpHostKeyDialog {serverId} ontrusted={hostKeyTrusted} onclose={() => (hostKeyDialog = false)} />
   {/if}
 </div>
 

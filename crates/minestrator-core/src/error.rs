@@ -43,6 +43,11 @@ pub enum Error {
     #[error("Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.")]
     SftpPasswordRequired,
 
+    /// L'empreinte de la clé d'hôte du serveur SFTP n'est plus celle mémorisée : connexion bloquée
+    /// avant l'envoi du mot de passe, jusqu'à ce que l'utilisateur accepte la nouvelle.
+    #[error("L'identité du serveur SFTP {host} a changé depuis la dernière connexion (réinstallation du serveur, ou tentative d'interception). Connexion bloquée : vérifie et confirme la nouvelle empreinte dans l'onglet Fichiers du serveur (Minestrator Terminal).")]
+    SftpHostKeyChanged { host: String },
+
     /// Service d'arrière-plan (IPC, installation, élévation). `code` est un identifiant stable
     /// (`unreachable`, `forbidden`, `elevation_cancelled`…) que l'UI traduit via `service.errors.*`.
     #[error("Service d'arrière-plan ({code}) : {detail}")]
@@ -75,6 +80,7 @@ pub enum ErrorKind {
     Api,
     SftpAuth,
     SftpPasswordRequired,
+    SftpHostKeyChanged,
     /// Service d'arrière-plan : le sous-cas est dans `code` (cf. [`ErrorPayload::code`]).
     Service,
 }
@@ -93,6 +99,7 @@ impl ErrorKind {
             ErrorKind::Api => "api",
             ErrorKind::SftpAuth => "sftp_auth",
             ErrorKind::SftpPasswordRequired => "sftp_password_required",
+            ErrorKind::SftpHostKeyChanged => "sftp_host_key_changed",
             ErrorKind::Service => "service",
         }
     }
@@ -127,6 +134,7 @@ impl Error {
             Error::Api { .. } => ErrorKind::Api,
             Error::SftpAuth => ErrorKind::SftpAuth,
             Error::SftpPasswordRequired => ErrorKind::SftpPasswordRequired,
+            Error::SftpHostKeyChanged { .. } => ErrorKind::SftpHostKeyChanged,
             Error::Service { .. } => ErrorKind::Service,
         }
     }
@@ -195,6 +203,11 @@ mod tests {
                 Error::SftpAuth,
                 "sftp_auth",
                 "Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l'onglet « Accès » du panel MineStrator.",
+            ),
+            (
+                Error::SftpHostKeyChanged { host: "node1.exemple:2022".into() },
+                "sftp_host_key_changed",
+                "L'identité du serveur SFTP node1.exemple:2022 a changé depuis la dernière connexion (réinstallation du serveur, ou tentative d'interception). Connexion bloquée : vérifie et confirme la nouvelle empreinte dans l'onglet Fichiers du serveur (Minestrator Terminal).",
             ),
             (
                 Error::SftpPasswordRequired,
