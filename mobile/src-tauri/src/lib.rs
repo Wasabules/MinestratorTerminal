@@ -129,6 +129,8 @@ pub fn run() {
             commands::sftp_forget_password,
             commands::sftp_has_password,
             commands::sftp_host_key,
+            commands::panel_schedules,
+            commands::panel_schedule_update,
             commands::sftp_trust_host_key,
             commands::sftp_read_text,
             commands::sftp_write_text,

@@ -12,8 +12,9 @@ use crate::models::{
     ServerProperties, ServersData, ServersOverview,
     SftpCreds, SftpData, Snapshot, SnapshotsData, Startup, StartupData, UserData,
     UserNotification, UserProfile,
-    WsCredentials, WsCredentialsData,
+    WsBulkData, WsCredentials, WsCredentialsData,
 };
+use crate::panel_schedules::{PanelSchedule, PanelScheduleInput, PanelTaskInput, SchedulesData};
 use base64::Engine;
 use reqwest::{header, Response, StatusCode};
 use serde::de::DeserializeOwned;
@@ -23,6 +24,40 @@ use serde_json::{json, Value};
 #[derive(Clone)]
 pub struct ApiClient {
     http: reqwest::Client,
+    ws_bulk: std::sync::Arc<WsBulkCache>,
+}
+
+/// Durée pendant laquelle les jetons WebSocket obtenus en groupe sont réutilisés : assez pour
+/// servir toutes les connexions qui expirent ensemble, bien moins que la vie d'un jeton.
+const WS_BULK_TTL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Jetons WebSocket de tous les serveurs, obtenus en UN appel et partagés quelques secondes.
+///
+/// Le superviseur tient une connexion par serveur ; leurs jetons expirent ensemble, et chacune
+/// redemandait le sien (`GET /server/{id}/websocket`) : N requêtes à chaque expiration. Le verrou
+/// asynchrone fait qu'une seule d'entre elles interroge l'API, les autres lisent le résultat.
+#[derive(Default)]
+struct WsBulkCache {
+    state: std::sync::Mutex<WsBulkState>,
+    refresh: tokio::sync::Mutex<()>,
+}
+
+#[derive(Default)]
+struct WsBulkState {
+    /// Clé API pour laquelle `user_id` et `creds` valent (changement de compte → tout est revu).
+    key: String,
+    user_id: Option<i64>,
+    fetched_at: Option<std::time::Instant>,
+    creds: std::collections::HashMap<i64, WsCredentials>,
+}
+
+impl WsBulkState {
+    fn fresh(&self, key: &str, id: i64) -> Option<WsCredentials> {
+        if self.key != key || self.fetched_at.is_none_or(|t| t.elapsed() > WS_BULK_TTL) {
+            return None;
+        }
+        self.creds.get(&id).filter(|c| c.token.is_some()).cloned()
+    }
 }
 
 impl ApiClient {
@@ -31,7 +66,7 @@ impl ApiClient {
             .user_agent(USER_AGENT)
             .build()
             .expect("construction du client HTTP");
-        Self { http }
+        Self { http, ws_bulk: Default::default() }
     }
 
     fn bearer(token: &str) -> String {
@@ -277,9 +312,51 @@ impl ApiClient {
     /// Identifiants WebSocket seuls — réponse ~1 Kio, contre plusieurs Kio pour `get_server`
     /// (qui embarque SFTP, historique, ports…). À préférer partout où seul le couple url/token
     /// compte, en particulier au rafraîchissement sur `token expiring`.
+    /// Identifiants WebSocket d'un serveur (rafraîchissement de jeton). Servis par le cache groupé
+    /// ([`WsBulkCache`]) ; repli sur l'endpoint par serveur si le serveur n'y figure pas (accès de
+    /// sous-utilisateur, serveur ajouté entre-temps) ou si l'endpoint groupé échoue.
     pub async fn get_ws_credentials(&self, token: &str, id: i64) -> Result<WsCredentials> {
+        if let Some(c) = self.ws_bulk.state.lock().unwrap().fresh(token, id) {
+            return Ok(c);
+        }
+        {
+            let _one_at_a_time = self.ws_bulk.refresh.lock().await;
+            // Une autre connexion a peut-être rafraîchi pendant l'attente du verrou.
+            if let Some(c) = self.ws_bulk.state.lock().unwrap().fresh(token, id) {
+                return Ok(c);
+            }
+            match self.refresh_ws_bulk(token).await {
+                Ok(()) => {
+                    if let Some(c) = self.ws_bulk.state.lock().unwrap().fresh(token, id) {
+                        return Ok(c);
+                    }
+                }
+                Err(e @ (Error::Unauthorized | Error::RateLimited)) => return Err(e),
+                Err(e) => tracing::debug!("jetons WebSocket groupés indisponibles, repli : {e}"),
+            }
+        }
         let raw: WsCredentialsData = self.get(token, &format!("/server/{id}/websocket")).await?;
         Ok(WsCredentials::from(raw))
+    }
+
+    /// Recharge le cache groupé : `GET /user/{id}/servers/websocket` (l'id utilisateur est résolu
+    /// une fois par clé).
+    async fn refresh_ws_bulk(&self, token: &str) -> Result<()> {
+        let cached_uid = {
+            let st = self.ws_bulk.state.lock().unwrap();
+            (st.key == token).then_some(st.user_id).flatten()
+        };
+        let uid = match cached_uid {
+            Some(uid) => uid,
+            None => self.get_user(token).await?.id,
+        };
+        let data: WsBulkData = self.get(token, &format!("/user/{uid}/servers/websocket")).await?;
+        let mut st = self.ws_bulk.state.lock().unwrap();
+        st.key = token.to_string();
+        st.user_id = Some(uid);
+        st.fetched_at = Some(std::time::Instant::now());
+        st.creds = data.servers.into_iter().map(|e| (e.id, WsCredentials::from(e))).collect();
+        Ok(())
     }
 
     /// Compte de joueurs de plusieurs serveurs en un appel. Ne renvoie **que** les joueurs :
@@ -593,6 +670,68 @@ impl ApiClient {
         .await
     }
 
+    // --- Tâches planifiées du panel (non documentées, cf. panel_schedules.rs) ------
+
+    pub async fn panel_schedules(&self, token: &str, server_id: i64) -> Result<Vec<PanelSchedule>> {
+        let data: SchedulesData = self.get(token, &format!("/server/{server_id}/schedules")).await?;
+        Ok(data.sorted())
+    }
+
+    pub async fn create_panel_schedule(&self, token: &str, server_id: i64, input: &PanelScheduleInput) -> Result<()> {
+        self.post_ok(token, &format!("/server/{server_id}/schedule"), &input.body()).await
+    }
+
+    pub async fn update_panel_schedule(
+        &self,
+        token: &str,
+        server_id: i64,
+        schedule_id: i64,
+        input: &PanelScheduleInput,
+    ) -> Result<()> {
+        self.patch_ok(token, &format!("/server/{server_id}/schedule/{schedule_id}"), &input.body()).await
+    }
+
+    pub async fn delete_panel_schedule(&self, token: &str, server_id: i64, schedule_id: i64) -> Result<()> {
+        self.send_job_no_body(reqwest::Method::DELETE, token, &format!("/server/{server_id}/schedule/{schedule_id}"))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn add_panel_task(&self, token: &str, server_id: i64, schedule_id: i64, input: &PanelTaskInput) -> Result<()> {
+        self.post_ok(token, &format!("/server/{server_id}/schedule/{schedule_id}/task"), &input.body()).await
+    }
+
+    pub async fn update_panel_task(
+        &self,
+        token: &str,
+        server_id: i64,
+        schedule_id: i64,
+        task_id: i64,
+        input: &PanelTaskInput,
+    ) -> Result<()> {
+        self.patch_ok(token, &format!("/server/{server_id}/schedule/{schedule_id}/task/{task_id}"), &input.body())
+            .await
+    }
+
+    pub async fn delete_panel_task(&self, token: &str, server_id: i64, schedule_id: i64, task_id: i64) -> Result<()> {
+        self.send_job_no_body(
+            reqwest::Method::DELETE,
+            token,
+            &format!("/server/{server_id}/schedule/{schedule_id}/task/{task_id}"),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    pub async fn reorder_panel_tasks(&self, token: &str, server_id: i64, schedule_id: i64, task_ids: &[i64]) -> Result<()> {
+        self.patch_ok(
+            token,
+            &format!("/server/{server_id}/schedule/{schedule_id}/tasks/order"),
+            &json!({ "task_ids": task_ids }),
+        )
+        .await
+    }
+
     /// Identifiants SFTP d'un serveur.
     ///
     /// `GET /server/{id}/sftp` (non documenté, utilisé par le panel web) est le seul endpoint qui
@@ -761,6 +900,23 @@ mod tests {
             Err(Error::Unexpected(m)) => assert_eq!(m, "source marketplace inconnue : nexus"),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn grouped_ws_tokens_are_served_only_fresh_and_for_the_same_key() {
+        let creds = |t: Option<&str>| WsCredentials { url: Some("wss://n".into()), token: t.map(Into::into) };
+        let mut st = WsBulkState {
+            key: "cle-a".into(),
+            user_id: Some(1),
+            fetched_at: Some(std::time::Instant::now()),
+            creds: [(10, creds(Some("jwt"))), (11, creds(None))].into_iter().collect(),
+        };
+        assert_eq!(st.fresh("cle-a", 10).and_then(|c| c.token).as_deref(), Some("jwt"));
+        assert!(st.fresh("cle-b", 10).is_none(), "autre clé : rien ne fuit d'un compte à l'autre");
+        assert!(st.fresh("cle-a", 11).is_none(), "sans jeton : repli sur l'endpoint par serveur");
+        assert!(st.fresh("cle-a", 12).is_none(), "serveur absent de la réponse groupée");
+        st.fetched_at = std::time::Instant::now().checked_sub(WS_BULK_TTL + std::time::Duration::from_secs(1));
+        assert!(st.fetched_at.is_none() || st.fresh("cle-a", 10).is_none(), "périmé");
     }
 
     #[tokio::test]

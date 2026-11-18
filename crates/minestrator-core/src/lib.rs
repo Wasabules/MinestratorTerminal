@@ -35,6 +35,7 @@ mod models;
 mod mods;
 mod nbt;
 mod official_mcp;
+pub mod panel_schedules;
 mod paste;
 mod perf;
 mod persist;
@@ -72,6 +73,7 @@ pub use ficsit::{
     FicsitVersion, SmlTarget, SmlVersion,
 };
 pub use games::GameCapabilities;
+pub use panel_schedules::{PanelCron, PanelSchedule, PanelScheduleInput, PanelTask, PanelTaskInput};
 pub use util::data_dir;
 /// Base de l'API MineStrator (outillage : contrôle de contrat `examples/api_contract.rs`).
 pub use config::API_BASE_URL;
@@ -529,6 +531,52 @@ impl Core {
     /// Réglages du serveur (`server.properties`), sans SFTP.
     pub async fn server_properties(&self, id: i64) -> Result<ServerProperties> {
         self.api.get_properties(&self.token()?, id).await
+    }
+
+    // --- Tâches planifiées du panel MineStrator (exécutées par l'hébergeur) --------
+
+    /// Tâches planifiées du panel d'un serveur, actions triées dans l'ordre d'exécution.
+    pub async fn panel_schedules(&self, id: i64) -> Result<Vec<PanelSchedule>> {
+        self.api.panel_schedules(&self.token()?, id).await
+    }
+
+    /// Crée une tâche planifiée (saisie vérifiée avant envoi).
+    pub async fn create_panel_schedule(&self, id: i64, input: PanelScheduleInput) -> Result<()> {
+        let input = input.validated()?;
+        self.api.create_panel_schedule(&self.token()?, id, &input).await
+    }
+
+    /// Modifie une tâche planifiée (nom, planification, activation).
+    pub async fn update_panel_schedule(&self, id: i64, schedule_id: i64, input: PanelScheduleInput) -> Result<()> {
+        let input = input.validated()?;
+        self.api.update_panel_schedule(&self.token()?, id, schedule_id, &input).await
+    }
+
+    pub async fn delete_panel_schedule(&self, id: i64, schedule_id: i64) -> Result<()> {
+        self.api.delete_panel_schedule(&self.token()?, id, schedule_id).await
+    }
+
+    /// Ajoute une action à la fin d'une tâche planifiée.
+    pub async fn add_panel_task(&self, id: i64, schedule_id: i64, input: PanelTaskInput) -> Result<()> {
+        let input = input.validated()?;
+        self.api.add_panel_task(&self.token()?, id, schedule_id, &input).await
+    }
+
+    pub async fn update_panel_task(&self, id: i64, schedule_id: i64, task_id: i64, input: PanelTaskInput) -> Result<()> {
+        let input = input.validated()?;
+        self.api.update_panel_task(&self.token()?, id, schedule_id, task_id, &input).await
+    }
+
+    pub async fn delete_panel_task(&self, id: i64, schedule_id: i64, task_id: i64) -> Result<()> {
+        self.api.delete_panel_task(&self.token()?, id, schedule_id, task_id).await
+    }
+
+    /// Réordonne les actions d'une tâche planifiée (`task_ids` dans le nouvel ordre).
+    pub async fn reorder_panel_tasks(&self, id: i64, schedule_id: i64, task_ids: Vec<i64>) -> Result<()> {
+        if task_ids.is_empty() {
+            return Ok(());
+        }
+        self.api.reorder_panel_tasks(&self.token()?, id, schedule_id, &task_ids).await
     }
 
     /// Modifie **un** réglage existant ; effet au prochain démarrage.

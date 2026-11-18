@@ -26,6 +26,13 @@ use tokio::sync::{broadcast, mpsc, Notify};
 const SAMPLE_EVERY_S: i64 = 10;
 const RETENTION_S: i64 = 14 * 24 * 3600;
 const POLL_EVERY_S: u64 = 60;
+/// Intervalle de relecture des limites CPU/disque d'un serveur (elles ne changent qu'avec l'offre).
+const LIMITS_REFRESH_S: i64 = 30 * 60;
+
+/// Faut-il relire les limites d'un serveur ? Oui si jamais lues, ou lues il y a trop longtemps.
+fn limits_due(last_read: Option<i64>, now: i64) -> bool {
+    last_read.is_none_or(|t| now - t >= LIMITS_REFRESH_S)
+}
 const CRIT_THRESHOLD: f64 = 98.0;
 const THRESHOLD_COOLDOWN_S: i64 = 600;
 const CRASH_COOLDOWN_S: i64 = 120;
@@ -387,6 +394,10 @@ impl Supervisor {
         let state = self.state.clone();
         tokio::spawn(async move {
             let mut opened: HashSet<i64> = HashSet::new();
+            // Limites CPU/disque relues au plus toutes les LIMITS_REFRESH_S par serveur : elles ne
+            // changent qu'avec l'offre, et les relire à chaque tour coûtait une requête par serveur
+            // et par minute.
+            let mut limits_read: HashMap<i64, i64> = HashMap::new();
             // Id utilisateur résolu une fois PAR CLÉ (stable) → pas de GET /user à chaque tour de
             // poll ; une nouvelle clé (éventuellement d'un autre compte) force une résolution.
             let mut user: Option<(String, i64)> = None;
@@ -461,13 +472,18 @@ impl Supervisor {
                             state.forget_state(id);
                             opened.remove(&id);
                         }
+                        limits_read.retain(|id, _| desired.contains(id));
                         for id in &desired {
+                            if !limits_due(limits_read.get(id).copied(), now_secs()) {
+                                continue;
+                            }
                             if let Ok(ll) = api.get_live_light(&token, *id).await {
                                 state
                                     .limits
                                     .lock()
                                     .unwrap()
                                     .insert(*id, (ll.cpu.limit, ll.disk.limit));
+                                limits_read.insert(*id, now_secs());
                             }
                         }
                     }
@@ -744,6 +760,13 @@ fn monitor_id(conn_id: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn server_limits_are_reread_only_when_unknown_or_stale() {
+        assert!(limits_due(None, 1_000), "jamais lues");
+        assert!(!limits_due(Some(1_000), 1_000 + 60), "lues il y a une minute");
+        assert!(limits_due(Some(1_000), 1_000 + LIMITS_REFRESH_S), "lues il y a 30 minutes");
+    }
     use crate::events::ConsoleStats;
     use std::path::PathBuf;
 

@@ -43,6 +43,8 @@ import type {
   ServersOverview,
   SftpEntry,
   SftpHostKey,
+  PanelSchedule,
+  PanelScheduleInput,
   SftpSearchResult,
   Snapshot,
   UpdateInfo,
@@ -216,6 +218,11 @@ export const api = {
   sftpHasPassword: (serverId: number) => invoke<boolean>("sftp_has_password", { serverId }),
   /** Identité du serveur SFTP : empreinte mémorisée et, après un refus, celle présentée. */
   sftpHostKey: (serverId: number) => invoke<SftpHostKey>("sftp_host_key", { serverId }),
+
+  // --- Tâches planifiées du panel MineStrator (lecture + activation) ---
+  panelSchedules: (serverId: number) => invoke<PanelSchedule[]>("panel_schedules", { serverId }),
+  panelScheduleUpdate: (serverId: number, scheduleId: number, input: PanelScheduleInput) =>
+    invoke<void>("panel_schedule_update", { serverId, scheduleId, input }),
   /** Accepte l'empreinte présentée par le serveur (exactement celle affichée à l'utilisateur). */
   sftpTrustHostKey: (serverId: number, fingerprint: string) =>
     invoke<void>("sftp_trust_host_key", { serverId, fingerprint }),

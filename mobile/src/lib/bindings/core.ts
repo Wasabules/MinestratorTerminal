@@ -592,6 +592,87 @@ export type SftpHostKey = {
   presented_algorithm: string | null,
 };
 
+// --- Tâches planifiées du panel MineStrator (panel_schedules.rs) ---
+
+/**
+ * Expression cron en cinq champs, telle que l'API la renvoie et l'attend.
+ */
+export type PanelCron = {
+  minute: string,
+  hour: string,
+  day_of_month: string,
+  month: string,
+  day_of_week: string,
+};
+
+/**
+ * Une action d'une tâche planifiée.
+ */
+export type PanelTask = {
+  id: number,
+  /**
+   * Ordre d'exécution (croissant).
+   */
+  sequence_id: number,
+  /**
+   * `command` ou `power`.
+   */
+  action: string,
+  /**
+   * Texte de la commande, ou action d'alimentation.
+   */
+  payload: string,
+  /**
+   * Délai en secondes après l'action précédente (ou le déclenchement, pour la première).
+   */
+  time_offset: number,
+  continue_on_failure: boolean,
+};
+
+/**
+ * Une tâche planifiée du panel.
+ */
+export type PanelSchedule = {
+  id: number,
+  name: string,
+  cron: PanelCron,
+  is_active: boolean,
+  only_when_online: boolean,
+  /**
+   * Exécution en cours côté hébergeur.
+   */
+  is_processing: boolean,
+  next_run_at: string | null,
+  last_run_at: string | null,
+  /**
+   * Actions, triées par `sequence_id` à la lecture.
+   */
+  tasks: Array<PanelTask>,
+};
+
+/**
+ * Saisie d'une tâche planifiée (création ou modification).
+ */
+export type PanelScheduleInput = {
+  name: string,
+  cron: PanelCron,
+  is_active: boolean,
+  only_when_online: boolean,
+};
+
+/**
+ * Saisie d'une action (ajout ou modification).
+ */
+export type PanelTaskInput = {
+  /**
+   * `command` ou `power`.
+   */
+  action: string,
+  payload: string,
+  time_offset: number,
+  continue_on_failure: boolean,
+};
+
 /**
  * Une entrée d'archive (pour l'UI, façon [`crate::models::SftpEntry`] mais interne à l'archive).
  */
