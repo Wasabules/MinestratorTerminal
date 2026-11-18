@@ -55,6 +55,9 @@ zip = { version = "9.7", default-features = false, features = ["deflate"] }
 
 # Décodage NBT (`.dat` Minecraft : level.dat, playerdata, structures) → JSON lisible. Pur Rust.
 fastnbt = "2"
+# Descripteurs de mods Forge/NeoForge (`META-INF/mods.toml`) lus par `check_plugin_deps`
+# (`jar_meta.rs`). Déjà dans l'arbre via Tauri ; sans écriture ni affichage.
+toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
 
 # Mods Satisfactory (ficsit.app) : vérification d'intégrité sha256 des artefacts + résolution des
 # contraintes de versions (SML/dépendances, syntaxe semver `^3.12.0`).

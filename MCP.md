@@ -47,14 +47,14 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (59)
+## 5. Capacités — catalogue d'outils (73)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **35 outils de lecture**
-> + **24 modifiants** (dont 7 d'infrastructure MyBox, `INFRA_TOOLS`). Un test vérifie que chaque
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **40 outils de lecture**
+> + **33 modifiants** (dont 17 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage). Un test vérifie que chaque
 > outil listé est classé lecture **ou** écriture, et que chaque outil classé a son schéma.
 
 #### Découverte & état
@@ -211,6 +211,18 @@ donnés au Copilote (il lit du contenu non fiable et n'agit que sur un serveur),
 (`LOCAL_KEEP_TOOLS`) ; données au Copilote, elles peuvent lire d'autres serveurs que celui de la
 session.
 
+#### Contenu, monde et audit
+
+Absents du MCP officiel : gardés par le Copilote quand l'officiel gère le reste (`LOCAL_KEEP_TOOLS`),
+réservés à Minecraft côté Copilote. Lecture seule ; constats triés **critique / important / info**,
+chacun avec sa recommandation ; sorties anonymisées comme les autres lectures.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `check_plugin_deps` | | `server_id`, `details?` | **Dépendances** des plugins et mods (Minecraft Java) d'après le descripteur de chaque `.jar` de `plugins/` et `mods/` (`plugin.yml`, `paper-plugin.yml`, `bungee.yml`, `velocity-plugin.json`, `fabric.mod.json`, `quilt.mod.json`, `META-INF/mods.toml`, `META-INF/neoforge.mods.toml`, `mcmod.info`) : dépendance obligatoire manquante ou désactivée, optionnelle absente (info), version de Minecraft, d'`api-version` ou de dépendance incompatible avec le serveur (`GET /server/{id}/minecraft_version`), doublons, jar d'une autre plateforme (plugin Velocity sur Paper, mod Forge sur Fabric…) ou du mauvais dossier, mod côté client, Folia, fichiers `.disabled`, jars illisibles. Plateforme de l'hébergeur, ou **déduite du contenu** (`explicit_jar`, dit dans la sortie). Lecture **à la demande** : fin d'archive, répertoire central et descripteurs, jamais le jar entier ; plafonds affichés (400 jars, répertoire central 4 Mio, descripteur 512 Kio, 192 Mio lus au total). `details` ajoute l'inventaire (id, version, plateforme, dépendances). |
+| `world_info` | | `server_id`, `world?` | **Monde** (Minecraft Java) lu dans `level.dat` et, depuis 26.1, dans `data/minecraft/*.dat` : nom, **graine** (`WorldGenSettings.seed` ou `RandomSeed`), version (nom + DataVersion), mode, difficulté, hardcore, apparition, jour et heure, dernière partie, météo, bordure, règles de jeu, datapacks activés/désactivés, **taille de chaque dimension** (fichiers de région de l'overworld, du Nether et de l'End par SFTP, dossier de la dimension et total du monde par l'endpoint d'espace disque) et autres dimensions. Monde actif (`level-name`) par défaut. |
+| `audit_server` | | `server_id`, `force_updates?` | **Audit de configuration et de sécurité** : `online-mode=false` (sauf derrière Velocity avec secret ou BungeeCord avec BungeeGuard, d'après `spigot.yml`/`paper-global.yml` ; atténué par un plugin d'authentification), RCON et force de son mot de passe (**qualifiée** vide/faible/correct, jamais affichée), liste blanche, `enable-query`, distances de vue/simulation face à la RAM, nombre d'opérateurs (`ops.json`), `-Xmx` face à la RAM du conteneur, mises à jour disponibles (vérification sans effet de bord, propositions d'une autre plateforme écartées), Java face à Minecraft. Contrôles selon l'édition (Bedrock : authentification et liste blanche) ; autre jeu : « non géré ». Liste aussi les contrôles sans remarque et ceux non vérifiés. |
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -243,6 +255,8 @@ session.
 - **Plusieurs serveurs** : `copy_between_servers` (copie de serveur à serveur, par archive pour un
   monde), `diff_files` (comparer configs ou dossiers), `find_player` (un joueur sur tout le compte),
   `broadcast_command` (une commande à plusieurs serveurs)
+- **Contenu, monde et audit** : `check_plugin_deps` (dépendances des jars), `world_info` (`level.dat`,
+  dimensions), `audit_server` (configuration et sécurité)
 
 ## 6. Contrôle & sécurité (réglages)
 

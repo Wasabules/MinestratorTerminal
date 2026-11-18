@@ -150,6 +150,11 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     // Plusieurs serveurs (fleet.rs) : lectures qui peuvent déborder du serveur de la session.
     "diff_files",
     "find_player",
+    // Contenu, monde et audit (plugin_deps.rs, world.rs, server_audit.rs) : lectures seules
+    // (jars lus à la demande, level.dat, réglages ; vérification des mises à jour sans effet).
+    "check_plugin_deps",
+    "world_info",
+    "audit_server",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -261,6 +266,10 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "diagnose_startup",
     "inspect_region",
     "repair_region",
+    // Contenu, monde et audit : Minecraft seulement (l'audit dit « jeu non géré » ailleurs).
+    "check_plugin_deps",
+    "world_info",
+    "audit_server",
 ];
 
 /// Outils propres à **Satisfactory** (mods via ficsit.app).
@@ -318,6 +327,11 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     // Plusieurs serveurs (fleet.rs) : comparaison et recherche de joueur, hors catalogue de l'officiel.
     "diff_files",
     "find_player",
+    // Contenu, monde et audit : dépendances des jars, level.dat, audit de configuration — hors
+    // catalogue de l'officiel.
+    "check_plugin_deps",
+    "world_info",
+    "audit_server",
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -529,6 +543,9 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "list_players" => 30,
         "list_servers" => 10,
         "server_status" => 5,
+        // Contenu, monde et audit : lisent des dizaines de fichiers (jars, .dat, réglages).
+        "check_plugin_deps" => 60,
+        "world_info" | "audit_server" => 30,
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1304,6 +1321,26 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "find_player" => crate::fleet::find_player_tool(core, &args).await.map_err(es),
         "broadcast_command" => crate::fleet::broadcast_tool(core, &args).await.map_err(es),
 
+        // --- Contenu, monde et audit (plugin_deps.rs, world.rs, server_audit.rs) ------------
+        // Sorties déjà anonymisées (redact_ai) par chaque outil ; aucun secret n'y figure.
+        "check_plugin_deps" => {
+            let id = req_i64(&args, "server_id")?;
+            let details = args.get("details").and_then(Value::as_bool).unwrap_or(false);
+            core.check_plugin_deps(id, details).await.map_err(es)
+        }
+
+        "world_info" => {
+            let id = req_i64(&args, "server_id")?;
+            let world = args.get("world").and_then(Value::as_str).map(str::to_string);
+            crate::world::world_info(core, id, world.as_deref()).await
+        }
+
+        "audit_server" => {
+            let id = req_i64(&args, "server_id")?;
+            let force = args.get("force_updates").and_then(Value::as_bool).unwrap_or(false);
+            core.audit_server(id, force).await.map_err(es)
+        }
+
         _ => Err(format!("outil inconnu : {name}")),
     }
 }
@@ -1462,6 +1499,10 @@ fn build_tool_list() -> Value {
         tool("diff_files", "COMPARE un fichier ou un dossier entre deux serveurs, ou deux chemins d'un même serveur (A = `server_id`/`path`, référence ; B = `other_server_id`/`other_path`, par défaut le même serveur ou le même chemin). Fichiers texte : diff unifié avec contexte (B par rapport à A, 400 lignes au plus). Binaires ou > 1 Mio : signalés sans diff. Dossiers : ajoutés, absents, modifiés (taille, date), type différent ; premier niveau, ou `recursive=true` (5000 entrées par côté au plus). Secrets des configs masqués ([SECRET]). Lecture seule ; peut lire un autre serveur que celui de la session.", obj(&[("server_id", prop_int("ID du serveur A (référence)")), ("path", prop_str("Chemin sur A")), ("other_server_id", prop_int("ID du serveur B (défaut : le même que A)")), ("other_path", prop_str("Chemin sur B (défaut : le même que sur A)")), ("recursive", prop_bool("Dossiers : descendre dans les sous-dossiers (défaut false)")), ("context_lines", prop_int("Lignes de contexte du diff (défaut 3, max 10)"))], &["server_id", "path"])),
         tool("find_player", "RETROUVE un joueur Minecraft (Java) sur TOUS les serveurs du compte : pseudo exact, début de pseudo (2 caractères au moins), UUID, ou alias d'anonymisation (`joueur-xxxxxx`). Pour chaque serveur où il est déjà venu : connecté ou non, dernière venue, temps de jeu cumulé, op/whitelist/banni ; serveurs non fouillés (autres jeux, indisponibles) listés avec la raison. Pseudos remplacés par des alias stables si l'anonymisation IA est active (comme list_players). Lecture seule ; parcourt aussi d'autres serveurs que celui de la session.", obj(&[("query", prop_str("Pseudo, début de pseudo, UUID ou alias")), ("exact", prop_bool("Pseudo exact seulement (défaut false : début de pseudo)")), ("server_ids", json!({ "type": "array", "items": { "type": "integer" }, "description": "Restreindre à ces serveurs (défaut : tous)" })), ("limit", prop_int("Joueurs détaillés (défaut 10, max 25)"))], &["query"])),
         tool("broadcast_command", "ENVOIE la même commande console à plusieurs serveurs par l'API (REST), avec un résultat serveur par serveur. Cibles : `server_ids` (20 au plus), OU `all_running=true` pour tous les serveurs démarrés — jamais déduit d'une liste vide. Par défaut seulement les serveurs démarrés (`only_running`, défaut true) ; un état illisible n'est pas envoyé. Commande non vide, sur une seule ligne. Sa sortie se lit ensuite avec read_console. ✎ (modifiant)", obj(&[("command", prop_str("Commande console (une ligne), ex. `say Redémarrage dans 5 min`")), ("server_ids", json!({ "type": "array", "items": { "type": "integer" }, "description": "Serveurs visés (20 au plus)" })), ("all_running", prop_bool("true = tous les serveurs démarrés (sans server_ids)")), ("only_running", prop_bool("Ignorer les serveurs non démarrés (défaut true)"))], &["command"])),
+        // --- Contenu, monde et audit ---
+        tool("check_plugin_deps", "Contrôle les DÉPENDANCES des plugins et mods d'un serveur Minecraft Java en lisant le descripteur embarqué dans chaque .jar de plugins/ et mods/ (plugin.yml, paper-plugin.yml, bungee.yml, velocity-plugin.json, fabric.mod.json, quilt.mod.json, META-INF/mods.toml, neoforge.mods.toml) : dépendances obligatoires manquantes ou désactivées, optionnelles absentes (info), version de Minecraft, d'API ou de dépendance incompatible, doublons, jars d'une autre plateforme (plugin Velocity sur Paper, mod Forge sur Fabric…) ou du mauvais dossier, mods côté client, fichiers désactivés (.disabled), jars illisibles. Constats triés CRITIQUE / IMPORTANT / INFO avec recommandation. Lecture À LA DEMANDE (fin d'archive et descripteurs, jamais le jar entier), plafonnée (400 jars) et signalée. Lecture seule. `details` ajoute l'inventaire (id, version, dépendances).", obj(&[("server_id", prop_int("ID du serveur")), ("details", prop_bool("Ajouter l'inventaire détaillé (défaut false)"))], &["server_id"])),
+        tool("world_info", "Résumé d'un monde Minecraft Java lu dans level.dat (et, depuis 26.1, dans data/minecraft/*.dat) : nom, GRAINE, version (nom + DataVersion), mode de jeu, difficulté, hardcore, point d'apparition, jour et heure, dernière partie, météo, bordure, règles de jeu, datapacks activés et désactivés, et TAILLE de chaque dimension (fichiers de région de l'overworld, du Nether et de l'End, dossier de la dimension) plus les autres dimensions. Monde actif (`level-name` de server.properties) par défaut. Lecture seule.", obj(&[("server_id", prop_int("ID du serveur")), ("world", prop_str("Dossier du monde (défaut : level-name)"))], &["server_id"])),
+        tool("audit_server", "AUDIT de configuration et de sécurité (Minecraft Java, ou Bedrock en partie ; autre jeu : « non géré ») : constats triés CRITIQUE / IMPORTANT / INFO, chacun avec sa recommandation. server.properties (online-mode=false hors proxy correctement configuré — Velocity avec secret ou BungeeCord avec BungeeGuard, d'après spigot.yml et paper-global.yml —, RCON et force de son mot de passe, liste blanche, enable-query, view/simulation-distance face à la RAM), nombre d'opérateurs (ops.json), -Xmx face à la RAM du conteneur, mises à jour disponibles (vérification sans effet de bord ; propositions d'une autre plateforme écartées), version de Java face à Minecraft. Ne renvoie JAMAIS de secret (mot de passe RCON qualifié : vide, faible ou correct). Lecture seule.", obj(&[("server_id", prop_int("ID du serveur")), ("force_updates", prop_bool("Refaire la vérification des mises à jour au lieu du résultat gardé 15 min (défaut false)"))], &["server_id"])),
     ])
 }
 
@@ -1871,6 +1912,19 @@ mod tests {
         // Filtre de type : la clé d'un autre type devient inconnue.
         let err = resolve_update_keys(&current, Some(ContentKind::Mods), &keys).unwrap_err();
         assert!(err.contains("LP.jar") && !err.contains("sodium.jar"));
+    }
+
+    #[test]
+    fn content_world_and_audit_tools_are_exclusive_reads() {
+        // Lectures (autorisées en lecture seule), gardées face au MCP officiel, Minecraft seulement.
+        for t in ["check_plugin_deps", "world_info", "audit_server"] {
+            assert!(!is_write_tool(t) && READ_TOOLS.contains(&t), "{t} doit être en lecture");
+            assert!(LOCAL_KEEP_TOOLS.contains(&t), "{t} : exclusif, gardé face au MCP officiel");
+            assert!(tool_for_game(t, "minecraft") && !tool_for_game(t, "satisfactory"), "{t} : Minecraft");
+            assert!(cache_ttl(t).is_some(), "{t} : lit beaucoup de fichiers, cache court");
+            let schema = &tool_list().as_array().unwrap().iter().find(|x| x["name"] == t).unwrap()["inputSchema"];
+            assert_eq!(schema["required"], json!(["server_id"]), "{t}");
+        }
     }
 
     #[test]
