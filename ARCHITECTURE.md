@@ -110,10 +110,11 @@ Regroupés par domaine (liste réelle des fichiers).
   ré-auth sur `token expiring`/`token expired`. Publie des `CoreEvent`.
 - **`sftp`** — client SFTP natif (`russh`/`russh-sftp`) : `SftpManager` à **sessions poolées** par serveur
   (rouvertes à la volée si empoisonnées), list/read/write/mkdir/delete/rename/upload/download/walk/search.
-  Hôte/port/utilisateur viennent de `GET /server/{id}` ; le **mot de passe n'y figure plus** (retiré
-  par MineStrator fin 2026, toujours documenté) : saisi une fois par serveur, vérifié par une session
-  avant d'être enregistré (`set_sftp_password`), puis essayé avant celui de l'API si elle en renvoie
-  un. Sans mot de passe : erreur `sftp_password_required`, que l'UI traduit en saisie.
+  Identifiants complets, **mot de passe compris**, via `GET /server/{id}/sftp` (non documenté, utilisé
+  par le panel web) : le bloc `sftp` de `GET /server/{id}` ne contient plus le mot de passe depuis fin
+  2026, d'où un repli sans mot de passe sur ce dernier. En secours, un mot de passe saisi par
+  serveur, vérifié par une session avant d'être enregistré (`set_sftp_password`), essayé après celui
+  de l'API. Sans aucun : erreur `sftp_password_required`, que l'UI traduit en saisie.
   **Identité du serveur** : l'empreinte SHA-256 de la clé d'hôte est mémorisée au premier contact
   par `hôte:port` (`sftp_known_hosts.json`, `KnownHosts`) ; une empreinte différente bloque la
   connexion **avant** l'envoi du mot de passe (`sftp_host_key_changed`). L'UI montre les deux

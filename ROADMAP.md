@@ -42,7 +42,7 @@
 - **Plusieurs comptes MineStrator** et changement de compte *(main)*.
 - **Secrets en stockage sécurisé** — trousseau de l'OS, Keystore Android, fichier chiffré DPAPI
   pour le service Windows ; aucun identifiant en clair.
-- **Mot de passe SFTP par serveur** (l'API ne le transmet plus), vérifié avant enregistrement.
+- **Mot de passe SFTP** obtenu automatiquement (`/server/{id}/sftp`), saisie manuelle en secours.
 - **Vérification de l'identité du serveur SFTP** *(main)* — empreinte mémorisée, connexion bloquée
   avant l'envoi du mot de passe si elle change.
 - **Confidentialité** — anonymisation avant tout envoi à une IA, un paste ou un webhook ;
@@ -80,8 +80,9 @@
 
 - **Valider en conditions réelles** ce qui n'a été testé qu'en CI et en simulation : installeur
   Windows et activation du service, service installé, automatisations, multi-comptes, palette.
-- **Endpoints non documentés** — recenser ceux qu'utilise le panel web (accès SFTP, gestion des
-  MyBox…) et intégrer ceux accessibles avec une clé API.
+- **Endpoints non documentés** — recensés dans `docs/api/REFERENCE.md` (presque tous accessibles
+  avec une clé API) ; à exploiter : API fichiers REST (sans SFTP), état groupé des serveurs,
+  tâches planifiées du panel, statistiques, sous-utilisateurs, bases de données.
 - **Console intelligente** — surlignage personnalisé, clic sur un pseudo, marque-pages.
 - **Éditeurs en formulaire** — `ops.json`, `whitelist.json`.
 - **Finitions natives** — lancement à l'ouverture de session, raccourcis globaux.

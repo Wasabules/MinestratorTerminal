@@ -1,0 +1,1690 @@
+{
+ "_source": "Tests du 2026-11-18 avec une clé API, lectures seules (GET, plus deux POST de pure lecture : servers/live/light/bulk et files/exists). Structures : noms de champs et types, aucune valeur.",
+ "resultats": {
+  "GET /mybox/{x}": {
+   "status": 200,
+   "data": {
+    "offer": {
+     "id": "int",
+     "name": "str",
+     "price": "float",
+     "public": "int",
+     "cpu": "int",
+     "flexcpu": "int",
+     "flexcore": "int",
+     "ram": "int",
+     "disk": "int",
+     "disk_total": "int",
+     "dbsize": "int",
+     "dbnb": "int",
+     "pods": "int",
+     "components": {
+      "cpu": "str",
+      "ram": "str",
+      "disk": "str"
+     }
+    },
+    "databases": [],
+    "review": "int",
+    "options": [],
+    "dedicated_ips": [],
+    "dedicated_ip_pending_servers": [],
+    "dedicated_ip": {
+     "available": "int",
+     "is_free": "int"
+    },
+    "servers": [
+     {
+      "id": "int",
+      "permissions": [],
+      "name": "str",
+      "hashsupport": "str",
+      "egg": "int",
+      "egg_icon": "str",
+      "egg_name": "str",
+      "ip": "str",
+      "dedicated_ip": "int",
+      "dedicated_ip_pending": "int",
+      "cpu": "int",
+      "ram": "int",
+      "disabled": "int",
+      "is_expired": "int",
+      "is_suspended": "int",
+      "location": "str",
+      "country": "str",
+      "country_iso": "str",
+      "order": "int"
+     }
+    ],
+    "webhostings": [],
+    "pimpmybox": {
+     "eggs": [],
+     "history": []
+    },
+    "subusers": [],
+    "mybox": {
+     "id": "int",
+     "hashsupport": "str",
+     "name": "str",
+     "tstart": "str",
+     "tend": "str",
+     "is_trial": "int",
+     "is_free": "int",
+     "optimizable": "int",
+     "owner": "int",
+     "is_expired": "int",
+     "is_suspended": "int",
+     "is_pro": "int",
+     "has_bonus": "int",
+     "tend_days": "int",
+     "promotion_recurrent": "int",
+     "promotion_reduction": "int",
+     "subscription": "int",
+     "cpu_remaining": "int",
+     "ram_remaining": "int"
+    },
+    "extension_preview": {
+     "available": "bool",
+     "days": "int",
+     "days_exact": "float",
+     "credits_to_consume": "int",
+     "new_tend": "str"
+    }
+   }
+  },
+  "GET /mybox/{x}/activity": {
+   "status": 200,
+   "data": {
+    "mybox": {
+     "id": "int",
+     "name": "str"
+    },
+    "activity": [
+     {
+      "id": "int",
+      "action_name": "str",
+      "action_category": "str",
+      "action_result": "str",
+      "resource_type": "str",
+      "resource_id": "int",
+      "actor_type": "str",
+      "context": {
+       "server_name": "str"
+      },
+      "created_at": "str",
+      "actor_name": "str",
+      "ip": "str",
+      "is_staff": "bool"
+     }
+    ],
+    "pagination": {
+     "total": "int",
+     "limit": "int",
+     "offset": "int",
+     "has_more": "bool"
+    }
+   }
+  },
+  "GET /mybox/{x}/database/disk": {
+   "status": 200,
+   "data": {
+    "total_size": "int",
+    "databases": []
+   }
+  },
+  "GET /mybox/{x}/disk": {
+   "status": 200,
+   "data": {
+    "disk_servers": "int",
+    "disk_servers_unit": "str"
+   }
+  },
+  "GET /mybox/{x}/players": {
+   "status": 200,
+   "data": {
+    "total": {
+     "current": "int",
+     "max": "int"
+    },
+    "servers": [
+     {
+      "id": "int",
+      "uuid": "str",
+      "name": "str",
+      "players": {
+       "current": "int",
+       "max": "int"
+      }
+     }
+    ]
+   }
+  },
+  "GET /mybox/{x}/stats/{x}/{x}": {
+   "status": 200,
+   "data": {
+    "stats": [
+     {
+      "cpu": "int",
+      "ram": "int",
+      "disk": "int",
+      "players": "int",
+      "date": "str"
+     }
+    ],
+    "by_server": {
+     "{n}": {
+      "id": "int",
+      "uuid": "str",
+      "name": "str",
+      "actif": "int",
+      "stats": [
+       {
+        "cpu": "int",
+        "ram": "int",
+        "disk": "int",
+        "players": "int",
+        "date": "str"
+       }
+      ]
+     }
+    },
+    "retention_days": "int",
+    "data_available_from": "str",
+    "date_start_clamped": "bool"
+   }
+  },
+  "GET /mybox/{x}/subuser/permissions": {
+   "status": 200,
+   "data": {
+    "perms": {
+     "mybox": [
+      {
+       "name": "str",
+       "category": "str",
+       "description": "str"
+      }
+     ],
+     "server": [
+      {
+       "name": "str",
+       "category": "str",
+       "description": "str"
+      }
+     ]
+    }
+   }
+  },
+  "GET /mybox/{x}/subuser/presets": {
+   "status": 200,
+   "data": {
+    "presets": []
+   }
+  },
+  "GET /mybox/{x}/websocket": {
+   "status": 200,
+   "data": {
+    "servers": [
+     {
+      "id": "int",
+      "uuid": "str",
+      "name": "str",
+      "actif": "int",
+      "socket": "str",
+      "token": "str"
+     }
+    ]
+   }
+  },
+  "GET /payment-methods": {
+   "status": 403,
+   "erreur_api": "API_FORBIDDEN"
+  },
+  "GET /server/{x}": {
+   "status": 200,
+   "data": {
+    "websocket": {
+     "url": "str",
+     "token": "str"
+    },
+    "options": [],
+    "mybox": {
+     "name": "str",
+     "hashsupport": "str",
+     "resources": {
+      "cpu": "int",
+      "ram": "int",
+      "disk": "int"
+     },
+     "to_review": "int"
+    },
+    "offer": {
+     "name": "str",
+     "is_pro": "int",
+     "is_trial": "int",
+     "is_free": "int",
+     "cpu": "int",
+     "ram": "int",
+     "disk": "int"
+    },
+    "egg": {
+     "id": "int",
+     "type": "int",
+     "name": "str",
+     "icon": "str",
+     "uuid": "str"
+    },
+    "settings": {
+     "poweraction_message": {
+      "restart": "str",
+      "stop": "str"
+     },
+     "is_bedrock": "int",
+     "is_bungeecord": "int",
+     "java_memory": "int",
+     "image": "str",
+     "id_java_version": "int",
+     "php_runtime": "int",
+     "startup": "str",
+     "startup_file": "str"
+    },
+    "history": [
+     {
+      "date": "str",
+      "ip": "str",
+      "is_staff": "bool",
+      "action": "str"
+     }
+    ],
+    "ports": [
+     {
+      "port": "int",
+      "ip": "str",
+      "description": "str"
+     }
+    ],
+    "sftp": {
+     "protocol": "str",
+     "host": "str",
+     "port": "int",
+     "user": "str"
+    },
+    "livemap": {
+     "option": "int",
+     "enabled": "int",
+     "is_free": "int"
+    },
+    "server": {
+     "id": "int",
+     "hashsupport": "str",
+     "id_mybox": "int",
+     "id_daemon": "int",
+     "tstart": "str",
+     "tend": "str",
+     "ip": "str",
+     "port": "int",
+     "dns": "str",
+     "is_free": "int",
+     "hibernation": "int",
+     "backup_group": "str",
+     "name": "str",
+     "uuid": "str",
+     "dedicated_ip": "int",
+     "owner": "int",
+     "permissions": []
+    },
+    "onboarding": {
+     "eligible": "bool",
+     "status": "str",
+     "user_disabled": "bool"
+    }
+   }
+  },
+  "GET /server/{x}/activity": {
+   "status": 200,
+   "data": {
+    "server": {
+     "id": "int"
+    },
+    "activity": [
+     {
+      "id": "int",
+      "action_name": "str",
+      "action_category": "str",
+      "action_result": "str",
+      "actor_type": "str",
+      "context": {
+       "account": "str"
+      },
+      "created_at": "str",
+      "actor_name": "str",
+      "ip": "str",
+      "is_staff": "bool"
+     }
+    ],
+    "pagination": {
+     "total": "int",
+     "limit": "int",
+     "offset": "int",
+     "has_more": "bool"
+    }
+   }
+  },
+  "GET /server/{x}/backups": {
+   "status": 200,
+   "data": {
+    "backups": [
+     {
+      "id": "int",
+      "size": "int",
+      "date": "str",
+      "startup_config": "bool"
+     }
+    ]
+   }
+  },
+  "GET /server/{x}/datapacks": {
+   "status": 200,
+   "data": {
+    "level_name": "str",
+    "datapacks": []
+   }
+  },
+  "GET /server/{x}/disk/total": {
+   "status": 200,
+   "data": {
+    "total_bytes": "int",
+    "total_human": "str",
+    "raw_bytes": "int",
+    "raw_human": "str",
+    "base_game_bytes": "int",
+    "base_game_human": "str",
+    "overhead_applied": "bool"
+   }
+  },
+  "GET /server/{x}/disk/usage": {
+   "status": 200,
+   "data": {
+    "analyzed_path": "str",
+    "total_size": "int",
+    "total_size_human": "str",
+    "items_count": "int",
+    "items": [
+     {
+      "path": "str",
+      "name": "str",
+      "type": "str",
+      "size": "int",
+      "size_human": "str"
+     }
+    ]
+   }
+  },
+  "GET /server/{x}/docker/images": {
+   "status": 200,
+   "data": {
+    "images": [
+     {
+      "label": "str",
+      "name": "str",
+      "selected": "int"
+     }
+    ]
+   }
+  },
+  "GET /server/{x}/files/compress/jobs": {
+   "status": 200,
+   "data": {
+    "jobs": [],
+    "count": "int"
+   }
+  },
+  "GET /server/{x}/files/content/{x}": {
+   "status": 200,
+   "data": {
+    "content": "str",
+    "encoding": "str"
+   }
+  },
+  "POST /server/{x}/files/exists": {
+   "status": 200,
+   "data": {
+    "exists": {
+     "{chemin}": "bool"
+    }
+   }
+  },
+  "GET /server/{x}/files/list/{x}": {
+   "status": 200,
+   "data": {
+    "files": [
+     {
+      "folder": "int",
+      "size": "str",
+      "size_bytes": "int",
+      "name": "str",
+      "mode": "str",
+      "symlink": "int",
+      "created": "str",
+      "modified": "str"
+     }
+    ]
+   }
+  },
+  "GET /server/{x}/live": {
+   "status": 200,
+   "data": {
+    "installed_at": "str",
+    "state": "str",
+    "status": "null",
+    "stats": {
+     "state": "str",
+     "cpu": {
+      "current": "float",
+      "dedicated": "int",
+      "flexcore": "int",
+      "limit": "int",
+      "percent": "int",
+      "is_bursting": "bool"
+     },
+     "memory": {
+      "current": "int",
+      "limit": "int",
+      "percent": "int"
+     },
+     "disk": {
+      "current": "int",
+      "limit": "int",
+      "percent": "int"
+     },
+     "network": {
+      "rx_bytes": "int",
+      "tx_bytes": "int"
+     },
+     "uptime": {
+      "days": "int",
+      "hours": "int",
+      "minutes": "int",
+      "total_seconds": "int"
+     },
+     "players": {
+      "current": "int",
+      "limit": "int"
+     },
+     "version": "str",
+     "motd": "str",
+     "hostname": "str"
+    }
+   }
+  },
+  "GET /server/{x}/live/light": {
+   "status": 200,
+   "data": {
+    "status": "null",
+    "cpu": {
+     "dedicated": "int",
+     "flexcore": "int",
+     "limit": "int"
+    },
+    "disk": {
+     "limit": "int"
+    },
+    "memory": {
+     "limit": "int"
+    },
+    "players": {
+     "current": "int",
+     "limit": "int"
+    },
+    "version": "str",
+    "motd": "str",
+    "hostname": "str"
+   }
+  },
+  "GET /server/{x}/minecraft_version": {
+   "status": 200,
+   "data": {
+    "version": "str",
+    "source": "str",
+    "confidence": "str"
+   }
+  },
+  "GET /server/{x}/mods": {
+   "status": 200,
+   "data": {
+    "mods": []
+   }
+  },
+  "GET /server/{x}/players/offline": {
+   "status": 200,
+   "data": {
+    "level_name": "str",
+    "total": "int",
+    "total_all": "int",
+    "limit": "int",
+    "offset": "int",
+    "resolved_names": "int",
+    "players": [
+     {
+      "uuid": "str",
+      "name": "str",
+      "size": "int",
+      "mtime": "int",
+      "play_time": "int",
+      "flags": {
+       "op": "bool",
+       "whitelisted": "bool",
+       "banned": "bool"
+      }
+     }
+    ],
+    "other_playerdata_dirs": [],
+    "playerdata_dir_found": "bool",
+    "online": {
+     "available": "bool",
+     "names": [],
+     "uuids": [],
+     "count": "int"
+    }
+   }
+  },
+  "GET /server/{x}/plugins": {
+   "status": 200,
+   "data": {
+    "plugins": [
+     {
+      "name": "str",
+      "filename": "str",
+      "version": "str",
+      "enabled": "bool",
+      "sha1": "str",
+      "source": "str",
+      "project_id": "str"
+     }
+    ]
+   }
+  },
+  "GET /server/{x}/properties": {
+   "status": 200,
+   "data": {
+    "properties": {
+     "{propriété}": "str"
+    }
+   }
+  },
+  "GET /server/{x}/schedules": {
+   "status": 200,
+   "data": {
+    "schedules": []
+   }
+  },
+  "GET /server/{x}/sftp": {
+   "status": 200,
+   "data": {
+    "sftp": {
+     "protocol": "str",
+     "host": "str",
+     "port": "int",
+     "user": "str",
+     "password": "str"
+    }
+   }
+  },
+  "GET /server/{x}/shortcuts": {
+   "status": 200,
+   "data": {
+    "shortcuts": []
+   }
+  },
+  "GET /server/{x}/snapshots": {
+   "status": 200,
+   "data": {
+    "server_id": "int",
+    "snapshots": [
+     {
+      "id": "int",
+      "server_id": "int",
+      "name": "str",
+      "type": "str",
+      "size": "int",
+      "size_bytes": "int",
+      "date": "str",
+      "status": "int",
+      "is_legacy": "bool"
+     }
+    ],
+    "quota_used": "int",
+    "quota_max": "int",
+    "permissions": {
+     "create": "bool",
+     "restore": "bool",
+     "download": "bool",
+     "delete": "bool"
+    }
+   }
+  },
+  "GET /server/{x}/startup/files": {
+   "status": 200,
+   "data": {
+    "files": [
+     {
+      "name": "str",
+      "selected": "int"
+     }
+    ],
+    "startup_file": "str"
+   }
+  },
+  "GET /server/{x}/stats/{x}/{x}": {
+   "status": 200,
+   "data": {
+    "stats": [
+     {
+      "cpu": "int",
+      "ram": "int",
+      "disk": "int",
+      "players": "int",
+      "date": "str"
+     }
+    ]
+   }
+  },
+  "GET /server/{x}/websocket": {
+   "status": 200,
+   "data": {
+    "websocket": {
+     "url": "str",
+     "token": "str"
+    }
+   }
+  },
+  "GET /server/{x}/worlds": {
+   "status": 200,
+   "data": {
+    "active_level_name": "str",
+    "worlds": [
+     {
+      "name": "str",
+      "is_active": "bool",
+      "size_bytes": "int"
+     }
+    ],
+    "worlds_base": "str"
+   }
+  },
+  "POST /servers/live/light/bulk": {
+   "status": 200,
+   "data": {
+    "servers": {
+     "{n}": {
+      "players": {
+       "current": "int",
+       "limit": "int"
+      }
+     }
+    },
+    "statuses": {
+     "{n}": "null"
+    }
+   }
+  },
+  "GET /site/dashboard_news": {
+   "status": 200,
+   "data": {
+    "cards": [
+     {
+      "id": "int",
+      "position": "int",
+      "image_dark": "str",
+      "image_light": "str",
+      "lang": {
+       "fr": {
+        "title": "str",
+        "link": "str"
+       },
+       "en": {
+        "title": "str",
+        "link": "str"
+       }
+      }
+     }
+    ]
+   }
+  },
+  "GET /site/databases": {
+   "status": 200,
+   "data": {
+    "databases": [
+     {
+      "id": "int",
+      "name": "str"
+     }
+    ]
+   }
+  },
+  "GET /site/datacenters": {
+   "status": 200,
+   "data": {
+    "datacenters": [
+     {
+      "id": "int",
+      "location": "str",
+      "country": "str",
+      "country_iso": "str",
+      "in_stock": "bool",
+      "geo_masked": "bool",
+      "ping": "str"
+     }
+    ]
+   }
+  },
+  "GET /site/eggs": {
+   "status": 200,
+   "data": {
+    "eggs": [
+     {
+      "id": "int",
+      "name": "str",
+      "icon": "str",
+      "resources": {
+       "cpu": "str",
+       "ram": "str",
+       "disk": "str",
+       "disk_install": "str"
+      },
+      "certification": "int",
+      "is_official": "int",
+      "required_fields": []
+     }
+    ],
+    "eggs_categories": [
+     {
+      "category": "str",
+      "eggs": [
+       {
+        "id": "int",
+        "name": "str",
+        "icon": "str",
+        "resources": {
+         "cpu": "str",
+         "ram": "str",
+         "disk": "str",
+         "disk_install": "str"
+        },
+        "certification": "int",
+        "is_official": "int",
+        "required_fields": []
+       }
+      ]
+     }
+    ]
+   }
+  },
+  "GET /site/eggs/experimentals": {
+   "status": 200,
+   "data": {
+    "eggs": {
+     "APPLICATION": [
+      {
+       "id": "int",
+       "name": "str",
+       "fields": []
+      }
+     ],
+     "VIDEO_GAME": [
+      {
+       "id": "int",
+       "name": "str",
+       "fields": [
+        {
+         "name": "str",
+         "description": "str"
+        }
+       ]
+      }
+     ],
+     "GENERIC": [
+      {
+       "id": "int",
+       "name": "str",
+       "fields": []
+      }
+     ]
+    }
+   }
+  },
+  "GET /site/feature_flags": {
+   "status": 200,
+   "data": {
+    "highlight_enabled_site": "bool",
+    "highlight_enabled_panel": "bool",
+    "ai_onboarding_enabled": "bool",
+    "posthog_enabled_site": "bool",
+    "posthog_enabled_panel": "bool",
+    "palworld_import_enabled_panel": "bool"
+   }
+  },
+  "GET /site/index": {
+   "status": 200,
+   "data": {
+    "offers": {
+     "mybox": [
+      {
+       "id": "int",
+       "name": "str",
+       "name_min": "str",
+       "name_com": "str",
+       "descr": "str",
+       "price": "float",
+       "cpu": "int",
+       "flexcore": "int",
+       "ram": "int",
+       "disk": "int",
+       "dbnb": "int",
+       "dbsize": "int",
+       "pods": "int",
+       "home": "int",
+       "ai_credits_value_eur": "float",
+       "reviews_score": "float",
+       "reviews_count": "int",
+       "reviews_percentage": "float"
+      }
+     ],
+     "myboxperf": [
+      {
+       "id": "int",
+       "name": "str",
+       "name_min": "str",
+       "name_com": "str",
+       "descr": "str",
+       "price": "float",
+       "cpu": "int",
+       "flexcore": "int",
+       "ram": "int",
+       "disk": "int",
+       "dbnb": "int",
+       "dbsize": "int",
+       "pods": "int",
+       "home": "int",
+       "ai_credits_value_eur": "float",
+       "reviews_score": "float",
+       "reviews_count": "int",
+       "reviews_percentage": "float"
+      }
+     ]
+    },
+    "sales": "int",
+    "eggs": [
+     {
+      "name": "str",
+      "games": [
+       {
+        "id": "int",
+        "name": "str",
+        "icon": "str",
+        "url": "str",
+        "certification": "int",
+        "experimental": "int"
+       }
+      ]
+     }
+    ],
+    "promotion": {
+     "status": "str",
+     "expire": "str",
+     "code": "str"
+    },
+    "wheel": {
+     "start": "str",
+     "end": "str",
+     "token_amount": "int",
+     "double": "int"
+    },
+    "discord": {
+     "online": "int",
+     "total": "int"
+    },
+    "reviews": {
+     "count": "int",
+     "score": "float",
+     "percentage": "float",
+     "list": [
+      {
+       "name": "str",
+       "offer": "str",
+       "score": "int",
+       "message": "str",
+       "date": "str"
+      }
+     ]
+    },
+    "count_mybox_tested": "str",
+    "test_mybox_available": "int",
+    "test_myboxperf_available": "int",
+    "footer_news": {
+     "content": "str",
+     "url": "str",
+     "date": "str"
+    },
+    "global_message": {
+     "fr": "str",
+     "en": "str"
+    },
+    "global_message_link": "null",
+    "global_message_icon": "str",
+    "global_message_color_bg": "str",
+    "global_message_color_text": "str",
+    "banner": "null",
+    "promo_popup": "null",
+    "shop_popup": "null"
+   }
+  },
+  "GET /site/java/versions": {
+   "status": 200,
+   "data": {
+    "versions": [
+     {
+      "id": "int",
+      "name": "str"
+     }
+    ]
+   }
+  },
+  "GET /site/minecraft/versions": {
+   "status": 200,
+   "data": {
+    "versions": [
+     "str"
+    ]
+   }
+  },
+  "GET /site/modpacks/featured": {
+   "status": 200,
+   "data": {
+    "modpacks": [
+     {
+      "id": "int",
+      "name": "str",
+      "url": "str",
+      "dateLatest": "str",
+      "icon": "str",
+      "gameVersions": "str",
+      "downloadCount": "str",
+      "isCustom": "bool",
+      "source": "str"
+     }
+    ]
+   }
+  },
+  "GET /site/modrinth/{x}": {
+   "status": 200,
+   "data": {
+    "plugins": [
+     {
+      "id": "str",
+      "slug": "str",
+      "name": "str",
+      "tag": "str",
+      "downloads": "int",
+      "icon": {
+       "url": "str"
+      },
+      "rating": {
+       "average": "int"
+      },
+      "testedVersions": [
+       "str"
+      ],
+      "premium": "bool",
+      "version": {
+       "id": "null"
+      },
+      "categories": [
+       "str"
+      ],
+      "source": "str"
+     }
+    ],
+    "total_hits": "int",
+    "cached": "bool"
+   }
+  },
+  "GET /site/mybox/options": {
+   "status": 200,
+   "data": {
+    "options": [
+     {
+      "id": "int",
+      "identifier": "str",
+      "price": "str"
+     }
+    ]
+   }
+  },
+  "GET /site/offers": {
+   "status": 200,
+   "data": {
+    "offers": {
+     "mybox": [
+      {
+       "id": "int",
+       "name": "str",
+       "name_min": "str",
+       "name_com": "str",
+       "price": "float",
+       "cpu": "int",
+       "flexcore": "int",
+       "ram": "int",
+       "disk": "int",
+       "dbnb": "int",
+       "dbsize": "int",
+       "pods": "int",
+       "components": {
+        "cpu": "str",
+        "ram": "str",
+        "disk": "str"
+       }
+      }
+     ],
+     "myboxperf": [
+      {
+       "id": "int",
+       "name": "str",
+       "name_min": "str",
+       "name_com": "str",
+       "price": "float",
+       "cpu": "int",
+       "flexcore": "int",
+       "ram": "int",
+       "disk": "int",
+       "dbnb": "int",
+       "dbsize": "int",
+       "pods": "int",
+       "components": {
+        "cpu": "str",
+        "ram": "str",
+        "disk": "str"
+       }
+      }
+     ],
+     "webhosting": [
+      {
+       "id": "int",
+       "name": "str",
+       "name_min": "str",
+       "price": "str",
+       "disk": "int",
+       "subdomains": "int",
+       "mails": "int",
+       "mails_disk": "int"
+      }
+     ]
+    }
+   }
+  },
+  "GET /site/php/versions": {
+   "status": 200,
+   "data": {
+    "versions": [
+     {
+      "id": "int",
+      "name": "str",
+      "default": "bool"
+     }
+    ]
+   }
+  },
+  "GET /user": {
+   "status": 200,
+   "data": {
+    "user": {
+     "datas": {
+      "id": "int",
+      "pseudo": "str",
+      "mail": "str",
+      "partner": "int",
+      "money": "int",
+      "2fa": "int",
+      "blackmod": "int",
+      "lang": "str",
+      "settings": "null",
+      "register_date": "str",
+      "promotional": "int",
+      "mail_validated": "int",
+      "wheel_fortune_tokens": "int",
+      "active_mybox_count": "int",
+      "panel_mybox_count": "int"
+     },
+     "api_authkey": "str",
+     "ip": {
+      "actual": {
+       "ip": "str",
+       "date": "str"
+      },
+      "last": {
+       "ip": "str",
+       "date": "str"
+      },
+      "register": {
+       "ip": "str",
+       "date": "str"
+      }
+     },
+     "2fa": {
+      "enabled": "int",
+      "src": "null",
+      "secret": "null"
+     },
+     "payment": {
+      "total": "float"
+     },
+     "notifications": [],
+     "alerts": [],
+     "support_alert": "int",
+     "partnership_alert": "int",
+     "partner_platform_url": "null",
+     "next_daily_drop": "str",
+     "linked_account": {
+      "minecraft": {
+       "uuid": "str",
+       "name": "str"
+      },
+      "discord": {
+       "id": "int",
+       "name": "str"
+      }
+     },
+     "physical_prices": [],
+     "physical_daily_prices": [],
+     "global_message": "str",
+     "global_message_link": "str",
+     "global_message_icon": "str",
+     "global_message_color_bg": "str",
+     "global_message_color_text": "str",
+     "global_alert": {
+      "icon": "str",
+      "color_bg": "str",
+      "color_text": "str",
+      "message": "str",
+      "display_site": "bool",
+      "display_panel": "bool",
+      "cta": "null"
+     },
+     "event_alert": "null",
+     "panel_nav_link": "null"
+    }
+   }
+  },
+  "GET /user/{x}/activity": {
+   "status": 200,
+   "data": {
+    "user": {
+     "id": "int"
+    },
+    "activity": [
+     {
+      "id": "int",
+      "action_name": "str",
+      "action_category": "str",
+      "action_result": "str",
+      "resource_type": "str",
+      "resource_id": "int",
+      "actor_type": "str",
+      "context": "null",
+      "created_at": "str",
+      "actor_name": "str",
+      "ip": "str",
+      "is_staff": "bool"
+     }
+    ],
+    "pagination": {
+     "total": "int",
+     "limit": "int",
+     "offset": "int",
+     "has_more": "bool"
+    }
+   }
+  },
+  "GET /user/{x}/affiliate": {
+   "status": 200,
+   "data": {
+    "affiliate": {
+     "pending_withdrawal": "null",
+     "withdrawals_history": [
+      {
+       "id": "int",
+       "amount": "float",
+       "type": "str",
+       "date_processed": "str",
+       "status": "str",
+       "reject_reason": "null"
+      }
+     ],
+     "code": "str",
+     "discount_for_users": "int",
+     "percentage": "int",
+     "clicks": "int",
+     "count": "int",
+     "new_users": "int",
+     "count_for_upgrade": "int",
+     "pool": {
+      "remaining": "int",
+      "total": "float"
+     },
+     "history": [
+      {
+       "amount": "str",
+       "percentage": "int",
+       "name": "null",
+       "date": "str",
+       "is_refunded": "bool",
+       "auto_renew": "bool"
+      }
+     ]
+    },
+    "platform": {
+     "managed": "bool",
+     "url": "str"
+    }
+   }
+  },
+  "GET /user/{x}/archives": {
+   "status": 200,
+   "data": {
+    "archives": {
+     "server": [
+      {
+       "id": "int",
+       "name": "str",
+       "size": "int",
+       "date": "str",
+       "status": "int",
+       "is_legacy": "bool",
+       "type": "str"
+      }
+     ],
+     "database": [
+      {
+       "id": "int",
+       "name": "str",
+       "size": "int",
+       "date": "str",
+       "status": "int",
+       "is_legacy": "bool"
+      }
+     ]
+    }
+   }
+  },
+  "GET /user/{x}/ark/clusters": {
+   "status": 200,
+   "data": {
+    "clusters": []
+   }
+  },
+  "GET /user/{x}/backup_jobs/active": {
+   "status": 200,
+   "data": {
+    "jobs": [],
+    "count": "int"
+   }
+  },
+  "GET /user/{x}/credits": {
+   "status": 200,
+   "data": {
+    "credits": [
+     {
+      "type": "str",
+      "amount": "str",
+      "date": "str"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/dailydrop": {
+   "status": 200,
+   "data": {
+    "check_daily_drop": "bool",
+    "first": "bool",
+    "day_counter": "int",
+    "tokens": "int",
+    "last_daily_drop": "str",
+    "next_daily_drop": "str",
+    "next_daily_drop_seconds": "int",
+    "date_begin_streak": "str",
+    "streak_remaining_time": "int",
+    "history": [
+     {
+      "price": "str",
+      "physical": "int",
+      "from": "str",
+      "date": "str"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/gifts": {
+   "status": 200,
+   "data": {
+    "gifts": [],
+    "history": [
+     {
+      "id": "int",
+      "price": "str",
+      "physical": "int",
+      "from": "str",
+      "date": "str"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/goodies/transactions": {
+   "status": 200,
+   "data": {
+    "transactions": []
+   }
+  },
+  "GET /user/{x}/hosting-program": {
+   "status": 200,
+   "data": {
+    "hosting_program": "null"
+   }
+  },
+  "GET /user/{x}/ideas": {
+   "status": 200,
+   "data": {
+    "ideas": [
+     {
+      "id": "int",
+      "description": "str",
+      "images": [],
+      "reason": "str",
+      "votes_up": "int",
+      "votes_down": "int",
+      "date": "str",
+      "status": "int"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/migrations": {
+   "status": 200,
+   "data": {
+    "migrations": [
+     {
+      "id": "int",
+      "server_start_id": "int",
+      "server_end_id": "int",
+      "is_external": "int",
+      "external_host": "str",
+      "external_port": "int",
+      "external_username": "str",
+      "external_password": "str",
+      "database_host": "str",
+      "database_port": "int",
+      "database_username": "str",
+      "database_password": "str",
+      "server_end_hashsupport": "str",
+      "server_end_name": "str",
+      "date": "str",
+      "status": "int"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/notifications": {
+   "status": 200,
+   "data": {
+    "notifications": [
+     {
+      "id": "int",
+      "type": "str",
+      "color": "str",
+      "icon": "str",
+      "message": "str",
+      "date": "str",
+      "viewed": "int",
+      "readed": "int"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/notifications/unreaded": {
+   "status": 200,
+   "data": {
+    "notifications": []
+   }
+  },
+  "GET /user/{x}/partnership": {
+   "status": 200,
+   "data": {
+    "partnership": {
+     "id": "int",
+     "status": "int",
+     "date": "str",
+     "presentation": "str",
+     "receive": "str",
+     "give": "str",
+     "summary": {
+      "partner": "str",
+      "mystrator": "str"
+     },
+     "messages": [
+      {
+       "message": "str",
+       "date": "str",
+       "is_staff": "int",
+       "staff_name": "str",
+       "staff_job": "str"
+      }
+     ]
+    },
+    "platform": {
+     "managed": "bool",
+     "url": "str"
+    }
+   }
+  },
+  "GET /user/{x}/passkeys": {
+   "status": 403,
+   "erreur_api": "API_FORBIDDEN"
+  },
+  "GET /user/{x}/pimpmybox": {
+   "status": 200,
+   "data": {
+    "eggs": {
+     "validated": [
+      {
+       "id": "int",
+       "name": "str",
+       "required_fields": []
+      }
+     ],
+     "history": []
+    }
+   }
+  },
+  "GET /user/{x}/preferences/dashboard_groups": {
+   "status": 200,
+   "data": "null"
+  },
+  "GET /user/{x}/preferences/sidebar": {
+   "status": 200,
+   "data": "null"
+  },
+  "GET /user/{x}/servers": {
+   "status": 200,
+   "data": {
+    "servers_groups": {
+     "{n}": {
+      "id": "int",
+      "owner": "int",
+      "name": "str",
+      "hashsupport": "str",
+      "order": "int",
+      "mybox": "int",
+      "tend": "str",
+      "note": "str",
+      "tend_days": "int",
+      "is_trial": "int",
+      "is_free": "int",
+      "has_bonus": "int",
+      "is_pro": "int",
+      "is_expired": "int",
+      "is_suspended": "int",
+      "promo_recurrent": "null",
+      "promo_reduction": "null",
+      "subscription": "int",
+      "servers": [],
+      "offer": "str",
+      "resources": {
+       "cpu": "int",
+       "ram": "int",
+       "disk": "int"
+      },
+      "webhosting": []
+     }
+    },
+    "user_groups": [],
+    "servers": [
+     {
+      "id": "int",
+      "hashsupport": "str",
+      "id_mybox": "int",
+      "id_daemon": "int",
+      "tstart": "str",
+      "tend": "str",
+      "ip": "str",
+      "port": "int",
+      "dns": "str",
+      "is_free": "int",
+      "hibernation": "int",
+      "note": "null",
+      "id_egg": "int",
+      "is_disabled": "int",
+      "name": "str",
+      "owner": "int",
+      "is_bedrock": "int",
+      "egg_uuid": "str",
+      "egg_name": "str",
+      "egg_icon": "str",
+      "is_expired": "int",
+      "is_suspended": "int",
+      "reduction": "int",
+      "last_backup": "str",
+      "poweraction_message_restart": "str",
+      "poweraction_message_stop": "str",
+      "id_group": "int"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/servers/websocket": {
+   "status": 200,
+   "data": {
+    "servers": [
+     {
+      "id": "int",
+      "uuid": "str",
+      "name": "str",
+      "mybox_id": "int",
+      "socket": "str",
+      "token": "str"
+     }
+    ],
+    "count": "int"
+   }
+  },
+  "GET /user/{x}/sessions": {
+   "status": 200
+  },
+  "GET /user/{x}/snapshots": {
+   "status": 200,
+   "data": {
+    "snapshots": [
+     {
+      "id": "int",
+      "server_id": "int",
+      "name": "str",
+      "type": "str",
+      "size": "int",
+      "size_bytes": "int",
+      "date": "str",
+      "status": "int",
+      "is_legacy": "bool"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/subscriptions": {
+   "status": 200,
+   "data": {
+    "actives_subscriptions": [
+     {
+      "cycle": "int",
+      "date_started": "str",
+      "id_payment_method": "int",
+      "payment_method_type": "str",
+      "payment_method_descr": "str",
+      "payment_failed": "bool",
+      "try": "int",
+      "discount_version": "int",
+      "id_mybox": "int",
+      "name": "str",
+      "hashsupport": "str",
+      "mybox_active": "bool",
+      "offer": "str",
+      "price": "float"
+     }
+    ],
+    "inactives_subscriptions": [
+     {
+      "cycle": "int",
+      "date_started": "str",
+      "id_payment_method": "int",
+      "payment_method_type": "str",
+      "payment_method_descr": "str",
+      "payment_failed": "bool",
+      "try": "int",
+      "discount_version": "int",
+      "date_ended": "str",
+      "id_mybox": "int",
+      "mybox_active": "bool",
+      "offer": "str"
+     }
+    ],
+    "mybox_without_subscription": []
+   }
+  },
+  "GET /user/{x}/tasks": {
+   "status": 200,
+   "data": {
+    "tasks": {
+     "global": [],
+     "nodes": [],
+     "targeted": []
+    }
+   }
+  },
+  "GET /user/{x}/tickets": {
+   "status": 200,
+   "data": {
+    "tickets": [
+     {
+      "id": "int",
+      "title": "str",
+      "message": "str",
+      "date": "str",
+      "type": "int",
+      "id_server": "int",
+      "origin": "null",
+      "origin_ref": "null",
+      "status": "int"
+     }
+    ]
+   }
+  },
+  "GET /user/{x}/transactions": {
+   "status": 200
+  }
+ }
+}

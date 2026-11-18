@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Saisie du mot de passe SFTP d'un serveur. L'API MineStrator ne le transmet plus :
+   * Saisie du mot de passe SFTP d'un serveur, en secours de celui fourni par l'API :
    * l'utilisateur le copie depuis l'onglet « Accès » du panel. Le cœur le vérifie en ouvrant une
    * session avant de l'enregistrer dans le stockage sécurisé de l'OS ; il ne revient jamais au JS.
    */

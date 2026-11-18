@@ -1,9 +1,10 @@
 //! Client SFTP natif (SSH via `russh` + `russh-sftp`). Session poolée par serveur.
 //!
-//! Hôte, port et utilisateur viennent de `GET /server/{id}`. Le **mot de passe**, lui, n'y figure
-//! plus (l'API l'a retiré de ses réponses fin 2026, malgré sa documentation) : l'utilisateur le saisit
-//! une fois par serveur, il est rangé dans le stockage sécurisé (`secrets`) et ne quitte jamais le
-//! cœur. Si l'API le renvoie à nouveau, il sert de second essai.
+//! Identifiants (hôte, port, utilisateur, **mot de passe**) : `GET /server/{id}/sftp`, endpoint non
+//! documenté du panel web — le bloc `sftp` de `GET /server/{id}` ne contient plus le mot de passe
+//! depuis fin 2026 (cf. `api::get_sftp_creds`). En secours, l'utilisateur peut saisir un mot de passe
+//! par serveur : il est vérifié, rangé dans le stockage sécurisé (`secrets`) et ne quitte jamais le
+//! cœur.
 //!
 //! **Identité du serveur** : l'empreinte de la clé d'hôte SSH est mémorisée au premier contact
 //! (confiance au premier usage, comme `known_hosts` d'OpenSSH), par `hôte:port` — tous les serveurs
@@ -225,12 +226,15 @@ impl SftpManager {
     }
 }
 
-/// Mots de passe à essayer, dans l'ordre : celui que l'utilisateur a enregistré (il l'a validé à
-/// la saisie), puis celui de l'API s'il en renvoie un. Vide = rien à essayer.
+/// Mots de passe à essayer, dans l'ordre : celui de l'API (la référence, toujours à jour), puis
+/// celui que l'utilisateur a enregistré en secours. Vide = rien à essayer.
 fn password_candidates(stored: Option<String>, from_api: &str) -> Vec<String> {
-    let mut out: Vec<String> = stored.into_iter().filter(|p| !p.is_empty()).collect();
-    if !from_api.is_empty() && !out.iter().any(|p| p == from_api) {
+    let mut out = Vec::new();
+    if !from_api.is_empty() {
         out.push(from_api.to_string());
+    }
+    if let Some(stored) = stored.filter(|p| !p.is_empty() && p != from_api) {
+        out.push(stored);
     }
     out
 }
@@ -747,8 +751,8 @@ mod tests {
     }
 
     #[test]
-    fn stored_password_comes_first_then_api_one() {
-        assert_eq!(password_candidates(Some("perso".into()), "api"), ["perso", "api"]);
+    fn api_password_comes_first_then_the_saved_one() {
+        assert_eq!(password_candidates(Some("perso".into()), "api"), ["api", "perso"]);
         // Identiques : un seul essai, pas deux poignées de main pour le même refus.
         assert_eq!(password_candidates(Some("même".into()), "même"), ["même"]);
         assert_eq!(password_candidates(None, "api"), ["api"]);

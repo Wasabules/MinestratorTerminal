@@ -41,7 +41,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let notice = $state<string | null>(null);
-  /** Mot de passe SFTP manquant ou refusé : l'API ne le transmet plus (cf. SftpPasswordCard). */
+  /** Mot de passe SFTP manquant ou refusé (l'API n'en a pas fourni de valable) : SftpPasswordCard. */
   let pwCard = $state<"required" | "rejected" | "change" | null>(null);
   /** Identité du serveur SFTP changée : connexion bloquée jusqu'à confirmation (SftpHostKeyCard). */
   let hostKeyCard = $state(false);

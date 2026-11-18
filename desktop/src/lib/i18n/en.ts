@@ -874,7 +874,7 @@ export const en: Dict = {
     password: {
       button: 'SFTP password',
       title: 'SFTP password',
-      required: 'MineStrator no longer sends the SFTP password: enter it once for this server.',
+      required: 'MineStrator did not provide a working SFTP password for this server: enter it once.',
       rejected: 'The SFTP server rejected this password. Check it in the panel.',
       change: 'The password saved for this server is used automatically.',
       where: 'You will find it in the server’s “Access” tab on the MineStrator panel.',

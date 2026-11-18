@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Saisie du mot de passe SFTP d'un serveur (l'API MineStrator ne le transmet plus). Le cœur le
+   * Saisie du mot de passe SFTP d'un serveur, en secours de celui fourni par l'API. Le cœur le
    * vérifie en ouvrant une session, puis le range dans le Keystore Android ; il ne revient jamais
    * au JS.
    */
