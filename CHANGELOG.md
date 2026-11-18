@@ -8,6 +8,29 @@ unique des notes de version. Format inspiré de [Keep a Changelog](https://keepa
 
 ---
 
+## v0.6.1
+
+### Fichiers (SFTP)
+
+- **L'accès aux fichiers des serveurs fonctionne à nouveau.** MineStrator ne transmet plus le mot
+  de passe SFTP à l'application : l'explorateur de fichiers, les transferts et les outils fichiers
+  du Copilote échouaient tous. L'application le demande désormais une fois par serveur — il se
+  copie depuis l'onglet « Accès » du panel —, le vérifie auprès du serveur, puis s'en souvient.
+- Le bouton clé de l'onglet Fichiers permet de changer ou d'oublier ce mot de passe ; s'il est
+  refusé, par exemple après un changement dans le panel, l'application le redemande.
+- Les mots de passe SFTP sont effacés à la déconnexion du compte.
+
+### Sécurité
+
+- **Android : les identifiants sont désormais chiffrés par le Keystore du téléphone** — clé API,
+  clés des fournisseurs d'IA, mots de passe SFTP. Ils étaient jusqu'ici rangés dans un fichier
+  privé de l'application, sans chiffrement propre ; ce fichier est repris puis supprimé au premier
+  lancement, sans rien avoir à ressaisir.
+- Windows : la clé API conservée par le service d'arrière-plan est chiffrée avec la clé du compte
+  du service ; une copie du fichier est inexploitable ailleurs.
+
+---
+
 ## v0.6.0
 
 ### Supervision en arrière-plan
