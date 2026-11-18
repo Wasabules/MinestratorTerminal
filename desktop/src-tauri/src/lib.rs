@@ -24,6 +24,8 @@ pub fn run() {
     let supervisor = core.supervisor();
     let copilot_core = core.clone();
     let link_core = core.clone();
+    // Journaux et historique : journal local des incidents (outil MCP `list_incidents`).
+    let journal_core = core.clone();
 
     let mut builder = tauri::Builder::default();
     // Instance unique : DOIT être le 1er plugin enregistré. Si une 2ᵉ instance est lancée alors que
@@ -84,6 +86,12 @@ pub fn run() {
             // Copilote : écoute des alertes → diagnostic LLM automatique.
             tauri::async_runtime::spawn(async move {
                 copilot_core.spawn_copilot();
+            });
+
+            // Journaux et historique : alertes et diagnostics consignés dans la base locale, relus
+            // par l'outil MCP `list_incidents` (y compris par le MCP headless, même dossier).
+            tauri::async_runtime::spawn(async move {
+                journal_core.start_incident_journal();
             });
 
             setup_tray(app)?;

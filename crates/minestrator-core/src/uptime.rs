@@ -369,6 +369,106 @@ impl crate::Core {
         let from = from.max(to - RETENTION_S);
         Ok(spans(&self.store.state_rows(server_id, from)?, to))
     }
+
+    /// Journaux et historique : outil MCP `uptime_report`. Le rapport de la carte Disponibilité
+    /// ([`crate::Core::uptime_report`]) tel quel, mis en forme pour un agent ([`ai_report`]). Hors
+    /// de l'app (MCP headless), le service d'arrière-plan est d'abord consulté pour que ses
+    /// observations comptent.
+    pub(crate) async fn uptime_tool_report(&self, server_id: i64) -> crate::Result<String> {
+        let service = self.probe_service_mode().await;
+        let report = self.uptime_report(server_id).await?;
+        serde_json::to_string_pretty(&ai_report(&report, service)).map_err(|e| crate::Error::Unexpected(e.to_string()))
+    }
+}
+
+// --- Journaux et historique : rapport pour un agent ---------------------------------------------
+
+/// Coupures détaillées au plus dans le rapport pour un agent (les plus récentes).
+const AI_OUTAGES: usize = 30;
+
+/// Durée lisible : `2 j 3 h`, `1 h 05 min`, `12 min`, `40 s`.
+fn human(secs: i64) -> String {
+    let s = secs.max(0);
+    match s {
+        0..=59 => format!("{s} s"),
+        60..=3599 => format!("{} min", s / 60),
+        3600..=86_399 => format!("{} h {:02} min", s / 3600, s % 3600 / 60),
+        _ => format!("{} j {} h", s / 86_400, s % 86_400 / 3600),
+    }
+}
+
+fn pct(part: i64, whole: i64) -> Option<f64> {
+    (whole > 0).then(|| (part as f64 / whole as f64 * 10_000.0).round() / 100.0)
+}
+
+/// Rapport de disponibilité pour un agent IA (outil MCP `uptime_report`) : fenêtres et coupures
+/// de [`report`] sans recalcul, dates lisibles (UTC), part de l'hébergeur en %, et un
+/// avertissement explicite quand rien n'a surveillé localement — l'hébergeur seul ne prouve
+/// jamais une coupure, un 100 % n'est alors pas établi.
+pub(crate) fn ai_report(r: &UptimeReport, service_included: bool) -> serde_json::Value {
+    use crate::incidents::iso;
+    use serde_json::json;
+    let windows: Vec<serde_json::Value> = r
+        .windows
+        .iter()
+        .map(|w| {
+            let label = match w.seconds {
+                86_400 => "24h",
+                604_800 => "7j",
+                _ => "30j",
+            };
+            json!({
+                "window": label,
+                "availability_pct": w.percent.map(|p| (p * 100.0).round() / 100.0),
+                "monitored": human(w.monitored_s),
+                "monitored_pct_of_window": pct(w.monitored_s, w.seconds),
+                "down": human(w.monitored_s - w.up_s),
+                "host_share_pct": pct(w.host_s, w.monitored_s),
+                "monitored_s": w.monitored_s,
+                "up_s": w.up_s,
+                "host_s": w.host_s,
+            })
+        })
+        .collect();
+    let outages: Vec<serde_json::Value> = r
+        .outages
+        .iter()
+        .take(AI_OUTAGES)
+        .map(|o| {
+            json!({
+                "start": iso(o.start),
+                "end": o.end.map(iso),
+                "ongoing": o.end.is_none(),
+                "duration": human(o.duration_s),
+                "duration_s": o.duration_s,
+                "cause": o.cause,
+                "end_known": o.end_known,
+            })
+        })
+        .collect();
+    let month = r.windows.last();
+    let local_s = month.map_or(0, |w| w.monitored_s - w.host_s);
+    let mut v = json!({
+        "server_id": r.server_id,
+        "generated_at": iso(r.generated_at),
+        "history_since": r.since.map(iso),
+        "windows": windows,
+        "outages_total": r.outages.len(),
+        "outages_shown": outages.len(),
+        "outages": outages,
+        "service_included": service_included,
+        "notes": [
+            "availability_pct = temps en service / temps SURVEILLÉ ; les périodes non surveillées (app fermée, ordinateur éteint) ne comptent ni comme disponibles ni comme coupures.",
+            "host_share_pct = part du temps surveillé connue seulement par les statistiques à la minute de l'hébergeur : une minute mesurée prouve que le serveur tournait, mais l'hébergeur ne prouve jamais une coupure (100 % sur ces périodes).",
+            "cause : crash = arrêt inattendu, stop = arrêt demandé, unknown = inconnue ; end_known = false : la surveillance s'est interrompue pendant la coupure.",
+        ],
+    });
+    if month.is_none_or(|w| w.monitored_s == 0) {
+        v["warning"] = json!("Aucune donnée sur 30 jours : ni surveillance (app de bureau ou service d'arrière-plan, sur ce poste) ni statistiques de l'hébergeur. Disponibilité INCONNUE, pas 100 %. Ce serveur MCP relit ce que l'app a consigné mais ne surveille rien lui-même.");
+    } else if local_s == 0 {
+        v["warning"] = json!("Aucune observation de surveillance locale sur 30 jours (app de bureau ou service d'arrière-plan, sur ce poste) : les pourcentages ne reposent que sur l'hébergeur, qui ne prouve jamais une coupure. Une disponibilité de 100 % n'est PAS établie. Ce serveur MCP relit ce que l'app a consigné mais ne surveille rien lui-même.");
+    }
+    v
 }
 
 #[cfg(test)]
@@ -656,5 +756,48 @@ mod tests {
         let filled = fill_unmonitored(local, host_spans(&minutes(0, 2_000), 2_000));
         assert_eq!(filled.len(), 2);
         assert_eq!((filled[1].start, filled[1].end, filled[1].host), (780, 2_000, true));
+    }
+
+    // --- Rapport pour un agent (outil MCP `uptime_report`) ---
+
+    #[test]
+    fn rapport_agent_reprend_le_calcul_sans_le_refaire() {
+        let mut rows = every_minute(0, 600, "running");
+        rows.push(change(630, "offline", "crash"));
+        rows.extend(every_minute(660, 900, "offline"));
+        rows.push(row(960, "running"));
+        rows.extend(every_minute(1020, 1200, "running"));
+        let r = report(4, &spans(&rows, 1200), 1200);
+        let v = ai_report(&r, true);
+        assert_eq!(v["server_id"], 4);
+        assert_eq!(v["service_included"], true);
+        assert_eq!(v["windows"][0]["window"], "24h");
+        assert_eq!(v["windows"][2]["window"], "30j");
+        assert_eq!(v["windows"][0]["availability_pct"], 72.5, "870 s sur 1 200 s");
+        assert_eq!(v["windows"][0]["down"], "5 min");
+        assert_eq!(v["windows"][0]["host_share_pct"], 0.0);
+        assert_eq!(v["outages_total"], 1);
+        let o = &v["outages"][0];
+        assert_eq!((o["start"].as_str(), o["end"].as_str()), (Some("1970-01-01T00:10:30Z"), Some("1970-01-01T00:16:00Z")));
+        assert_eq!((o["cause"].as_str(), o["duration"].as_str(), o["ongoing"].as_bool()), (Some("crash"), Some("5 min"), Some(false)));
+        assert!(v.get("warning").is_none(), "surveillé localement : pas d'avertissement");
+    }
+
+    #[test]
+    fn rapport_agent_sans_surveillance_locale_le_dit() {
+        // Rien du tout : disponibilité inconnue, pas 100 %.
+        let v = ai_report(&report(1, &[], 1000), false);
+        assert!(v["warning"].as_str().unwrap().contains("INCONNUE"));
+        assert!(v["windows"][0]["availability_pct"].is_null());
+        // Hébergeur seul : 100 % du temps observé, mais l'avertissement le relativise.
+        let now = 6 * 3_600;
+        let filled = fill_unmonitored(Vec::new(), host_spans(&minutes(0, now), now));
+        let v = ai_report(&report(1, &filled, now), false);
+        assert_eq!(v["windows"][0]["availability_pct"], 100.0);
+        assert_eq!(v["windows"][0]["host_share_pct"], 100.0);
+        assert!(v["warning"].as_str().unwrap().contains("PAS établie"));
+        assert_eq!(human(59), "59 s");
+        assert_eq!(human(3_900), "1 h 05 min");
+        assert_eq!(human(2 * 86_400 + 3 * 3_600 + 5), "2 j 3 h");
     }
 }

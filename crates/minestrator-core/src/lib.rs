@@ -56,6 +56,9 @@ mod uptime;
 mod util;
 mod webhook;
 mod world;
+// Journaux et historique : outils MCP `search_logs`, `error_digest`, `uptime_report`, `list_incidents`.
+mod incidents;
+mod server_logs;
 
 pub use accounts::{Account, AccountSwitch};
 pub use archive::ArchiveEntry;

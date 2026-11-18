@@ -223,6 +223,22 @@ Regroupés par domaine (liste réelle des fichiers).
   parse le rapport protobuf (`prost`), assemble un contexte pour le Copilote.
 - **`doctor`** — docteur démarrage : rassemble commande de démarrage + fin de `latest.log` + crash-report
   et pré-scanne les pannes connues (EULA, port, OOM, version Java, mixin, monde corrompu…).
+- **`server_logs`** (journaux et historique) — journaux **des serveurs** (≠ `logs`, ceux de l'app),
+  outils MCP `search_logs` et `error_digest`. Lecture SFTP plafonnée du dossier des journaux
+  (`games::log_dir`, paramétrable) : `latest.log` + archives `.log.gz` (`archive::gunzip_capped`),
+  plafonds de fichiers, d'octets téléchargés, de taille par fichier et de résultats, toujours
+  signalés. Parsing pur et testé sur des extraits Paper, Spigot, Fabric, Forge et Unreal :
+  horodatages, datation des lignes (jour du nom de fichier, passage de minuit, remontée depuis la
+  dernière écriture, décalage UTC du serveur déduit de `latest.log`), enregistrements multi-lignes,
+  **signatures d'erreur** (cause première + frames utiles, normalisées), plugin ou mod probable,
+  alias des pseudos (`redact::pseudonym`, comme `list_players`).
+- **`incidents`** (journaux et historique) — journal local des incidents (table `incident_log`) :
+  l'app de bureau y consigne alertes et diagnostics du Copilote (`Core::start_incident_journal`) ;
+  l'outil MCP `list_incidents` le relit, y ajoute les alertes du service d'arrière-plan (IPC, s'il
+  supervise le compte) et les crashs du suivi de disponibilité, et rattache chaque diagnostic à son
+  incident (`assemble`, pur). Le MCP headless partage le dossier de données mais ne surveille rien :
+  hors de l'app, `Core::probe_service_mode` consulte le service sans effet de bord, et l'absence de
+  données est dite explicitement. `uptime_report` met en forme `Core::uptime_report` (`uptime::ai_report`).
 
 ### 3.4 Copilote IA & serveur MCP
 - **`copilot`** — agent LLM : diagnostic automatique déclenché par les alertes du superviseur, analyse de

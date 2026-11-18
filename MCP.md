@@ -174,6 +174,30 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 | `diagnose_startup` | | `server_id` | **Docteur démarrage** : en un appel, rassemble commande de démarrage + fin de `logs/latest.log` + dernier crash-report, et **pré-scanne** les pannes connues (EULA, port occupé, OOM, version Java, dépendance/mixin de mod, monde corrompu). |
 | `inspect_region` | | `server_id`, `path` | Inspecte un fichier de région `.mca` et repère les chunks **structurellement corrompus** (pointeurs/longueurs invalides). Lecture seule. |
 
+#### Journaux et historique
+
+Ce que seul un outil local sait faire : fouiller les journaux archivés par SFTP et relire
+l'historique que l'app consigne (disponibilité, incidents, diagnostics). Absents du MCP officiel :
+gardés quand il prend la gestion (`LOCAL_KEEP_TOOLS`). Universels (tous les jeux).
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `search_logs` | | `server_id`, `query`, `regex?`, `case_sensitive?`, `context?`, `since?`, `until?`, `order?`, `dir?`, `include_debug?`, `max_results?`, `max_files?` | Recherche dans `logs/latest.log` **et** les journaux archivés (`AAAA-MM-JJ-N.log.gz`, décompressés à la volée) : texte ou expression régulière (temps linéaire), casse ignorée par défaut, 0 à 5 lignes de contexte. Période `since`/`until` (`AAAA-MM-JJ`, `AAAA-MM-JJ HH:MM`, relatif `12h`/`7d`) en **heure du serveur** : jour déduit du nom du fichier et de l'horodatage `[HH:MM:SS]` (passage de minuit suivi ligne à ligne ; `latest.log` daté en remontant depuis sa dernière écriture ; formats Forge, Unreal et ISO datés directement), décalage UTC du serveur déduit de la fin de `latest.log`. Résultats **groupés par fichier**, numéros de ligne façon `grep -n`, `order=oldest` pour une première apparition. `dir` : jeux dont les journaux sont ailleurs (défaut par jeu : `/logs`, Satisfactory `/FactoryGame/Saved/Logs`, Factorio `/`). **Plafonds** signalés dans la sortie : 20 fichiers (max 60), 32 Mio téléchargés, `.gz` de plus de 8 Mio ignoré, journal en clair lu sur ses 8 derniers Mio, décompression bornée à 48 Mio, 50 résultats (max 200), sortie de 64 Kio. |
+| `error_digest` | | `server_id`, `source?`, `since_hours?`, `include_warnings?`, `limit?`, `dir?`, `max_files?` | Erreurs et avertissements des journaux (fenêtre par défaut 24 h, max 720 h) ou de la console récente, **regroupés par signature** : classe d'exception de la cause première + deux premières frames utiles (hors JDK, serveur, loader, bibliothèques), sans nombres, adresses, lambdas ni horodatages ; sans exception, message normalisé (pseudos, UUID, nombres retirés). Par groupe : niveau (`FATAL`, `SEVERE`, `ERROR`, `WARN`), nombre, première et dernière occurrence, **plugin ou mod probable** (`evidence` : `event` « Could not pass event … to X », `enable` « Error occurred while enabling X », `load`, `task`, `mod` (module Forge, « from mod x », `ModID:`), `jar` (jar des frames), `prefix` `[X]`, `logger`, `package`), exemple tronqué. Trié par gravité puis fréquence. Formats Paper, Spigot (frames préfixées), Fabric, Forge/NeoForge, Unreal. Mêmes plafonds de lecture (8 fichiers par défaut, max 30). |
+| `uptime_report` | | `server_id` | Disponibilité sur **24 h / 7 j / 30 j** (% du temps surveillé, temps surveillé, indisponibilité, part déduite de l'hébergeur `host_share_pct`) et coupures (début, fin, durée, cause `crash`/`stop`/`unknown`, fin connue ou non) : le calcul de la carte Disponibilité de l'app, sans recalcul. `warning` explicite si aucune surveillance locale n'existe (l'hébergeur seul ne prouve jamais une coupure). |
+| `list_incidents` | | `server_id?`, `limit?`, `since_days?`, `kind?` | Incidents du plus récent au plus ancien (défaut 20, max 100, 30 jours, max 32) : crash, surcharge (`cpu`/`ram`/`disk`), échéance de MyBox, redémarrage automatique, tâche planifiée, chacun avec les **diagnostics du Copilote** rattachés (résumé, cause, correctif, actions proposées) ; diagnostics sans alerte (ligne ERROR/WARN de console, surcharge prolongée) listés seuls. Sources : journal local de l'app (table `incident_log`), alertes du service d'arrière-plan quand il supervise le compte (sans doublon), crashs du suivi de disponibilité non couverts par une alerte. `coverage` dit ce qui a été consulté. |
+
+**Données locales et MCP headless.** `minestrator-mcp` et `--mcp` ouvrent le même dossier de
+données que l'app (même `metrics.db`, mode WAL) : ils relisent son suivi de disponibilité et son
+journal des incidents, mais **ne surveillent rien eux-mêmes** (pas de superviseur, pas de
+Copilote). Le journal des incidents est tenu par l'app de bureau quand elle tourne ; le service
+d'arrière-plan, lui, garde ses observations dans son propre dossier machine : hors de l'app, le
+serveur MCP lui demande (au plus une fois par minute, sans autre effet) s'il supervise le compte,
+et inclut alors ses coupures et ses alertes par IPC. Sans aucune donnée, `list_incidents` répond
+par un message explicite et `uptime_report` par un `warning` — jamais une liste vide ou un 100 %
+présentés comme un bilan. Sorties anonymisées comme `read_console`/`read_file` (`redact`) ; pseudos
+des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA est active.
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -203,6 +227,9 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 - **Sauvegardes / filet** : `list_backups`, `list_snapshots`, `create_snapshot`
 - **Diagnostic de panne** : `diagnose_startup` (crash-loop), `inspect_region` (maps corrompues),
   `read_console` (+ `server_metrics` pour corréler)
+- **Journaux et historique** : `error_digest` (ce qui plante, par signature et plugin probable),
+  `search_logs` (journaux archivés compris), `uptime_report` (disponibilité, coupures),
+  `list_incidents` (crashs, surcharges et diagnostics du Copilote)
 
 ## 6. Contrôle & sécurité (réglages)
 
