@@ -13,8 +13,10 @@
   import { api } from '#lib/ipc.ts';
   import { tabs } from '#lib/tabs/tabs.svelte.ts';
   import { isFake, fakeText } from '#lib/fake.svelte.ts';
+  import { isAnon } from '#lib/anon/anon.svelte.ts';
   import type { UserNotification } from '#lib/types.ts';
   import Icon from './Icon.svelte';
+  import Masked from './Masked.svelte';
 
   // État d'ouverture partagé : la palette de commandes peut ouvrir ce panneau.
   const open = $derived(isAlertCenterOpen());
@@ -127,20 +129,25 @@
                   <span class="srv">{a.server_name}</span>
                   <span class="time dim">{ago(now, a.ts)}</span>
                 </div>
-                <div class="msg">{a.message}</div>
+                <div class="msg"><Masked value={a.message} /></div>
                 {#if a.details}
                   <div class="det-actions">
                     <button class="clear" onclick={() => (expanded = expanded === a.id ? null : a.id)}>
                       {expanded === a.id ? t('alerts.hideDetails') : t('alerts.showDetails')}
                     </button>
                     {#if expanded === a.id}
+                      <!-- Mode anonyme : détail affiché masqué, copié tel quel. -->
                       <button class="clear" onclick={() => copyDetails(a.id, a.details!)}>
-                        {copiedId === a.id ? t('alerts.copied') : t('alerts.copyDetails')}
+                        {copiedId === a.id
+                          ? isAnon()
+                            ? t('anon.copiedReal')
+                            : t('alerts.copied')
+                          : t('alerts.copyDetails')}
                       </button>
                     {/if}
                   </div>
                   {#if expanded === a.id}
-                    <pre class="details">{shownDetails(a.details)}</pre>
+                    <pre class="details"><Masked value={shownDetails(a.details)} /></pre>
                   {/if}
                 {/if}
               </div>
@@ -171,7 +178,7 @@
                   <span class="srv">{n.kind}</span>
                   <span class="time dim">{n.date.slice(0, 16)}</span>
                 </div>
-                <div class="msg">{n.message}</div>
+                <div class="msg"><Masked value={n.message} /></div>
               </div>
             </div>
           {/each}

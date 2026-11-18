@@ -26,6 +26,7 @@
   import ModInstallCenter from './ModInstallCenter.svelte';
   import CopilotContextMenu from './CopilotContextMenu.svelte';
   import CommandPalette from './CommandPalette.svelte';
+  import AnonToggle from './AnonToggle.svelte';
   import HomePanel from './HomePanel.svelte';
   import ServerPanel from './ServerPanel.svelte';
   import SettingsView from './views/SettingsView.svelte';
@@ -120,6 +121,8 @@
     <div class="controls">
       <!-- Bouton + palette de commandes (Ctrl+K / ⌘K), dialog modal en couche supérieure. -->
       <CommandPalette />
+      <!-- Mode anonyme (Ctrl+Shift+H / ⇧⌘H) : IP, adresses et e-mail masqués à l'écran. -->
+      <AnonToggle />
       <ModInstallCenter />
       <CopilotCenter />
       <AlertCenter />

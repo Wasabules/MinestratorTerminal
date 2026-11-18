@@ -23,6 +23,7 @@
     type TaskDraft,
   } from '#lib/automations/format.ts';
   import Icon from '../Icon.svelte';
+  import Masked from '../Masked.svelte';
   import PanelSchedulesSection from './PanelSchedulesSection.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
@@ -366,7 +367,7 @@
                 </span>
               </div>
               <div class="run-msg">
-                {r.message}
+                <Masked value={r.message} />
                 {#if r.details}
                   <button class="linkbtn" onclick={() => (openRun = openRun === i ? null : i)}>
                     {openRun === i ? t('alerts.hideDetails') : t('alerts.showDetails')}
@@ -374,7 +375,7 @@
                 {/if}
               </div>
               {#if r.details && openRun === i}
-                <pre class="details">{r.details}</pre>
+                <pre class="details"><Masked value={r.details} /></pre>
               {/if}
             </div>
           {/each}

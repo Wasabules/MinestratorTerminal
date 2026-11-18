@@ -3,6 +3,7 @@
   import { tabs } from '#lib/tabs/tabs.svelte.ts';
   import { trigIcon } from '#lib/copilot/format.ts';
   import Icon from './Icon.svelte';
+  import Masked from './Masked.svelte';
   import {
     diagnosisItems,
     unreadDiagnoses,
@@ -75,7 +76,7 @@
               <span class="ti"><Icon name={trigIcon(d.trigger)} size={15} /></span>
               <div class="body">
                 <span class="srv">{d.server_name}</span>
-                <span class="summary dim">{d.summary}</span>
+                <span class="summary dim"><Masked value={d.summary} /></span>
               </div>
             </button>
           {/each}

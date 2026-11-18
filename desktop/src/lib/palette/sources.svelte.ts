@@ -25,6 +25,7 @@ import {
 } from '#lib/servers/power.ts';
 import { runtimeMeta, statusMeta } from '#lib/status.ts';
 import { toggleTheme } from '#lib/theme.ts';
+import { anonShortcutLabel, anonText, isAnon, toggleAnon } from '#lib/anon/anon.svelte.ts';
 import { openSettingsSection } from '#lib/settings/nav.svelte.ts';
 import { setAlertCenterOpen } from '#lib/alerts/alerts.svelte.ts';
 import { accountsStore, applyAccountSwitch, openAddAccount } from '#lib/stores/accounts.svelte.ts';
@@ -179,10 +180,12 @@ function commandPage(id: number, name: string): PalettePage {
       if (!s) return [];
       const cmd = query.trim();
       const blocked = powerBlocked(s.item.status);
+      // Mode anonyme : la commande est rappelée masquée (`ban-ip 1.2.3.4`), envoyée telle quelle.
+      const shown = anonText(cmd);
       return [
         {
           id: `command:${id}:send`,
-          title: cmd ? t('palette.sendNamed', { cmd }) : t('palette.typeCommand'),
+          title: cmd ? t('palette.sendNamed', { cmd: shown }) : t('palette.typeCommand'),
           icon: 'terminal',
           disabled: !cmd || blocked,
           hint: blocked ? serverState(s).label : undefined,
@@ -193,7 +196,7 @@ function commandPage(id: number, name: string): PalettePage {
             return {
               keepOpen: true,
               query: '',
-              message: t('palette.commandSent', { cmd, server: s.name }),
+              message: t('palette.commandSent', { cmd: shown, server: s.name }),
             };
           },
         },
@@ -422,6 +425,14 @@ export function installBuiltinPaletteSources(): void {
         keywords: [t('common.language'), 'language', 'langue'],
         run: () => setLocale(l.code),
       })),
+      {
+        id: 'pref:anon',
+        title: isAnon() ? t('anon.turnOff') : t('anon.turnOn'),
+        icon: isAnon() ? 'eye' : 'eye-off',
+        keywords: [t('palette.kw.anon')],
+        hint: anonShortcutLabel(),
+        run: () => toggleAnon(),
+      },
       {
         id: 'pref:compact-tabs',
         title: isCompactTabs() ? t('palette.compactOff') : t('palette.compactOn'),

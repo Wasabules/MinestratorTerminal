@@ -7,8 +7,10 @@
   import { serverCaps } from '#lib/games/capabilities.svelte.ts';
   import { renderMarkdown } from '#lib/markdown.ts';
   import { uid } from '#lib/util/id.ts';
+  import { anonText } from '#lib/anon/anon.svelte.ts';
   import ActionList from '../ActionList.svelte';
   import Icon from '../Icon.svelte';
+  import Masked from '../Masked.svelte';
   import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import type { ProposedAction } from '#lib/types.ts';
 
@@ -248,9 +250,9 @@
       <div class="msg {m.role}">
         <div class="bubble">
           {#if m.role === 'assistant'}
-            <div class="md">{@html renderMarkdown(m.text)}</div>
+            <div class="md">{@html renderMarkdown(anonText(m.text))}</div>
           {:else}
-            <div class="text">{m.text}</div>
+            <div class="text"><Masked value={m.text} /></div>
           {/if}
           {#if m.actions.length > 0}
             <div class="msg-actions">
@@ -268,7 +270,7 @@
             <!-- Rendu markdown EN DIRECT depuis la copie THROTTLÉE `shownMd` (~90 ms) : le parser tolère
                  le markdown incomplet (bloc de code non refermé qui grandit, inline littéral puis basculé) ;
                  transition vers le message final markdown→markdown, sans reflow ni re-parse à 60 fps. -->
-            <div class="md stream">{@html renderMarkdown(displayStream(shownMd))}</div>
+            <div class="md stream">{@html renderMarkdown(anonText(displayStream(shownMd)))}</div>
           {/if}
           <div class="thinking" class:has-text={shown}>
             <span class="dots"><span></span><span></span><span></span></span>

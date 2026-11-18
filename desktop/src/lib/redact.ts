@@ -46,14 +46,25 @@ function isAuthCmd(token: string): boolean {
   return token.startsWith('/') && AUTH_CMDS.has(token.slice(1).toLowerCase());
 }
 
-/** IPv4 (octets 0-255) → `[IP]`. Le `\b` évite les versions x.y.z (3 groupes). */
+/**
+ * Motifs partagés avec le mode anonyme (`anon/mask.ts`), qui masque les mêmes éléments à
+ * l'affichage. Ce sont des sources de regex sans drapeau : chaque usage compose les siennes.
+ *
+ * IPv4 : octets 0-255 ; le `\b` évite les versions x.y.z (3 groupes).
+ * E-mail : longueurs bornées (64 avant l'`@`, comme la norme) pour qu'une très longue ligne sans
+ * `@` ne coûte pas un temps quadratique.
+ */
+export const IPV4_PATTERN = String.raw`\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b`;
+export const EMAIL_PATTERN = String.raw`[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,}`;
+
+const IPV4_RE = new RegExp(IPV4_PATTERN, 'g');
+const EMAIL_RE = new RegExp(EMAIL_PATTERN, 'g');
+
+/** IPv4 → `[IP]`. */
 function maskIpv4(s: string): string {
-  return s.replace(
-    /\b((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)\b/g,
-    '[IP]'
-  );
+  return s.replace(IPV4_RE, '[IP]');
 }
 
 function maskEmails(s: string): string {
-  return s.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[EMAIL]');
+  return s.replace(EMAIL_RE, '[EMAIL]');
 }

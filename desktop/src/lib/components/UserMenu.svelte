@@ -16,6 +16,7 @@
   import { avatarStyle } from '#lib/servers/colors.svelte.ts';
   import Icon from './Icon.svelte';
   import AddAccountDialog from './AddAccountDialog.svelte';
+  import Masked from './Masked.svelte';
 
   let open = $state(false);
   let switching = $state<number | null>(null);
@@ -86,7 +87,7 @@
     <div class="menu" role="menu">
       <div class="head">
         <span class="h-pseudo">{pseudo}</span>
-        <span class="h-mail">{mail}</span>
+        <span class="h-mail"><Masked value={mail} kind="email" /></span>
       </div>
 
       <div class="sep"></div>

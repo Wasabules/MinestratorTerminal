@@ -21,6 +21,8 @@
   import { openCopilotMenu } from '#lib/copilot/menu.svelte.ts';
   import { PASTE_SERVICES, pasteExport } from '#lib/paste.ts';
   import { t } from '#lib/i18n/index.ts';
+  import { isAnon } from '#lib/anon/anon.svelte.ts';
+  import { anonEditorMask } from '#lib/anon/editor.ts';
   import Icon from '../Icon.svelte';
 
   let {
@@ -54,6 +56,18 @@
 
   const lang = $derived(detect(name));
   const wrapComp = new Compartment();
+  /** Mode anonyme : masques posés par-dessus le texte, le document reste intact. */
+  const anonComp = new Compartment();
+  let anonShown = false;
+
+  // Bascule du mode anonyme, éditeur ouvert : masques posés ou retirés à chaud. `isAnon()` est lu
+  // avant le retour anticipé pour que l'effet s'y abonne même s'il passe avant la création de la vue.
+  $effect(() => {
+    const on = isAnon();
+    if (!view || on === anonShown) return;
+    anonShown = on;
+    view.dispatch({ effects: anonComp.reconfigure(on ? anonEditorMask : []) });
+  });
 
   function detect(fname: string): { label: string; ext: Extension; isJson: boolean } {
     const e = fname.split('.').pop()?.toLowerCase() ?? '';
@@ -96,6 +110,7 @@
   }
 
   onMount(() => {
+    anonShown = isAnon();
     const state = EditorState.create({
       doc: content,
       extensions: [
@@ -123,6 +138,7 @@
         oneDark,
         ...(readonly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []),
         wrapComp.of([]),
+        anonComp.of(anonShown ? anonEditorMask : []),
         EditorView.updateListener.of((u) => {
           if (u.docChanged) dirty = true;
         }),

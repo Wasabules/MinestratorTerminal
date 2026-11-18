@@ -4,6 +4,7 @@
   import { riskColor } from '#lib/copilot/format.ts';
   import type { ProposedAction } from '#lib/types.ts';
   import Icon from './Icon.svelte';
+  import Masked from './Masked.svelte';
 
   let { actions, serverId }: { actions: ProposedAction[]; serverId: number } = $props();
 
@@ -33,12 +34,12 @@
     <div class="action">
       <span class="risk" style="background: {riskColor(action.risk)}">{action.risk}</span>
       <div class="act-body">
-        <div class="act-label">{action.label}</div>
+        <div class="act-label"><Masked value={action.label} /></div>
         <code class="act-tool">{action.tool}</code>
         {#if applied[i]?.status === 'done'}
-          <div class="act-res ok"><Icon name="check" size={14} /> <span>{applied[i].msg}</span></div>
+          <div class="act-res ok"><Icon name="check" size={14} /> <span><Masked value={applied[i].msg} /></span></div>
         {:else if applied[i]?.status === 'error'}
-          <div class="act-res err"><Icon name="x" size={14} /> <span>{applied[i].msg}</span></div>
+          <div class="act-res err"><Icon name="x" size={14} /> <span><Masked value={applied[i].msg} /></span></div>
         {/if}
       </div>
       <div class="btns">

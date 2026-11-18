@@ -9,6 +9,7 @@
   import { api, humanizeError } from '#lib/ipc.ts';
   import { t } from '#lib/i18n/index.ts';
   import type { SftpHostKey } from '#lib/types.ts';
+  import Masked from '../Masked.svelte';
 
   let {
     serverId,
@@ -52,7 +53,7 @@
     {#if info}
       <dl>
         <dt>{t('sftp.hostKey.host')}</dt>
-        <dd class="mono">{info.host}</dd>
+        <dd class="mono"><Masked value={info.host} kind="address" /></dd>
         <dt>{t('sftp.hostKey.known')}</dt>
         <dd class="mono">{info.known_fingerprint ?? '—'}{#if info.known_algorithm}<span class="algo">{info.known_algorithm}</span>{/if}</dd>
         <dt>{t('sftp.hostKey.presented')}</dt>

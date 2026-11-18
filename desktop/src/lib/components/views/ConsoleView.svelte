@@ -15,6 +15,8 @@
   import { isRunning } from '#lib/status.ts';
   import { serverCaps, serverItem } from '#lib/games/capabilities.svelte.ts';
   import { isFake, fakeText } from '#lib/fake.svelte.ts';
+  import { isAnon } from '#lib/anon/anon.svelte.ts';
+  import { maskText } from '#lib/anon/mask.ts';
   import PowerControl from '../PowerControl.svelte';
   import Icon from '../Icon.svelte';
   import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
@@ -153,7 +155,15 @@
     buffer.push(line);
     if (buffer.length > MAX_BUFFER) buffer.shift();
     const lvl = levelOf(line);
-    if (lvl === 'other' || filter[lvl]) term?.writeln(colorize(line, lvl));
+    if (lvl === 'other' || filter[lvl]) term?.writeln(colorize(shown(line, isAnon()), lvl));
+  }
+
+  /**
+   * Ligne telle qu'écrite dans le terminal. Le tampon garde la vraie (export, re-rendu) ; le mode
+   * anonyme n'agit qu'ici, ce qui permet de réécrire tout le terminal quand on le bascule.
+   */
+  function shown(line: string, anon: boolean): string {
+    return anon ? maskText(line) : line;
   }
 
   // Joueurs connectés via l'API (server_details.players.list) — fiable, contrairement à un parse
@@ -176,18 +186,25 @@
   }
 
   function rerender() {
+    // Dépendances lues AVANT le retour anticipé : l'effet ci-dessous s'exécute une première fois
+    // avant la création du terminal (police attendue), et ne se relancerait jamais s'il ne
+    // s'était abonné à rien.
+    const show: Record<Level, boolean> = { error: filter.error, warn: filter.warn, info: filter.info };
+    const anon = isAnon();
+    void logFormat;
     if (!term) return;
     term.clear();
     for (const line of buffer) {
       const lvl = levelOf(line);
-      if (lvl === 'other' || filter[lvl]) term.writeln(colorize(line, lvl));
+      if (lvl === 'other' || show[lvl]) term.writeln(colorize(shown(line, anon), lvl));
     }
   }
   function toggleLevel(l: Level) {
     filter[l] = !filter[l]; // le re-rendu est piloté par l'effet réactif ci-dessous
   }
-  // Re-classe/re-colorie tout le tampon quand un filtre change OU quand le format de log (capacités)
-  // arrive après les premières lignes. Les lignes live, elles, sont écrites directement par pushLine.
+  // Re-classe/re-colorie tout le tampon quand un filtre change, quand le format de log (capacités)
+  // arrive après les premières lignes, ou quand le mode anonyme bascule (lignes déjà affichées
+  // masquées ou démasquées). Les lignes live, elles, sont écrites directement par pushLine.
   $effect(() => {
     rerender();
   });
