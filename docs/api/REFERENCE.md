@@ -193,7 +193,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | POST | `/mybox/{id_mybox}/server/{id_server}/snapshot-before-delete` | — | écriture, non testé |  |
 | PATCH | `/mybox/{id_mybox}/servers/order` | — | écriture, non testé |  |
 | GET | `/mybox/{id_mybox}/smartscan` | — | non testé |  |
-| GET | `/mybox/{id_mybox}/stats/{début}/{fin}` | — | ✓ GET | Historique de la MyBox ; même format de période. |
+| GET | `/mybox/{id_mybox}/stats/{début}/{fin}` | — | ✓ GET | Historique de la MyBox (somme des serveurs, et `by_server`) ; même format de période. |
 | POST / PATCH | `/mybox/{id_mybox}/subuser` | — | écriture, non testé |  |
 | GET | `/mybox/{id_mybox}/subuser/permissions` | — | ✓ GET |  |
 | POST | `/mybox/{id_mybox}/subuser/preset` | — | écriture, non testé |  |
@@ -340,7 +340,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | GET | `/server/{id_server}/disk/usage` | — | ✓ GET |  |
 | GET | `/server/{id_server}/live` | ✓ | ✓ GET |  |
 | GET | `/server/{id_server}/live/light` | ✓ | ✓ GET |  |
-| GET | `/server/{id_server}/stats/{début}/{fin}` | — | ✓ GET | Historique sur une période : `{début}` et `{fin}` en ISO 8601 (`2026-11-18T15:00:04`). |
+| GET | `/server/{id_server}/stats/{début}/{fin}` | — | ✓ GET | Historique sur une période : bornes `AAAA-MM-JJTHH:MM:SS` **en heure de Paris** (changements d'heure compris ; autre format → 404, fin avant début → `API_INCORRECT_DATE_FORMAT`), 365 jours de profondeur. Moins de 7 jours : une mesure **par minute**, grille complétée de **zéros** là où rien n'a été mesuré (serveur éteint compris) ; à partir de 7 jours : moyennes horaires des minutes mesurées, lentes (504 vers 365 jours). `cpu` en % d'un cœur, `ram` et `disk` en Mo décimaux (10⁶ octets), `players`. Utilisé par l'app : historique croisé et disponibilité (`history.rs`). |
 | GET | `/server/{id_server}/websocket` | — | ✓ GET |  |
 | POST | `/servers/live/light/bulk` | — | ✓ POST | État de plusieurs serveurs en un appel. Corps `{ server_ids: [ids] }`. |
 
@@ -1021,6 +1021,9 @@ stats[].ram : int
 stats[].disk : int
 stats[].players : int
 stats[].date : str
+retention_days : int
+data_available_from : str
+date_start_clamped : bool
 ```
 
 </details>
