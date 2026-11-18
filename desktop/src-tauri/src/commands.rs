@@ -852,9 +852,10 @@ pub fn chat_reset(core: State<'_, Arc<Core>>, session_id: String) {
 pub async fn chat_warm(
     core: State<'_, Arc<Core>>,
     session_id: String,
+    server_id: i64,
     autonomous: bool,
 ) -> Result<(), Error> {
-    core.chat_warm(session_id, autonomous).await;
+    core.chat_warm(session_id, server_id, autonomous).await;
     Ok(())
 }
 

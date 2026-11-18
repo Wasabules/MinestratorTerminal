@@ -1026,6 +1026,9 @@ export const en: Dict = {
     mcpAllowWrites: 'Allow modifying actions',
     mcpAllowWritesDesc:
       'Power actions, commands, moderation, file writes. Uncheck for a read-only (diagnostics-only) mode.',
+    mcpOfficialGateway: 'Relay the official MineStrator MCP',
+    mcpOfficialGatewayDesc:
+      "Adds the official MCP tools (except files, already covered over SFTP) to this same connection, without duplicating the app's own. Your key stays in the keychain, nothing to paste into the client. Destructive actions require the resource's exact name.",
     mcpConnect: 'Connection',
     mcpConfigHint: 'Register this server in your MCP client (“mcpServers” format):',
     mcpCommand: 'Or, raw command:',

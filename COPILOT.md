@@ -72,9 +72,10 @@ agnostique :
   | OpenCode | `permission: { bash, edit, read, … : "deny" }` dans `opencode.json` — `--auto` approuve tout **sauf** les refus explicites |
   | Gemini CLI | mode d'approbation `default` (plus `yolo`) : en non-interactif, toute demande de confirmation est refusée ; nos serveurs MCP sont `trust: true` ; `tools.exclude` en plus |
 
-- **Clé API sur disque** : la config MCP de l'agent (qui porte la clé quand le MCP officiel est
-  branché) est écrite dans un `RunDir` : dossier créé neuf, `0700`/`0600` sous Unix, **effacé à la
-  fin du processus** ; les orphelins de plus de 24 h (crash, anciennes versions) sont purgés.
+- **Config de l'agent** : écrite dans un `RunDir` (dossier créé neuf, `0700`/`0600` sous Unix,
+  **effacé à la fin du processus** ; orphelins de plus de 24 h purgés). Elle ne contient **aucune
+  clé API** : le MCP officiel n'est plus branché sur l'agent, notre serveur `--mcp` le relaie en
+  lisant la clé au trousseau (§4).
 
 ### Deux modes d'exécution
 
@@ -110,25 +111,64 @@ PATH ; le flag `CREATE_NO_WINDOW` évite qu'une fenêtre de console surgisse (ap
 
 ## 4. MCP officiel MineStrator (gestion déléguée)
 
-Réglage `use_official_mcp` (**activé par défaut**). L'hébergeur expose ~**60 outils de gestion**
-(power, console, contenu, backups, MyBox, schedules, bases de données, config Java/ports) via un
-serveur **MCP officiel** (`official_mcp.rs`, `https://mcp.sttr.io/minestrator`, transport Streamable
-HTTP **stateless**, JSON-RPC POST authentifié `Bearer <clé API MineStrator>` — la même clé qu'au
-trousseau). On **délègue la gestion** à ce serveur (maintenu par l'hôte, donc plus fiable) et on
-garde **NOTRE MCP** pour le **SFTP fin + les outils exclusifs**.
+Réglage `use_official_mcp` (**activé par défaut**). L'hébergeur expose **107 outils en 10
+toolsets** (relevé du 2026-11-18) via un serveur **MCP officiel** (`official_mcp.rs`,
+`https://mcp.sttr.io/minestrator`, transport Streamable HTTP **stateless**, JSON-RPC POST
+authentifié `Bearer <clé API MineStrator>` — la même clé qu'au trousseau) : `core` (15),
+`actions` (5), `config` (8), `content` (14), `backups` (7), `mybox` (6), `schedules` (4),
+`databases` (4), `files` (14), `webhosting` (30). 43 restent disponibles en `readonly=1`. On
+**délègue la gestion** à ce serveur (maintenu par l'hôte) et on garde **NOTRE MCP** pour le **SFTP
+fin + les outils exclusifs**. La politique d'accès vit dans `official_relay.rs`.
 
-- **Toolsets délégués** : `core,actions,content,backups,mybox,schedules,databases,config` — **tout
-  sauf `files`** (on gère les fichiers en SFTP direct) → aucune collision de noms.
-- **`merge_tools`** : quand l'officiel répond, notre catalogue local est **recentré** sur
-  `LOCAL_KEEP_TOOLS` (~**15 outils** : SFTP, lecture d'archives/`.gz`, `.mca`, Spark, docteur) +
-  `report_diagnosis` → **pas de doublon** pour l'IA. Le routing d'appel distingue outils officiels
-  vs locaux.
-- **Variante `readonly`** (`&readonly=1`) : en diagnostic auto et en chat non-autonome, les outils
-  **modifiants n'existent pas** pour la connexion → impossible d'agir par mégarde.
-- **Branché sur les deux voies** : les 3 agents CLI (serveur `minestrator_official` ajouté à leur
-  config MCP) **et** la voie API HTTP (`list_tools`/`call_tool`, catalogue mis en cache par session).
-  Repli automatique sur le **catalogue local complet** si l'officiel est désactivé ou injoignable.
-- **Toggle** dans les Réglages (résultats d'outils **redactés** avant de repartir vers le LLM).
+- **Toolsets délégués** : `core,actions,content,backups,mybox,schedules,databases,config` (63
+  outils, 27 en lecture) — ni `files` (SFTP direct), ni `webhosting` (hors du serveur de la session).
+- **Ce que le Copilote reçoit (deny-by-default)** : le Copilote lit du contenu non fiable (chat des
+  joueurs, logs) ; une injection ne doit pas pouvoir agir hors d'un périmètre étroit.
+  - **Lecture** : les outils de la liste `readonly=1`, toujours (appelés sur une connexion
+    `readonly=1`).
+  - **Écriture** (chat **Autonome**, ou bouton « Appliquer ») : uniquement la liste blanche
+    `COPILOT_OFFICIAL_WRITES` — `power_action`, `send_console_command`, `manage_player`,
+    `set_server_parameter`, `install_plugin`, `install_mod`, `install_datapack`, `create_snapshot` :
+    limités à un serveur (`server_id` requis) et raisonnablement réversibles. Un outil de la liste
+    que l'officiel annoncerait destructif en sort de lui-même.
+  - **Jamais** : MyBox (création, ressources, activation, suppression), réinstallation,
+    restaurations, suppressions, bases de données, RCON (n'importe quelle IP), tickets,
+    renommage, ports, adresse, Java, commande de démarrage (`set_startup_config` : exécutée par le
+    shell du conteneur, une injection y planterait une commande persistante), changement de
+    version, modpacks, mondes, écritures de schedules — **et tout outil inconnu** (nouvel outil de
+    l'officiel ou nom inventé).
+  - Filtré **au listing ET à l'exécution** : un appel dont le nom n'est pas dans le catalogue de la
+    conversation (inventé, réservé, ou modifiant en mode suggestion) est refusé avec un message
+    clair — y compris nos outils internes `restore_*`/`delete_snapshot`/`repair_region`, qui
+    n'étaient filtrés qu'au listing.
+  - **Portée** : un appel (officiel ou local) dont `server_id` vise un autre serveur que celui de
+    la session est refusé ; s'il manque, celui de la session est ajouté.
+  - `reveal_credentials` (mots de passe SFTP/FTP/base en clair) est retiré des schémas et des appels.
+- **Dédoublonnage** (`EQUIVALENTS`, table partagée avec la passerelle du MCP local) : quand
+  l'officiel répond, notre catalogue est **recentré** sur `LOCAL_KEEP_TOOLS` (SFTP, archives/`.gz`,
+  `.mca`, Spark, docteur, historique, mises à jour, joueurs, ficsit) + `report_diagnosis`, et quatre
+  paires restent en concurrence — on garde la meilleure :
+
+  | Officiel | Local | Gardé | Pourquoi |
+  |---|---|---|---|
+  | `diagnose_server` | `diagnose_startup` | local | lit commande, `latest.log` et crash-report et pré-classe les pannes connues ; l'officiel n'agrège que fiche, état et événements |
+  | `get_disk_usage` | `disk_usage` | local | même endpoint, + limites du serveur et de la MyBox |
+  | `get_spark_report` | `parse_spark_report` | **officiel** | TPS/MSPT, CPU par mod, entités par chunk, arbre d'appels, profondeur réglable (le nôtre : points chauds + heap summaries) |
+  | `get_server_stats_history` | `server_metrics` | local | historique croisé local (10 s) + hébergeur, résumé et joueurs |
+
+  Un test échoue si un outil officiel proposé a un équivalent local gardé.
+- **Deux voies, une politique** : la voie API HTTP (`merge_tools`, catalogue en cache 10 min dans
+  le processus) et les **agents CLI**. Ces derniers ne se connectent **plus** directement à
+  l'officiel : notre serveur `--mcp` le **relaie** (variables `MINESTRATOR_MCP_OFFICIAL=1` et
+  `MINESTRATOR_MCP_COPILOT_SERVER=<id>` dans son env), avec la même politique et la même portée ;
+  les outils officiels permis figurent nommément dans la liste blanche (`--allowedTools` pour
+  Claude Code, jamais un serveur entier). Plus de clé API dans la config de l'agent. Le process
+  persistant de Claude Code est relancé si le serveur de la conversation change.
+- **« Appliquer »** (mode suggestion) : une action qui désigne un outil officiel suit la même
+  règle (lecture ou liste blanche, `server_id` du diagnostic) ; `INFRA_TOOLS` reste refusé.
+- Repli automatique sur le **catalogue local complet** si l'officiel est désactivé ou injoignable
+  (avertissement au journal, nouvel essai après une minute).
+- **Toggle** dans les Réglages (résultats d'outils **anonymisés** avant de repartir vers le LLM).
 
 ## 5. Ce que fait l'agent (outils)
 
@@ -216,7 +256,8 @@ Dans tous les cas, l'exécution passe par la couche d'outils (mêmes garde-fous 
 - **Désactivé par défaut** : rien ne part vers un LLM tant que tu ne l'as pas activé et configuré.
 - **Par serveur** : exclus n'importe quel serveur du diagnostic.
 - **Liste blanche d'outils** imposée au serveur MCP par variable d'env (honorée quel que soit
-  l'agent), + `readonly` sur le MCP officiel en lecture seule, + permissions fines `disabled_tools`.
+  l'agent), + politique deny-by-default sur le MCP officiel (lecture + liste blanche, portée du
+  serveur, §4), + permissions fines `disabled_tools`.
 
 ## 10. Analyse de performance (Spark)
 
@@ -315,7 +356,9 @@ Implémentation : `copilot::chat_turn` (`chat_http` / `chat_cli` → persistant/
 - `llm.rs` — couche multi-fournisseur HTTP (adaptateurs Anthropic / OpenAI-compatible).
 - `cli.rs` / `cli_agent.rs` / `cli_session.rs` — exécution CLI, adaptateurs par agent, process
   persistant.
-- `official_mcp.rs` — client du MCP officiel (gestion déléguée).
+- `official_mcp.rs` — client (transport) du MCP officiel.
+- `official_relay.rs` — politique d'accès à ses outils (Copilote, passerelle du MCP local), table
+  d'équivalences, cache du catalogue.
 - `perf.rs` / `doctor.rs` / `world.rs` — Spark, docteur démarrage, réparation `.mca`.
 - `redact.rs` — anonymisation avant IA/console.
 - Réutilise `mcp::tool_list()` + `mcp::dispatch()` : **une seule** source de vérité pour les outils.

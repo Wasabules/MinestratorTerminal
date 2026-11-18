@@ -1784,6 +1784,12 @@ export type McpConfig = {
    * Autorise les actions modifiantes (power, commandes, modération, écriture de fichiers).
    */
   allow_writes: boolean,
+  /**
+   * Passerelle vers le MCP officiel MineStrator : relaie ses outils (tous toolsets sauf
+   * `files`) sur cette même connexion, la clé restant au trousseau. Désactivée par défaut (voir
+   * `official_relay.rs`) ; la variable `MINESTRATOR_MCP_OFFICIAL` prime sur ce réglage.
+   */
+  official_gateway: boolean,
 };
 
 /**

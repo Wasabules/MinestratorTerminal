@@ -2,9 +2,10 @@
 
 pub const API_BASE_URL: &str = "https://mine.sttr.io";
 
-/// Serveur MCP OFFICIEL de MineStrator (transport Streamable HTTP, auth `Bearer <clé API>`). Le
-/// Copilote lui délègue la GESTION (60 outils) et garde notre MCP local pour le SFTP + les outils
-/// exclusifs (`inspect_region`, Spark, docteur démarrage).
+/// Serveur MCP OFFICIEL de MineStrator (transport Streamable HTTP, auth `Bearer <clé API>`, 107
+/// outils en 10 toolsets). Le Copilote lui délègue la GESTION (lecture + une liste blanche
+/// d'actions) et garde notre MCP local pour le SFTP + les outils exclusifs ; le serveur MCP local
+/// peut aussi le relayer (passerelle). Politique : `official_relay.rs`.
 pub const OFFICIAL_MCP_URL: &str = "https://mcp.sttr.io/minestrator";
 
 /// Origin exigé par le daemon Wings sur le handshake WebSocket (sinon 403).
@@ -55,3 +56,11 @@ pub const MCP_FORCE_ENABLED_ENV: &str = "MINESTRATOR_MCP_FORCE_ENABLED";
 pub const MCP_ALLOWED_TOOLS_ENV: &str = "MINESTRATOR_MCP_ALLOWED_TOOLS";
 /// Modèle par défaut du Copilote (fournisseur Anthropic ; modifiable dans les réglages).
 pub const COPILOT_DEFAULT_MODEL: &str = "claude-sonnet-5";
+/// Passerelle du serveur MCP local vers le MCP officiel : `1`/`true`/`on` la force, `0`/`false`/`off`
+/// la coupe, quel que soit le réglage `official_gateway` de `mcp.json` (binaire headless, scripts).
+/// Posée aussi par le Copilote dans l'env du serveur MCP de ses agents CLI (relais restreint).
+pub const MCP_OFFICIAL_ENV: &str = "MINESTRATOR_MCP_OFFICIAL";
+/// Serveur de la session du Copilote (`server_id`), posé par le Copilote dans l'env du serveur MCP
+/// qu'il lance pour un agent CLI : tout appel visant un AUTRE serveur est refusé, et les outils
+/// officiels relayés suivent la politique du Copilote (lecture + liste blanche), pas la passerelle.
+pub const MCP_COPILOT_SERVER_ENV: &str = "MINESTRATOR_MCP_COPILOT_SERVER";

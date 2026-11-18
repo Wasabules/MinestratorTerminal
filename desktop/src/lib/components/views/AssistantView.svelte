@@ -92,7 +92,7 @@
     }
     // F — pré-chauffe le process agent dès l'ouverture de l'onglet (best-effort, silencieux) : le
     // 1er message tape alors un process déjà démarré (Node + serveur MCP prêts).
-    void api.chatWarm(sessionId, autonomous).catch(() => {});
+    void api.chatWarm(sessionId, serverId, autonomous).catch(() => {});
   });
   onDestroy(() => {
     destroyed = true;

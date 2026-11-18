@@ -37,6 +37,7 @@ mod mods;
 pub mod mybox;
 mod nbt;
 mod official_mcp;
+mod official_relay;
 pub mod panel_schedules;
 mod paste;
 mod perf;
@@ -332,12 +333,19 @@ impl Core {
         tool: &str,
         args: serde_json::Value,
     ) -> Result<String> {
-        // Gestion de l'infrastructure (créer, redimensionner, supprimer des serveurs…) : jamais
+        // Infrastructure, actions multi-serveurs, configuration persistante (INFRA_TOOLS) : jamais
         // par le Copilote, qui lit du contenu non fiable (chat des joueurs). MCP local et app seulement.
         if mcp::INFRA_TOOLS.contains(&tool) {
             return Err(Error::Invalid(format!(
-                "« {tool} » gère l'infrastructure MyBox : action réservée à l'app et au serveur MCP local."
+                "« {tool} » est réservé à l'app et au serveur MCP local : le Copilote ne l'exécute jamais."
             )));
+        }
+        // Outil du MCP officiel proposé par le Copilote : même règle qu'en autonome (lecture ou
+        // liste blanche, portée limitée au serveur du diagnostic) ; tout autre outil est refusé.
+        if !copilot::is_local_tool(tool) {
+            return official_relay::copilot_apply(self, server_id, tool, args)
+                .await
+                .map_err(Error::Invalid);
         }
         let args = copilot::prepare_action_args(server_id, tool, args);
         mcp::dispatch(self, tool, args)
@@ -422,7 +430,8 @@ impl Core {
 
     /// F — pré-chauffe le process agent persistant d'une session **avant** le 1er message
     /// (best-effort). Masque le bootstrap Node + MCP derrière le temps d'ouverture de l'onglet.
-    pub async fn chat_warm(&self, session_id: String, autonomous: bool) {
+    /// `server_id` : le serveur de la conversation, auquel le process est borné dès son lancement.
+    pub async fn chat_warm(&self, session_id: String, server_id: i64, autonomous: bool) {
         let cfg = self.get_copilot_config();
         if cfg.provider != Provider::LocalCli || cfg.cli_agent != CliAgent::ClaudeCode {
             return; // pré-chauffe pertinente uniquement pour le process persistant Claude Code
@@ -430,7 +439,7 @@ impl Core {
         // best-effort : si un tour est déjà en cours (cellule verrouillée), on NE pré-chauffe pas —
         // surtout, on n'écrase pas la session du tour (c'était la cause de la race warm/send).
         if let Ok(mut session) = self.chat_session_cell(&session_id).try_lock_owned() {
-            copilot::chat_warm(&cfg, &mut session, autonomous).await;
+            copilot::chat_warm(&cfg, &mut session, server_id, autonomous).await;
         }
     }
 

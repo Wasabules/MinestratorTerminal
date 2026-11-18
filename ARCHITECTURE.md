@@ -239,9 +239,18 @@ Regroupés par domaine (liste réelle des fichiers).
   d'outils et le `dispatch`. Réglable via `McpConfig` (activer/désactiver, mode lecture seule). Réutilisée
   par `minestrator-mcp`, par `src-tauri --mcp`, et par le Copilote en interne.
 - **`official_mcp`** — client du **serveur MCP OFFICIEL** de MineStrator (`https://mcp.sttr.io/minestrator`,
-  Streamable HTTP stateless, `Bearer <clé API>`) : une centaine d'outils de gestion (107 annoncés fin
-  2026, cf. minestrator.com/connecter/votre/ia) délégués à l'hôte. Notre MCP local
-  garde le SFTP fin + les outils exclusifs (`inspect_region`, Spark, docteur démarrage).
+  Streamable HTTP stateless, `Bearer <clé API>`, `?toolsets=…&readonly=1`) : 107 outils en 10
+  toolsets (relevé du 2026-11-18, 43 en lecture). Notre MCP local garde le SFTP fin + les outils
+  exclusifs (`inspect_region`, Spark, docteur démarrage).
+- **`official_relay`** — **politique** d'accès à ces outils, partagée par deux consommateurs.
+  Copilote : deny-by-default (lecture = liste `readonly=1` ; en écriture, la seule liste blanche
+  `COPILOT_OFFICIAL_WRITES` d'actions bornées à un serveur et réversibles), filtrée au listing et à
+  l'exécution, portée limitée au serveur de la session ; ses agents CLI ne se connectent plus à
+  l'officiel, notre serveur `--mcp` le relaie (variables `MINESTRATOR_MCP_OFFICIAL`,
+  `MINESTRATOR_MCP_COPILOT_SERVER`). Passerelle du MCP local (`McpConfig::official_gateway`,
+  désactivée par défaut) : tous les toolsets sauf `files`, gating lecture/écriture, `confirm_name`
+  vérifié localement pour tout outil destructif. Table d'équivalences `EQUIVALENTS` (un outil par
+  fonction), catalogue en cache 10 min.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app
@@ -262,7 +271,9 @@ Regroupés par domaine (liste réelle des fichiers).
   automatisations locales (`automation`). Lecture, création, modification, actions (`command` /
   `power`, délai 0-900 s) et ordre ; toute saisie est validée avant envoi (cron borné, commande
   sur une ligne). Desktop : section de la vue Automatisations ; mobile : vue « Tâches » (lecture et
-  activation) ; MCP : `list_schedules`.
+  activation) ; MCP : `list_schedules` et les outils modifiants (`create_schedule`,
+  `update_schedule`, `delete_schedule` gardé par le nom exact, `add_/update_/delete_schedule_task`,
+  `reorder_schedule_tasks`), dans `INFRA_TOOLS` : jamais donnés au Copilote.
 - **`players`** — joueurs **déjà venus** d'un serveur Minecraft Java (capacité `player_data` de
   `games.rs`), lus par l'hébergeur dans `playerdata/` : `GET /server/{id}/players/offline`
   (non documenté ; pages de 200 au plus, **toujours triées par dernière sauvegarde**, `play_time`
@@ -289,7 +300,10 @@ Regroupés par domaine (liste réelle des fichiers).
   (`MyBoxView`, dialogues dans `src/lib/mybox/`) ouvert depuis l'accueil ou la palette ; mobile :
   lecture des ressources et renommage ; MCP : outils « architecte » (`mybox_capacity`,
   `server_catalog`, `plan_placement`, `mybox_smartscan`) et `INFRA_TOOLS` modifiants, **jamais**
-  exposés au Copilote.
+  exposés au Copilote : absents de son catalogue, de la liste blanche de ses agents CLI et
+  d'« Appliquer » — et leurs équivalents officiels (`create_server_on_mybox`,
+  `update_server_resources`, `enable_disable_server`, `delete_server_from_mybox`, renommage…) hors
+  de sa liste blanche, refusés au listing comme à l'exécution (`official_relay`).
 - **`secrets`** — stockage sécurisé natif : clés API (compte actif `api-key`, comptes inactifs
   `api-key-<id>`), clés LLM par fournisseur (`llm-key-<slug>`),
   secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`), URL des destinations
