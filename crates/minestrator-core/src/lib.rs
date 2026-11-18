@@ -25,6 +25,7 @@ mod error;
 mod events;
 mod factorio;
 mod ficsit;
+mod fleet;
 mod games;
 mod history;
 mod llm;

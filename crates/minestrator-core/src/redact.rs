@@ -93,22 +93,43 @@ const SECRET_KEYS: &[&str] = &[
     "webhook",
 ];
 
-/// Masque les secrets `clé=valeur` / `clé: valeur` (clé sensible, insensible à la casse) et les
-/// identifiants d'URL de connexion `scheme://user:pass@host`.
+/// Fins de clé composée qui désignent un secret (`management-server-secret`, `db_password`,
+/// `discord.bot-token`, `apiToken`) : la clé exacte ne suffit pas, les configs de plugins et de
+/// mods préfixent leurs secrets.
+const SECRET_SUFFIXES: &[&str] = &[
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "apikey",
+    "api-key",
+    "api_key",
+    "private-key",
+    "private_key",
+];
+
+fn is_secret_key(key: &str) -> bool {
+    SECRET_KEYS.contains(&key) || SECRET_SUFFIXES.iter().any(|s| key.ends_with(s))
+}
+
+/// Masque les secrets `clé=valeur` / `clé: valeur` (clé sensible, insensible à la casse, entre
+/// guillemets ou non) et les identifiants d'URL de connexion `scheme://user:pass@host`.
 fn mask_secrets(line: Cow<str>) -> Cow<str> {
     let line = mask_connection_string(line);
     let is_key_char = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
     for (pos, sep) in line.char_indices().filter(|(_, c)| *c == '=' || *c == ':') {
-        // Clé = suite de caractères de clé juste avant le séparateur.
-        let key_start = line[..pos]
+        // Clé = suite de caractères de clé juste avant le séparateur (guillemet fermant d'une
+        // clé JSON ou YAML ignoré).
+        let before = line[..pos].trim_end_matches(['"', '\'']);
+        let key_start = before
             .char_indices()
             .rev()
             .take_while(|(_, c)| is_key_char(*c))
             .last()
             .map(|(i, _)| i)
-            .unwrap_or(pos);
-        let key = line[key_start..pos].to_ascii_lowercase();
-        if SECRET_KEYS.contains(&key.as_str())
+            .unwrap_or(before.len());
+        let key = before[key_start..].to_ascii_lowercase();
+        if is_secret_key(&key)
             && !line[pos + sep.len_utf8()..].trim().is_empty()
         {
             return Cow::Owned(format!("{} [SECRET]", &line[..=pos]));
@@ -336,5 +357,20 @@ mod tests {
         assert_eq!(redact("server-port=25565"), "server-port=25565");
         assert_eq!(redact("view-distance: 8"), "view-distance: 8");
         assert_eq!(redact("rcon.password="), "rcon.password=");
+    }
+
+    #[test]
+    fn masks_compound_and_quoted_secret_keys() {
+        // Vu en réel dans server.properties (Minecraft 1.21.9+) : la clé exacte ne suffisait pas.
+        assert_eq!(redact("management-server-secret=abc123"), "management-server-secret= [SECRET]");
+        assert_eq!(redact("  db_password: x"), "  db_password: [SECRET]");
+        assert_eq!(redact("discord.bot-token: x"), "discord.bot-token: [SECRET]");
+        assert_eq!(redact("apiToken=x"), "apiToken= [SECRET]");
+        assert_eq!(redact(r#"  "password": "hunter2","#), r#"  "password": [SECRET]"#);
+        assert_eq!(redact("'client_secret': x"), "'client_secret': [SECRET]");
+        // Sans valeur, ou clé qui ne finit pas par un mot de secret : intact.
+        assert_eq!(redact("management-server-tls-keystore-password="), "management-server-tls-keystore-password=");
+        assert_eq!(redact("token-expiry: 3600"), "token-expiry: 3600");
+        assert_eq!(redact(r#""secret-mode": true"#), r#""secret-mode": true"#);
     }
 }

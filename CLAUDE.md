@@ -175,8 +175,15 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
 - **Agents CLI du Copilote** (`cli_agent.rs`) : ils lisent du contenu non fiable (chat des joueurs),
   donc leurs outils **natifs** (shell, disque local) sont retirés, avec un mécanisme propre à chaque
   CLI et des tests qui le vérifient. Ne réintroduis jamais `yolo`, ni de `--allowedTools` sans
-  `--tools`. Le dossier de config de l'agent (qui contient la clé API) est un `RunDir` : il doit
-  vivre aussi longtemps que le processus de l'agent, et pas plus.
+  `--tools`, ni de serveur MCP entier dans une liste blanche. Ils n'accèdent au MCP officiel que
+  par notre serveur `--mcp`, qui applique la politique du Copilote (`official_relay.rs`) : leur
+  config ne contient aucune clé. Elle reste un `RunDir` : il doit vivre aussi longtemps que le
+  processus de l'agent, et pas plus.
+- **Politique du Copilote** (`official_relay.rs`) : deny-by-default. Outils officiels en lecture
+  (liste `readonly=1`) ; en écriture, seule la liste blanche `COPILOT_OFFICIAL_WRITES` ; portée
+  limitée au serveur de la session (toutes les clés qui désignent un serveur). Un outil local
+  modifiant qui touche à l'infrastructure, à plusieurs serveurs ou à une configuration persistante
+  va dans `INFRA_TOOLS` (jamais donné au Copilote).
 - **Journaux** : `core::logs::init` (fichier tournant dans `<data>/logs`), initialisé par l'app. Sur
   mobile, l'initialisation se fait dans `setup`, après `MINESTRATOR_DATA_DIR`.
 - **Double point d'entrée desktop** : `desktop/src-tauri/src/main.rs` lance la boucle MCP stdio au lieu

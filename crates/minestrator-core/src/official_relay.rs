@@ -398,15 +398,42 @@ pub(crate) fn copilot_allows(cat: &Catalog, name: &str, autonomous: bool) -> boo
         && !is_destructive(def)
 }
 
-/// Refus si l'appel vise un autre serveur que celui de la session (un `server_id` illisible est
-/// refusé aussi). Sans `server_id`, rien à vérifier.
+/// Clés d'arguments qui désignent UN serveur : `server_id`, et le second serveur des outils locaux
+/// qui en lisent deux (`diff_files`, copie).
+const SERVER_KEYS: &[&str] = &["server_id", "other_server_id", "source_server_id", "target_server_id"];
+
+/// Refus si l'appel vise un autre serveur que celui de la session (un identifiant illisible est
+/// refusé aussi), par l'une des `SERVER_KEYS` ou par une liste `server_ids`. Sans identifiant, rien
+/// à vérifier.
 pub(crate) fn scope_violation(server_id: i64, args: &Value) -> Option<String> {
-    match args.get("server_id") {
+    let refuse = |v: &Value| {
+        Some(format!("Refusé : cette conversation ne concerne que le serveur {server_id} (appel visant {v})."))
+    };
+    for key in SERVER_KEYS {
+        match args.get(*key) {
+            None | Some(Value::Null) => {}
+            Some(_) if arg_i64(args, key) == Some(server_id) => {}
+            Some(v) => return refuse(v),
+        }
+    }
+    match args.get("server_ids") {
         None | Some(Value::Null) => None,
-        Some(_) if arg_i64(args, "server_id") == Some(server_id) => None,
-        Some(v) => Some(format!(
-            "Refusé : cette conversation ne concerne que le serveur {server_id} (appel visant {v})."
-        )),
+        Some(Value::Array(ids)) if ids.iter().all(|v| v.as_i64() == Some(server_id)) => None,
+        Some(v) => refuse(v),
+    }
+}
+
+/// Outils LOCAUX de lecture qui couvrent tout le compte quand on ne leur donne pas de liste
+/// (`find_player`) : pour le Copilote, bornés au serveur de la session.
+pub(crate) fn bound_local_args(server_id: i64, name: &str, args: Value) -> Value {
+    match args {
+        Value::Object(mut m) if name == "find_player" => {
+            if m.get("server_ids").is_none_or(Value::is_null) {
+                m.insert("server_ids".into(), json!([server_id]));
+            }
+            Value::Object(m)
+        }
+        other => other,
     }
 }
 
@@ -1447,5 +1474,15 @@ mod tests {
         assert!(scope_violation(5, &json!({ "server_id": " 5 " })).is_none());
         assert!(scope_violation(5, &json!({ "server_id": 6 })).is_some());
         assert!(scope_violation(5, &json!({ "server_id": [5] })).is_some());
+        // Second serveur des outils locaux (diff_files, copie) et listes (find_player).
+        assert!(scope_violation(5, &json!({ "server_id": 5, "other_server_id": 5 })).is_none());
+        assert!(scope_violation(5, &json!({ "server_id": 5, "other_server_id": 6 })).is_some());
+        assert!(scope_violation(5, &json!({ "source_server_id": 5, "target_server_id": 6 })).is_some());
+        assert!(scope_violation(5, &json!({ "server_ids": [5] })).is_none());
+        assert!(scope_violation(5, &json!({ "server_ids": [5, 6] })).is_some());
+        assert!(scope_violation(5, &json!({ "server_ids": "5" })).is_some());
+        assert_eq!(bound_local_args(5, "find_player", json!({ "query": "Al" }))["server_ids"], json!([5]));
+        assert_eq!(bound_local_args(5, "find_player", json!({ "server_ids": null }))["server_ids"], json!([5]));
+        assert_eq!(bound_local_args(5, "list_players", json!({ "server_id": 5 })), json!({ "server_id": 5 }));
     }
 }

@@ -193,6 +193,24 @@ donnés au Copilote.
 | `delete_schedule_task` | ✎ | `server_id`, `schedule_id`, `task_id` | Retire une action. |
 | `reorder_schedule_tasks` | ✎ | `server_id`, `schedule_id`, `task_ids` | Nouvel ordre ; chaque action citée **exactement une fois**. |
 
+#### Plusieurs serveurs
+
+Opérations qui portent sur plusieurs serveurs du compte (`core/src/fleet.rs`), absentes du MCP
+officiel (qui ne sait copier un fichier que d'un serveur vers un webhosting).
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `copy_between_servers` | ✎ | `source_server_id`, `source_paths[]`, `target_server_id`, `target_dir`, `overwrite?`, `strategy?` | **Copie** des fichiers ou dossiers d'un serveur vers un autre (ou un autre dossier du même serveur), récursive et **en flux** (rien d'entier en mémoire) ; chaque source arrive dans `target_dir` sous son nom. **N'écrase jamais** un fichier existant sans `overwrite=true` (ignoré et listé ; un remplacement passe par un fichier temporaire voisin, l'ancien reste intact jusqu'au bout) ; ne remplace jamais un dossier par un fichier ni l'inverse ; refuse la racine `/` comme source, la copie d'un chemin sur lui-même ou dans lui-même, deux sources de même nom. `strategy` : `files` (fichier par fichier, 6 en parallèle, **5 000 fichiers / 2 Gio** au plus), `archive` (compression par le serveur source, transfert de l'archive, **8 Gio** au plus, extraction par le serveur cible dans un dossier de transit puis mise en place ; archives temporaires et dossier de transit **supprimés des deux côtés, même en cas d'échec** ; sources d'un même dossier, destination existante seulement avec `overwrite=true`), `auto` (défaut : archive au-delà de 300 fichiers ou 200 Mio quand c'est possible, repli fichier par fichier si la compression échoue). Place disque de la cible vérifiée avant. Rapport JSON : fichiers et octets copiés, remplacés, dossiers créés, ignorés et pourquoi, durée, nettoyage incomplet éventuel. |
+| `diff_files` | | `server_id`, `path`, `other_server_id?`, `other_path?`, `recursive?`, `context_lines?` | **Compare** un fichier ou un dossier entre deux serveurs, ou deux chemins d'un même serveur (A = référence). Fichiers texte : **diff unifié** avec contexte (3 lignes par défaut, 400 lignes de sortie au plus ; fins de ligne CRLF/LF ignorées). Binaires ou de plus de 1 Mio : signalés sans diff. Dossiers : ajoutés, absents, modifiés (taille, puis même taille mais date différente), type différent ; premier niveau ou récursif (5 000 entrées par côté). Chaque ligne passe par `redact.rs` **avant** son préfixe de diff : les secrets sortent en `[SECRET]`. |
+| `find_player` | | `query`, `exact?`, `server_ids?`, `limit?` | **Retrouve un joueur** (pseudo exact, début de pseudo, UUID ou alias `joueur-xxxxxx`) sur **tous** les serveurs Minecraft Java du compte : connectés en un appel (`live_players_bulk`), joueurs déjà venus par serveur (cache d'une minute, 4 serveurs en parallèle). Par joueur et par serveur : en ligne ou non (`null` si le serveur ne sait pas le dire), dernière venue, temps de jeu, op / whitelist / banni ; serveurs non fouillés listés avec la raison. Pseudos remplacés par un alias stable si l'anonymisation IA est active (comme `list_players`) ; UUID jamais renvoyés. |
+| `broadcast_command` | ✎ | `command`, `server_ids?`, `all_running?`, `only_running?` | Envoie la **même commande** console à plusieurs serveurs par l'endpoint REST (`PUT /server/{id}/command`), résultat serveur par serveur. Cibles : une liste (20 au plus) **ou** `all_running=true` — « tous » n'est jamais déduit d'une liste vide. Par défaut seulement les serveurs démarrés (`online`) ; un état illisible n'est pas un feu vert. Commande non vide, sur une seule ligne, 1 000 caractères au plus. |
+
+Les deux outils modifiants sont soumis à `allow_writes` et rangés dans `INFRA_TOOLS` : **jamais**
+donnés au Copilote (il lit du contenu non fiable et n'agit que sur un serveur), ni via
+« Appliquer ». Les deux lectures font partie des outils exclusifs gardés face au MCP officiel
+(`LOCAL_KEEP_TOOLS`) ; données au Copilote, elles peuvent lire d'autres serveurs que celui de la
+session.
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -222,6 +240,9 @@ donnés au Copilote.
 - **Sauvegardes / filet** : `list_backups`, `list_snapshots`, `create_snapshot`
 - **Diagnostic de panne** : `diagnose_startup` (crash-loop), `inspect_region` (maps corrompues),
   `read_console` (+ `server_metrics` pour corréler)
+- **Plusieurs serveurs** : `copy_between_servers` (copie de serveur à serveur, par archive pour un
+  monde), `diff_files` (comparer configs ou dossiers), `find_player` (un joueur sur tout le compte),
+  `broadcast_command` (une commande à plusieurs serveurs)
 
 ## 6. Contrôle & sécurité (réglages)
 

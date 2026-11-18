@@ -907,7 +907,8 @@ async fn diagnose_http(
                     id: id.to_string(),
                     phase: friendly_tool(&call.name, Some(&call.input)),
                 }));
-                let out = mcp::dispatch(core, &call.name, call.input.clone())
+                let args = official_relay::bound_local_args(inc.server_id, &call.name, call.input.clone());
+                let out = mcp::dispatch(core, &call.name, args)
                     .await
                     .unwrap_or_else(|e| format!("Erreur outil : {e}"));
                 results.push(ToolResult {
@@ -1476,7 +1477,8 @@ async fn chat_http(
                 // Outil délégué au MCP officiel : politique revérifiée, résultat anonymisé.
                 official_relay::copilot_call(core, server_id, autonomous, &call.name, call.input.clone()).await
             } else if READ_TOOLS.contains(&call.name.as_str()) {
-                mcp::dispatch(core, &call.name, call.input.clone())
+                let args = official_relay::bound_local_args(server_id, &call.name, call.input.clone());
+                mcp::dispatch(core, &call.name, args)
                     .await
                     .unwrap_or_else(|e| format!("Erreur outil : {e}"))
             } else if autonomous && is_write_tool(&call.name) {
