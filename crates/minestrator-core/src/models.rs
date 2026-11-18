@@ -436,6 +436,32 @@ impl From<WsCredentialsData> for WsCredentials {
     }
 }
 
+// --- GET /user/{id}/servers/websocket (non documenté) -----------------------
+
+/// Identifiants WebSocket de **tous** les serveurs du compte en un appel (endpoint du panel web,
+/// cf. `docs/api/REFERENCE.md`). `socket` y joue le rôle de l'`url` de l'endpoint par serveur.
+#[derive(Debug, Default, Deserialize)]
+pub struct WsBulkData {
+    #[serde(default)]
+    pub servers: Vec<WsBulkEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct WsBulkEntry {
+    #[serde(deserialize_with = "lenient_i64")]
+    pub id: i64,
+    #[serde(default)]
+    pub socket: Option<String>,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
+impl From<WsBulkEntry> for WsCredentials {
+    fn from(e: WsBulkEntry) -> Self {
+        WsCredentials { url: non_empty(e.socket), token: non_empty(e.token) }
+    }
+}
+
 // --- POST /servers/live/light/bulk ----------------------------------------
 
 /// Compte de joueurs de plusieurs serveurs en **un seul appel**. Attention : contrairement à
@@ -814,7 +840,7 @@ pub struct Players {
 // peut sérialiser un entier documenté en flottant ou en chaîne, et un drapeau en `0/1` ou en
 // booléen. Une valeur inattendue retombe sur le défaut au lieu de faire échouer TOUTE la réponse.
 
-fn lenient_f64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+pub(crate) fn lenient_f64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
     Ok(match serde_json::Value::deserialize(d)? {
         serde_json::Value::Number(n) => n.as_f64().unwrap_or(0.0),
         serde_json::Value::String(s) => s.trim().parse().unwrap_or(0.0),
@@ -823,7 +849,7 @@ fn lenient_f64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> 
     })
 }
 
-fn lenient_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+pub(crate) fn lenient_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
     lenient_f64(d).map(|f| f.round() as i64)
 }
 
@@ -836,7 +862,17 @@ fn lenient_opt_i64<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>
     })
 }
 
-fn lenient_bool<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
+/// Chaîne tolérante : un nombre ou un booléen est converti en texte, `null` donne une chaîne vide.
+pub(crate) fn lenient_string<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    Ok(match serde_json::Value::deserialize(d)? {
+        serde_json::Value::String(s) => s,
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        _ => String::new(),
+    })
+}
+
+pub(crate) fn lenient_bool<'de, D: serde::Deserializer<'de>>(d: D) -> Result<bool, D::Error> {
     Ok(match serde_json::Value::deserialize(d)? {
         serde_json::Value::Bool(b) => b,
         serde_json::Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),

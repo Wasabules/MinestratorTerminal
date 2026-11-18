@@ -47,13 +47,13 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (42)
+## 5. Capacités — catalogue d'outils (43)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **27 outils de lecture**
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **28 outils de lecture**
 > + **15 modifiants**.
 
 #### Découverte & état
@@ -62,6 +62,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 |---|---|---|---|
 | `list_servers` | | — | Serveurs (id, nom, statut, adresse, MyBox). **Point d'entrée** pour les `server_id`. |
 | `server_status` | | `server_id` | État temps réel (`GET /server/{id}/live`) : consommation instantanée — CPU en centièmes de cœur dont **FlexCore** (`is_bursting`), RAM/disque en Mo —, réseau cumulé, uptime, joueurs, version, MOTD. Repli sur un échantillon WebSocket si l'endpoint échoue. |
+| `list_schedules` | | `server_id` | Tâches planifiées **du panel MineStrator** (`GET /server/{id}/schedules`, non documenté) : nom, cron, active, seulement si en ligne, prochaine/dernière exécution, actions ordonnées (commande ou alimentation, délai). Exécutées par l'hébergeur, même PC éteint — distinctes des automatisations de l'app. Commandes anonymisées. |
 | `mybox_info` | | `mybox_id` | Détail d'une MyBox (`GET /mybox/{id}`) : échéance, **renouvellement automatique**, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées. |
 | `server_metrics` | | `server_id`, `since_secs?` | **Historique** CPU/RAM/disque + **résumé** (moyennes/max) sur la fenêtre (défaut 1 h, max 14 j). |
 
@@ -144,7 +145,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 ### Couverture par domaine
 
-- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`
+- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
 - **Consommation & optimisation** : `server_metrics` (historique + résumé), `server_status` (live),
   `analyze_performance` (Spark : TPS/MSPT/GC/points chauds), `parse_spark_report`
 - **Contrôle** : `power_action`, `send_command`

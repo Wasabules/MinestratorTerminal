@@ -23,6 +23,7 @@
     type TaskDraft,
   } from '#lib/automations/format.ts';
   import Icon from '../Icon.svelte';
+  import PanelSchedulesSection from './PanelSchedulesSection.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
@@ -342,6 +343,9 @@
         </div>
       {/if}
     </section>
+
+    <!-- ===== Tâches planifiées du panel (exécutées par MineStrator) ===== -->
+    <PanelSchedulesSection serverId={tab.serverId} />
 
     <!-- ===== Historique d'exécution ===== -->
     <section>

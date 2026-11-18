@@ -115,6 +115,7 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "read_startup",
     "read_properties",
     "mybox_info",
+    "list_schedules",
     "list_installed_mods",
     "list_installed_plugins",
     "list_backups",
@@ -413,6 +414,7 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // Config / fichiers / arborescence : purgés après toute écriture, donc sûrs à cacher un instant.
         "list_files" | "read_file" | "read_startup" | "read_properties" | "search_files" => 15,
         "mybox_info" => 30,
+        "list_schedules" => 15,
         "list_servers" => 10,
         "server_status" => 5,
         // Volontairement absents : server_metrics (local, déjà rapide), read_console (live),
@@ -472,6 +474,12 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "mybox_info" => {
             let id = req_i64(&args, "mybox_id")?;
             json_pretty(&core.mybox_details(id).await.map_err(es)?)
+        }
+
+        "list_schedules" => {
+            let id = req_i64(&args, "server_id")?;
+            // Les commandes planifiées sont du texte libre : même filtre que la console.
+            json_pretty(&core.panel_schedules(id).await.map_err(es)?).map(|s| core.redact_ai(&s))
         }
 
         "server_metrics" => {
@@ -831,6 +839,7 @@ fn build_tool_list() -> Value {
     json!([
         tool("list_servers", "Liste tous les serveurs : id, nom, statut, adresse, MyBox. À appeler en premier pour obtenir les `server_id`.", obj(&[], &[])),
         tool("server_status", "État temps réel d'un serveur : état, consommation instantanée (CPU en centièmes de cœur dont FlexCore/`is_bursting`, RAM et disque en Mo), réseau cumulé, uptime, joueurs, version, MOTD.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("list_schedules", "Tâches planifiées du panel MineStrator d'un serveur, exécutées par l'hébergeur même ordinateur éteint (à distinguer des automatisations de l'app) : nom, planification cron, active, seulement si en ligne, prochaine et dernière exécution, actions dans l'ordre (commande ou alimentation, délai en secondes).", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("mybox_info", "Détail d'une MyBox (`mybox_id` via list_servers) : échéance, renouvellement automatique, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
         tool("server_metrics", "Historique de consommation (CPU/RAM/disque) + résumé (moyennes/max) — pour analyser la charge et optimiser.", obj(&[("server_id", prop_int("ID du serveur")), ("since_secs", prop_int("Fenêtre en secondes (défaut 3600, max 14 j)"))], &["server_id"])),
         tool("power_action", "Démarre/redémarre/arrête un serveur. `action` ∈ start|restart|restart10|stop|stop10|kill.", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start|restart|restart10|stop|stop10|kill"))], &["server_id", "action"])),

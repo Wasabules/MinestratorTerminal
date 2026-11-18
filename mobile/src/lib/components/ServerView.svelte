@@ -10,6 +10,7 @@
   import BackupsView from "./views/BackupsView.svelte";
   import PropertiesView from "./views/PropertiesView.svelte";
   import MarketView from "./views/MarketView.svelte";
+  import SchedulesView from "./views/SchedulesView.svelte";
   import Icon from "./Icon.svelte";
   import { portal } from "../portal";
 
@@ -39,6 +40,8 @@
     { id: "backups", label: t("nav.backups"), icon: "archive" },
     ...(caps?.properties ? [{ id: "properties", label: t("nav.properties"), icon: "sliders" }] : []),
     ...(caps?.mods === "minecraft" ? [{ id: "market", label: t("nav.market"), icon: "package" }] : []),
+    // Tâches planifiées du panel MineStrator : tous les jeux en ont.
+    { id: "schedules", label: t("nav.schedules"), icon: "clock" },
   ]);
 
   /**
@@ -165,6 +168,8 @@
             <PropertiesView {server} active={current === "properties"} />
           {:else if tab.id === "market"}
             <MarketView serverId={server.id} active={current === "market"} />
+          {:else if tab.id === "schedules"}
+            <SchedulesView serverId={server.id} active={current === "schedules"} />
           {/if}
         </section>
       {/each}

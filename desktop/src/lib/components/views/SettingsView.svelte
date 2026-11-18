@@ -99,6 +99,7 @@
     { name: 'read_startup', write: false },
     { name: 'read_properties', write: false },
     { name: 'mybox_info', write: false },
+    { name: 'list_schedules', write: false },
     { name: 'list_installed_mods', write: false },
     { name: 'list_installed_plugins', write: false },
     { name: 'market_search', write: false },

@@ -132,7 +132,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | GET / POST | `/user/{id_user}/pimpmybox` | — | ✓ GET |  |
 | DELETE | `/user/{id_user}/pimpmybox/{id}` | — | écriture, non testé |  |
 | GET | `/user/{id_user}/servers` | ✓ | ✓ GET |  |
-| GET | `/user/{id_user}/servers/websocket` | — | ✓ GET |  |
+| GET | `/user/{id_user}/servers/websocket` | — | ✓ GET | Jetons WebSocket (Wings) de tous les serveurs actifs en un appel. Utilisé par l'app pour le rafraîchissement des jetons. |
 | POST / PATCH | `/user/{id_user}/servers_groups` | — | écriture, non testé |  |
 | PATCH | `/user/{id_user}/servers_groups/assign` | — | écriture, non testé |  |
 | DELETE | `/user/{id_user}/servers_groups/{id}` | — | écriture, non testé |  |
@@ -348,12 +348,12 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 
 | Méthode | Chemin | Doc. | Clé API | Remarque |
 |---|---|---|---|---|
-| POST | `/server/{id_server}/schedule` | — | écriture, non testé |  |
+| POST | `/server/{id_server}/schedule` | — | écriture, non testé | Création : `{ name, minute, hour, day_of_month, month, day_of_week, is_active, only_when_online }` (et `tasks` facultatif). |
 | PATCH / DELETE | `/server/{id_server}/schedule/{id}` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/schedule/{id}/task` | — | écriture, non testé |  |
+| POST | `/server/{id_server}/schedule/{id}/task` | — | écriture, non testé | Action : `{ action: command ou power, payload, time_offset (0-900 s), continue_on_failure }`. |
 | PATCH / DELETE | `/server/{id_server}/schedule/{id}/task/{id}` | — | écriture, non testé |  |
-| PATCH | `/server/{id_server}/schedule/{id}/tasks/order` | — | écriture, non testé |  |
-| GET | `/server/{id_server}/schedules` | — | ✓ GET | Tâches planifiées **du panel** (distinctes des automatisations de l'app). |
+| PATCH | `/server/{id_server}/schedule/{id}/tasks/order` | — | écriture, non testé | Corps `{ task_ids: [ids dans l'ordre] }`. |
+| GET | `/server/{id_server}/schedules` | — | ✓ GET | Tâches planifiées **du panel** (distinctes des automatisations de l'app). Utilisé par l'app : liste, création, modification, actions, ordre (`panel_schedules.rs`). |
 
 ### Divers
 

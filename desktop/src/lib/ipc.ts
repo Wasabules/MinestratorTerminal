@@ -65,6 +65,9 @@ import type {
   ServiceOverview,
   SftpEntry,
   SftpHostKey,
+  PanelSchedule,
+  PanelScheduleInput,
+  PanelTaskInput,
   SmlVersion,
   Snapshot,
   SupervisorConfig,
@@ -468,6 +471,31 @@ export const api = {
   sftpHasPassword: (serverId: number) => invoke<boolean>('sftp_has_password', { serverId }),
   /** Identité du serveur SFTP : empreinte mémorisée et, après un refus, celle présentée. */
   sftpHostKey: (serverId: number) => invoke<SftpHostKey>('sftp_host_key', { serverId }),
+
+  // --- Tâches planifiées du panel MineStrator (exécutées par l'hébergeur) ---
+  panelSchedules: (serverId: number) =>
+    demo(invoke<PanelSchedule[]>('panel_schedules', { serverId }), (list) =>
+      list.map((s) => ({
+        ...s,
+        name: fakeText(s.name),
+        tasks: s.tasks.map((x) => ({ ...x, payload: x.action === 'command' ? fakeText(x.payload) : x.payload })),
+      })),
+    ),
+  panelScheduleCreate: (serverId: number, input: PanelScheduleInput) =>
+    invoke<void>('panel_schedule_create', { serverId, input }),
+  panelScheduleUpdate: (serverId: number, scheduleId: number, input: PanelScheduleInput) =>
+    invoke<void>('panel_schedule_update', { serverId, scheduleId, input }),
+  panelScheduleDelete: (serverId: number, scheduleId: number) =>
+    invoke<void>('panel_schedule_delete', { serverId, scheduleId }),
+  panelTaskAdd: (serverId: number, scheduleId: number, input: PanelTaskInput) =>
+    invoke<void>('panel_task_add', { serverId, scheduleId, input }),
+  panelTaskUpdate: (serverId: number, scheduleId: number, taskId: number, input: PanelTaskInput) =>
+    invoke<void>('panel_task_update', { serverId, scheduleId, taskId, input }),
+  panelTaskDelete: (serverId: number, scheduleId: number, taskId: number) =>
+    invoke<void>('panel_task_delete', { serverId, scheduleId, taskId }),
+  /** Nouvel ordre des actions (identifiants dans l'ordre d'exécution voulu). */
+  panelTasksReorder: (serverId: number, scheduleId: number, taskIds: number[]) =>
+    invoke<void>('panel_tasks_reorder', { serverId, scheduleId, taskIds }),
   /** Accepte l'empreinte présentée par le serveur (exactement celle affichée à l'utilisateur). */
   sftpTrustHostKey: (serverId: number, fingerprint: string) =>
     invoke<void>('sftp_trust_host_key', { serverId, fingerprint }),

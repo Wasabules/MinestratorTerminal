@@ -3,6 +3,7 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
+    PanelSchedule, PanelScheduleInput,
     Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
     LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
     ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
@@ -503,4 +504,21 @@ pub fn export_logs() -> String {
 #[tauri::command]
 pub async fn delete_snapshot(core: State<'_, Arc<Core>>, snapshot_id: i64) -> Result<i64, Error> {
     core.delete_snapshot(snapshot_id).await
+}
+
+// --- Tâches planifiées du panel MineStrator (lecture + activation) ---------------------------
+
+#[tauri::command]
+pub async fn panel_schedules(core: State<'_, Arc<Core>>, server_id: i64) -> Result<Vec<PanelSchedule>, Error> {
+    core.panel_schedules(server_id).await
+}
+
+#[tauri::command]
+pub async fn panel_schedule_update(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    schedule_id: i64,
+    input: PanelScheduleInput,
+) -> Result<(), Error> {
+    core.update_panel_schedule(server_id, schedule_id, input).await
 }

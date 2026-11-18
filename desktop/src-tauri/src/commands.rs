@@ -2,6 +2,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
+    PanelSchedule, PanelScheduleInput,
+    PanelTaskInput,
     Account, ActivityPage, ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Egg, Error, FicsitInstallItem,
     FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
     LivePlayers, MyBoxDetails, ServerLive, ServerProperties,
@@ -1094,4 +1096,76 @@ pub async fn test_webhook(
     id: Option<String>,
 ) -> Result<(), Error> {
     core.test_webhook(kind, url, id).await
+}
+
+// --- Tâches planifiées du panel MineStrator (exécutées par l'hébergeur) ---------------------
+
+#[tauri::command]
+pub async fn panel_schedules(core: State<'_, Arc<Core>>, server_id: i64) -> Result<Vec<PanelSchedule>, Error> {
+    core.panel_schedules(server_id).await
+}
+
+#[tauri::command]
+pub async fn panel_schedule_create(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    input: PanelScheduleInput,
+) -> Result<(), Error> {
+    core.create_panel_schedule(server_id, input).await
+}
+
+#[tauri::command]
+pub async fn panel_schedule_update(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    schedule_id: i64,
+    input: PanelScheduleInput,
+) -> Result<(), Error> {
+    core.update_panel_schedule(server_id, schedule_id, input).await
+}
+
+#[tauri::command]
+pub async fn panel_schedule_delete(core: State<'_, Arc<Core>>, server_id: i64, schedule_id: i64) -> Result<(), Error> {
+    core.delete_panel_schedule(server_id, schedule_id).await
+}
+
+#[tauri::command]
+pub async fn panel_task_add(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    schedule_id: i64,
+    input: PanelTaskInput,
+) -> Result<(), Error> {
+    core.add_panel_task(server_id, schedule_id, input).await
+}
+
+#[tauri::command]
+pub async fn panel_task_update(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    schedule_id: i64,
+    task_id: i64,
+    input: PanelTaskInput,
+) -> Result<(), Error> {
+    core.update_panel_task(server_id, schedule_id, task_id, input).await
+}
+
+#[tauri::command]
+pub async fn panel_task_delete(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    schedule_id: i64,
+    task_id: i64,
+) -> Result<(), Error> {
+    core.delete_panel_task(server_id, schedule_id, task_id).await
+}
+
+#[tauri::command]
+pub async fn panel_tasks_reorder(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    schedule_id: i64,
+    task_ids: Vec<i64>,
+) -> Result<(), Error> {
+    core.reorder_panel_tasks(server_id, schedule_id, task_ids).await
 }

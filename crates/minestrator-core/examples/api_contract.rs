@@ -45,6 +45,13 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
         "/server/{id}/websocket",
         &["api.data.websocket.url", "api.data.websocket.token"],
     ),
+    // Non documenté (panel web) : jetons WebSocket de tous les serveurs en un appel.
+    (
+        "/user/{id}/servers/websocket",
+        &["api.data.servers[].id", "api.data.servers[].socket", "api.data.servers[].token"],
+    ),
+    // Non documenté (panel web) : tâches planifiées du panel.
+    ("/server/{id}/schedules", &["api.data.schedules"]),
     // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
     (
         "/server/{id}/sftp",
@@ -245,6 +252,8 @@ async fn main() {
     if let Some(profile) = profile {
         let servers_path = format!("/user/{}/servers", profile.id);
         raw_checks(&mut report, &http, &key, "/user/{id}/servers", &servers_path, "").await;
+        let ws_path = format!("/user/{}/servers/websocket", profile.id);
+        raw_checks(&mut report, &http, &key, "/user/{id}/servers/websocket", &ws_path, "").await;
     }
 
     if let Some(overview) = report.call("GET /user/{id}/servers", core.list_servers()).await {
@@ -294,6 +303,16 @@ async fn main() {
                     )
                     .await;
                     report.call(&label("GET /server/{id}/live/light"), core.live_light(server.id)).await;
+                    report.call(&label("GET /server/{id}/schedules"), core.panel_schedules(server.id)).await;
+                    raw_checks(
+                        &mut report,
+                        &http,
+                        &key,
+                        "/server/{id}/schedules",
+                        &format!("/server/{}/schedules", server.id),
+                        &tag,
+                    )
+                    .await;
                     report.call(&label("GET /server/{id}/live"), core.server_live(server.id)).await;
                     report.call(&label("GET /server/{id}/activity"), core.server_activity(server.id, 5, 0)).await;
                     report.call(&label("GET /server/{id}/backups"), core.list_backups(server.id)).await;

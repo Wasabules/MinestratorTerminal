@@ -685,6 +685,7 @@ fn friendly_tool(name: &str, input: Option<&Value>) -> String {
         "read_startup" => "Commande de démarrage".into(),
         "read_properties" => "Réglages du serveur".into(),
         "mybox_info" => "Infos MyBox".into(),
+        "list_schedules" => "Tâches planifiées du panel".into(),
         other => format!("Outil : {other}"),
     }
 }

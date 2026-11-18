@@ -107,7 +107,10 @@ Regroupés par domaine (liste réelle des fichiers).
 - **`api`** — client HTTP typé (`reqwest`/rustls). Token passé à chaque appel (client pur). Désenveloppage
   `api.data` centralisé, mapping des codes HTTP → `Error`, `authenticate` (valeur brute puis base64 en secours).
 - **`console`** — `ConsoleManager` : une tâche tokio par `conn_id`, WebSocket Wings, reconnexion à backoff,
-  ré-auth sur `token expiring`/`token expired`. Publie des `CoreEvent`.
+  ré-auth sur `token expiring`/`token expired`. Publie des `CoreEvent`. Les jetons de ré-auth viennent
+  d'un cache groupé (`ApiClient::get_ws_credentials`) : `GET /user/{id}/servers/websocket` donne ceux de
+  tous les serveurs en un appel, partagé 30 s par les connexions qui expirent ensemble (repli par serveur).
+  Le superviseur ne relit les limites CPU/disque d'un serveur que toutes les 30 min.
 - **`sftp`** — client SFTP natif (`russh`/`russh-sftp`) : `SftpManager` à **sessions poolées** par serveur
   (rouvertes à la volée si empoisonnées), list/read/write/mkdir/delete/rename/upload/download/walk/search.
   Identifiants complets, **mot de passe compris**, via `GET /server/{id}/sftp` (non documenté, utilisé
@@ -210,6 +213,12 @@ Regroupés par domaine (liste réelle des fichiers).
   émet `CoreEvent::AccountSwitched`. L'index `sftp_passwords.json` rattache chaque serveur à son
   compte (l'ancien format, liste d'ids, est rattaché au compte actif) : retirer un compte n'efface
   que ses mots de passe. Testé sur le backend fichier d'un dossier temporaire, pannes injectées.
+- **`panel_schedules`** — tâches planifiées **du panel MineStrator** (`/server/{id}/schedule…`,
+  non documentées, modèle Pterodactyl) : exécutées par l'hébergeur même PC éteint, à distinguer des
+  automatisations locales (`automation`). Lecture, création, modification, actions (`command` /
+  `power`, délai 0-900 s) et ordre ; toute saisie est validée avant envoi (cron borné, commande
+  sur une ligne). Desktop : section de la vue Automatisations ; mobile : vue « Tâches » (lecture et
+  activation) ; MCP : `list_schedules`.
 - **`secrets`** — stockage sécurisé natif : clés API (compte actif `api-key`, comptes inactifs
   `api-key-<id>`), clés LLM par fournisseur (`llm-key-<slug>`),
   secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`), URL des destinations
