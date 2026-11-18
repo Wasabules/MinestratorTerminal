@@ -21,6 +21,11 @@ pub struct McpConfig {
     pub enabled: bool,
     /// Autorise les actions modifiantes (power, commandes, modération, écriture de fichiers).
     pub allow_writes: bool,
+    /// Passerelle vers le MCP officiel MineStrator : relaie ses outils (tous toolsets sauf
+    /// `files`) sur cette même connexion, la clé restant au trousseau. Désactivée par défaut (voir
+    /// `official_relay.rs`) ; la variable `MINESTRATOR_MCP_OFFICIAL` prime sur ce réglage.
+    #[serde(default)]
+    pub official_gateway: bool,
 }
 
 impl Default for McpConfig {
@@ -28,6 +33,7 @@ impl Default for McpConfig {
         Self {
             enabled: true,
             allow_writes: true,
+            official_gateway: false,
         }
     }
 }
@@ -68,7 +74,10 @@ pub async fn handle_message(core: &Core, msg: Value) -> Option<Value> {
         "initialize" => reply(id, initialize()),
         "tools/list" => {
             let tools = if mcp_enabled(core) {
-                filter_tools_by_env(tool_list())
+                let mut tools = filter_tools_by_env(tool_list());
+                // Passerelle / relais du Copilote vers le MCP officiel (official_relay.rs).
+                crate::official_relay::extend_tool_list(core, &mut tools).await;
+                tools
             } else {
                 json!([])
             };
@@ -176,12 +185,23 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "mybox_pause_server",
     "mybox_reorder_servers",
     "mybox_delete_server",
+    // Tâches planifiées du panel (configuration persistante, voir INFRA_TOOLS) : jamais au Copilote.
+    "create_schedule",
+    "update_schedule",
+    "delete_schedule",
+    "add_schedule_task",
+    "update_schedule_task",
+    "delete_schedule_task",
+    "reorder_schedule_tasks",
 ];
 
-/// Outils modifiants qui gèrent l'**infrastructure** (création, redimensionnement, pause,
-/// suppression de serveurs, noms, ordre). Exposés au serveur MCP local (soumis à `allow_writes`),
-/// mais **jamais** au Copilote : il lit du contenu non fiable (chat des joueurs), et une injection
-/// ne doit pas pouvoir supprimer ou créer des serveurs. Voir `copilot.rs` et `Core::copilot_apply`.
+/// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
+/// pause, suppression de serveurs, noms, ordre), actions multi-serveurs et configuration
+/// persistante (tâches planifiées du panel, exécutées par l'hébergeur même app fermée). Exposés au
+/// serveur MCP local (soumis à `allow_writes`), mais le Copilote lit du contenu non fiable (chat
+/// des joueurs) : une injection ne doit pas pouvoir supprimer ou créer des serveurs, ni planter une
+/// commande qui se rejouerait chaque nuit. Absents de son catalogue, de la liste blanche de ses
+/// agents CLI et d'« Appliquer » (`copilot.rs`, `Core::copilot_apply`).
 pub(crate) const INFRA_TOOLS: &[&str] = &[
     "mybox_create_server",
     "mybox_resize_server",
@@ -190,6 +210,13 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     "mybox_pause_server",
     "mybox_reorder_servers",
     "mybox_delete_server",
+    "create_schedule",
+    "update_schedule",
+    "delete_schedule",
+    "add_schedule_task",
+    "update_schedule_task",
+    "delete_schedule_task",
+    "reorder_schedule_tasks",
 ];
 
 /// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
@@ -302,11 +329,16 @@ fn env_tool_allowlist() -> Option<Vec<String>> {
 }
 
 /// Un outil est-il autorisé par la liste blanche d'env ? (Vrai si aucune liste n'est posée.)
-fn env_allows(name: &str) -> bool {
+pub(crate) fn env_allows(name: &str) -> bool {
     match env_tool_allowlist() {
         Some(list) => list.iter().any(|t| t == name),
         None => true,
     }
+}
+
+/// Une liste blanche d'env est-elle posée (serveur lancé par le Copilote) ?
+pub(crate) fn env_has_allowlist() -> bool {
+    env_tool_allowlist().is_some()
 }
 
 /// Filtre un tableau d'outils (`tool_list()`) selon la liste blanche d'env.
@@ -348,7 +380,15 @@ async fn call(core: &Core, params: Value) -> Value {
     // routés uniquement via « Appliquer » (copilot_apply → dispatch, hors de ce handler), ne sont donc
     // PAS atteignables ici — y compris par un client MCP externe sans liste blanche d'env.
     if !READ_TOOLS.contains(&name.as_str()) && !WRITE_TOOLS.contains(&name.as_str()) {
+        // Outil du MCP officiel relayé (passerelle ou Copilote) : gating propre, voir official_relay.rs.
+        if let Some(out) = crate::official_relay::relay_call(core, &cfg, &name, args).await {
+            return out;
+        }
         return tool_err("Outil inconnu ou non exposé par le serveur MCP.");
+    }
+    // Serveur lancé par le Copilote pour un agent CLI : aucun appel hors du serveur de la session.
+    if let Some(refus) = crate::official_relay::env_scope_violation(&args) {
+        return tool_err(&refus);
     }
 
     // Garde-fou uniforme : la liste blanche d'env prime (posée par le Copilote selon lecture/écriture).
@@ -1126,8 +1166,197 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             ))
         }
 
+        // --- Tâches planifiées du panel (exécutées par l'hébergeur) --------------------
+        "create_schedule" => {
+            let id = req_i64(&args, "server_id")?;
+            let input = crate::PanelScheduleInput {
+                name: req_str(&args, "name")?,
+                cron: parse_cron(&req_str(&args, "cron")?)?,
+                is_active: args.get("is_active").and_then(Value::as_bool).unwrap_or(true),
+                only_when_online: args.get("only_when_online").and_then(Value::as_bool).unwrap_or(false),
+            };
+            // Actions vérifiées AVANT de créer quoi que ce soit : une saisie fausse ne laisse pas
+            // une tâche planifiée vide derrière elle.
+            let tasks = match args.get("tasks") {
+                None | Some(Value::Null) => Vec::new(),
+                Some(Value::Array(items)) => items
+                    .iter()
+                    .map(|t| schedule_task_input(t, None).and_then(|i| i.validated().map_err(es)))
+                    .collect::<Result<Vec<_>, _>>()?,
+                Some(_) => return Err("`tasks` doit être un tableau d'actions".into()),
+            };
+            let name = input.name.trim().to_string();
+            core.create_panel_schedule(id, input).await.map_err(es)?;
+            if tasks.is_empty() {
+                return Ok(format!(
+                    "Tâche planifiée « {name} » créée sur le serveur {id}, sans action : ajoute-en avec add_schedule_task (id via list_schedules)."
+                ));
+            }
+            // L'API ne renvoie pas l'id créé : la plus récente portant ce nom.
+            let created = core
+                .panel_schedules(id)
+                .await
+                .map_err(es)?
+                .into_iter()
+                .filter(|s| s.name.trim() == name)
+                .map(|s| s.id)
+                .max()
+                .ok_or("tâche créée mais introuvable : ajoute ses actions avec add_schedule_task")?;
+            let total = tasks.len();
+            for (done, task) in tasks.into_iter().enumerate() {
+                core.add_panel_task(id, created, task).await.map_err(|e| {
+                    format!("tâche « {name} » (id {created}) créée, {done}/{total} action(s) ajoutée(s) : {e}")
+                })?;
+            }
+            Ok(format!("Tâche planifiée « {name} » (id {created}) créée sur le serveur {id} avec {total} action(s)."))
+        }
+
+        "update_schedule" => {
+            let id = req_i64(&args, "server_id")?;
+            let schedule = find_schedule(core, id, req_i64(&args, "schedule_id")?).await?;
+            let input = crate::PanelScheduleInput {
+                name: args.get("name").and_then(Value::as_str).map(str::to_string).unwrap_or(schedule.name),
+                cron: match args.get("cron").and_then(Value::as_str) {
+                    Some(c) => parse_cron(c)?,
+                    None => schedule.cron,
+                },
+                is_active: args.get("is_active").and_then(Value::as_bool).unwrap_or(schedule.is_active),
+                only_when_online: args
+                    .get("only_when_online")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(schedule.only_when_online),
+            };
+            core.update_panel_schedule(id, schedule.id, input).await.map_err(es)?;
+            Ok(format!("Tâche planifiée {} du serveur {id} modifiée.", schedule.id))
+        }
+
+        "delete_schedule" => {
+            let id = req_i64(&args, "server_id")?;
+            let schedule = find_schedule(core, id, req_i64(&args, "schedule_id")?).await?;
+            let confirm = req_str(&args, "confirm_name")?;
+            if schedule.name.trim().is_empty() || confirm.trim() != schedule.name.trim() {
+                return Err(
+                    "Suppression refusée : `confirm_name` doit reprendre exactement le nom de la tâche planifiée (casse comprise), donné par l'utilisateur."
+                        .into(),
+                );
+            }
+            core.delete_panel_schedule(id, schedule.id).await.map_err(es)?;
+            Ok(format!("Tâche planifiée {} supprimée du serveur {id}, avec ses actions.", schedule.id))
+        }
+
+        "add_schedule_task" => {
+            let id = req_i64(&args, "server_id")?;
+            let schedule_id = req_i64(&args, "schedule_id")?;
+            core.add_panel_task(id, schedule_id, schedule_task_input(&args, None)?).await.map_err(es)?;
+            Ok(format!("Action ajoutée à la fin de la tâche planifiée {schedule_id}."))
+        }
+
+        "update_schedule_task" => {
+            let id = req_i64(&args, "server_id")?;
+            let schedule = find_schedule(core, id, req_i64(&args, "schedule_id")?).await?;
+            let task_id = req_i64(&args, "task_id")?;
+            let current = schedule.tasks.iter().find(|t| t.id == task_id).ok_or_else(|| {
+                format!("action {task_id} introuvable dans la tâche planifiée {} (voir list_schedules)", schedule.id)
+            })?;
+            let input = schedule_task_input(&args, Some(current))?;
+            core.update_panel_task(id, schedule.id, task_id, input).await.map_err(es)?;
+            Ok(format!("Action {task_id} de la tâche planifiée {} modifiée.", schedule.id))
+        }
+
+        "delete_schedule_task" => {
+            let id = req_i64(&args, "server_id")?;
+            let (schedule_id, task_id) = (req_i64(&args, "schedule_id")?, req_i64(&args, "task_id")?);
+            core.delete_panel_task(id, schedule_id, task_id).await.map_err(es)?;
+            Ok(format!("Action {task_id} retirée de la tâche planifiée {schedule_id}."))
+        }
+
+        "reorder_schedule_tasks" => {
+            let id = req_i64(&args, "server_id")?;
+            let schedule = find_schedule(core, id, req_i64(&args, "schedule_id")?).await?;
+            let ids: Vec<i64> = args
+                .get("task_ids")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_i64).collect())
+                .ok_or("paramètre `task_ids` (tableau d'entiers) requis")?;
+            check_task_order(&schedule, &ids)?;
+            core.reorder_panel_tasks(id, schedule.id, ids).await.map_err(es)?;
+            Ok(format!("Actions de la tâche planifiée {} réordonnées.", schedule.id))
+        }
+
         _ => Err(format!("outil inconnu : {name}")),
     }
+}
+
+// --- Tâches planifiées du panel : saisie des outils -----------------------------
+
+/// Expression cron en cinq champs (« minute heure jour-du-mois mois jour-de-semaine »). Les
+/// valeurs sont vérifiées ensuite par `PanelScheduleInput::validated`.
+fn parse_cron(cron: &str) -> Result<crate::PanelCron, String> {
+    let f: Vec<&str> = cron.split_whitespace().collect();
+    let [minute, hour, day_of_month, month, day_of_week] = f.as_slice() else {
+        return Err(format!(
+            "`cron` : 5 champs attendus (minute heure jour-du-mois mois jour-de-semaine), ex. « 0 4 * * * » ; reçu « {cron} »"
+        ));
+    };
+    Ok(crate::PanelCron {
+        minute: minute.to_string(),
+        hour: hour.to_string(),
+        day_of_month: day_of_month.to_string(),
+        month: month.to_string(),
+        day_of_week: day_of_week.to_string(),
+    })
+}
+
+/// Saisie d'une action : `action` (`command` | `power`), `payload`, `time_offset` (0 à 900 s),
+/// `continue_on_failure`. Un champ absent reprend la valeur de `current` (modification), sinon
+/// le défaut (délai 0, arrêt sur échec). Vérifiée par le cœur avant envoi.
+fn schedule_task_input(v: &Value, current: Option<&crate::PanelTask>) -> Result<crate::PanelTaskInput, String> {
+    let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    let action = text("action")
+        .or_else(|| current.map(|c| c.action.clone()))
+        .ok_or("paramètre `action` (command ou power) requis")?;
+    let payload = text("payload")
+        .or_else(|| current.map(|c| c.payload.clone()))
+        .ok_or("paramètre `payload` requis (commande, ou start|restart|stop|kill)")?;
+    Ok(crate::PanelTaskInput {
+        action: action.trim().to_string(),
+        payload,
+        time_offset: v
+            .get("time_offset")
+            .and_then(Value::as_i64)
+            .or(current.map(|c| c.time_offset))
+            .unwrap_or(0),
+        continue_on_failure: v
+            .get("continue_on_failure")
+            .and_then(Value::as_bool)
+            .or(current.map(|c| c.continue_on_failure))
+            .unwrap_or(false),
+    })
+}
+
+/// Tâche planifiée `schedule_id` du serveur, lue à la source.
+async fn find_schedule(core: &Core, server_id: i64, schedule_id: i64) -> Result<crate::PanelSchedule, String> {
+    core.panel_schedules(server_id)
+        .await
+        .map_err(es)?
+        .into_iter()
+        .find(|s| s.id == schedule_id)
+        .ok_or_else(|| format!("tâche planifiée {schedule_id} introuvable sur le serveur {server_id} (voir list_schedules)"))
+}
+
+/// Un réordonnancement doit citer chaque action de la tâche exactement une fois.
+fn check_task_order(schedule: &crate::PanelSchedule, ids: &[i64]) -> Result<(), String> {
+    let mut want: Vec<i64> = schedule.tasks.iter().map(|t| t.id).collect();
+    let mut got = ids.to_vec();
+    want.sort_unstable();
+    got.sort_unstable();
+    if want != got {
+        return Err(format!(
+            "`task_ids` doit citer une fois chaque action de la tâche planifiée {} : {:?}",
+            schedule.id, want
+        ));
+    }
+    Ok(())
 }
 
 // --- Liste des outils -----------------------------------------------------
@@ -1200,6 +1429,13 @@ fn build_tool_list() -> Value {
         tool("ficsit_search", "Cherche des mods SATISFACTORY dans le catalogue ficsit.app (SMR). `query` vide = parcours trié. `order_by` ∈ popularity|hotness|downloads|last_version_date|name (défaut popularity). Renvoie id, mod_reference, name, downloads. À réserver aux serveurs Satisfactory (pas Minecraft).", obj(&[("query", prop_str("Recherche par nom (optionnel, ≥ 3 car.)")), ("order_by", prop_str("Tri (défaut popularity)")), ("page", prop_int("Page (défaut 1)"))], &[])),
         tool("ficsit_versions", "Versions d'un mod Satisfactory (par son `mod_id` ficsit, renvoyé par ficsit_search) : `id` de version + contrainte SML + dépendances — nécessaires pour installer.", obj(&[("mod_id", prop_str("id ficsit du mod"))], &["mod_id"])),
         tool("install_ficsit_mod", "Installe un mod SATISFACTORY : télécharge le mod + SML + dépendances (cible LinuxServer) et les écrit dans Mods/ via SFTP, avec ARRÊT puis REDÉMARRAGE automatiques du serveur. `reference` = mod_reference, `version_id` via ficsit_versions. ✎ (modifiant — redémarre le serveur)", obj(&[("server_id", prop_int("ID du serveur")), ("reference", prop_str("mod_reference du mod")), ("version_id", prop_str("ID de la version à installer"))], &["server_id", "reference", "version_id"])),
+        tool("create_schedule", "Crée une tâche planifiée du PANEL MineStrator, exécutée par l'hébergeur 24 h/24 même ordinateur éteint (le QUAND), avec éventuellement ses actions (le QUOI, dans l'ordre). `cron` = 5 champs « minute heure jour-du-mois mois jour-de-semaine » (`*`, `*/n`, `a-b`, listes `a,b`), ex. « 0 4 * * * » = chaque jour à 4 h. Chaque action : `action` command|power, `payload` (commande sur UNE ligne, ou start|restart|stop|kill), `time_offset` 0 à 900 s après la précédente, `continue_on_failure`. Ex. redémarrage annoncé : [{command, « say Redémarrage dans 60 s »}, {power, restart, time_offset 60}]. Tout est vérifié avant envoi. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("name", prop_str("Nom (1 à 100 caractères)")), ("cron", prop_str("5 champs : minute heure jour-du-mois mois jour-de-semaine")), ("is_active", prop_bool("Active (défaut true)")), ("only_when_online", prop_bool("Seulement si le serveur est en ligne (défaut false)")), ("tasks", schedule_tasks_schema())], &["server_id", "name", "cron"])),
+        tool("update_schedule", "Modifie une tâche planifiée du panel (`schedule_id` via list_schedules) : nom, `cron` (5 champs), active, seulement si en ligne. Les champs omis gardent leur valeur ; les actions se gèrent avec add_/update_/delete_/reorder_schedule_task(s). Pour suspendre sans supprimer : is_active=false. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("schedule_id", prop_int("ID de la tâche planifiée")), ("name", prop_str("Nouveau nom (optionnel)")), ("cron", prop_str("Nouvelle planification, 5 champs (optionnel)")), ("is_active", prop_bool("Active (optionnel)")), ("only_when_online", prop_bool("Seulement si en ligne (optionnel)"))], &["server_id", "schedule_id"])),
+        tool("delete_schedule", "SUPPRIME une tâche planifiée du panel et toutes ses actions. `confirm_name` doit reprendre EXACTEMENT son nom (casse comprise), donné par l'utilisateur, sinon refus. Pour la suspendre sans la perdre : update_schedule avec is_active=false. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("schedule_id", prop_int("ID de la tâche planifiée")), ("confirm_name", prop_str("Nom EXACT de la tâche planifiée, en confirmation"))], &["server_id", "schedule_id", "confirm_name"])),
+        tool("add_schedule_task", "Ajoute une action À LA FIN d'une tâche planifiée du panel : `action` command (commande console sur UNE ligne) ou power (start|restart|stop|kill), `time_offset` 0 à 900 s après l'action précédente (ou le déclenchement), `continue_on_failure`. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("schedule_id", prop_int("ID de la tâche planifiée")), ("action", prop_str("command | power")), ("payload", prop_str("Commande, ou start|restart|stop|kill")), ("time_offset", prop_int("Délai en secondes, 0 à 900 (défaut 0)")), ("continue_on_failure", prop_bool("Continuer si l'action échoue (défaut false)"))], &["server_id", "schedule_id", "action", "payload"])),
+        tool("update_schedule_task", "Modifie UNE action d'une tâche planifiée (`task_id` via list_schedules) ; les champs omis gardent leur valeur. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("schedule_id", prop_int("ID de la tâche planifiée")), ("task_id", prop_int("ID de l'action")), ("action", prop_str("command | power (optionnel)")), ("payload", prop_str("Commande, ou start|restart|stop|kill (optionnel)")), ("time_offset", prop_int("Délai 0 à 900 s (optionnel)")), ("continue_on_failure", prop_bool("Continuer si échec (optionnel)"))], &["server_id", "schedule_id", "task_id"])),
+        tool("delete_schedule_task", "Retire UNE action d'une tâche planifiée (une tâche sans action ne fait plus rien). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("schedule_id", prop_int("ID de la tâche planifiée")), ("task_id", prop_int("ID de l'action"))], &["server_id", "schedule_id", "task_id"])),
+        tool("reorder_schedule_tasks", "Réordonne les actions d'une tâche planifiée : `task_ids` cite CHAQUE action une fois, dans le nouvel ordre d'exécution. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("schedule_id", prop_int("ID de la tâche planifiée")), ("task_ids", json!({ "type": "array", "description": "IDs des actions, dans l'ordre", "items": { "type": "integer" } }))], &["server_id", "schedule_id", "task_ids"])),
     ])
 }
 
@@ -1369,6 +1605,23 @@ fn prop_str_array(desc: &str) -> Value {
 }
 fn prop_bool(desc: &str) -> Value {
     json!({ "type": "boolean", "description": desc })
+}
+/// Schéma des actions d'une tâche planifiée (`create_schedule`).
+fn schedule_tasks_schema() -> Value {
+    json!({
+        "type": "array",
+        "description": "Actions dans l'ordre d'exécution (optionnel ; ajoutables ensuite avec add_schedule_task)",
+        "items": {
+            "type": "object",
+            "properties": {
+                "action": { "type": "string", "description": "command | power" },
+                "payload": { "type": "string", "description": "Commande (une ligne), ou start|restart|stop|kill" },
+                "time_offset": { "type": "integer", "description": "Délai en secondes après l'action précédente, 0 à 900 (défaut 0)" },
+                "continue_on_failure": { "type": "boolean", "description": "Continuer si l'action échoue (défaut false)" }
+            },
+            "required": ["action", "payload"]
+        }
+    })
 }
 
 #[cfg(test)]
@@ -1603,5 +1856,92 @@ mod tests {
         assert!(cache_ttl("analyze_performance").is_none());
         assert!(cache_ttl("install_mod").is_none());
         assert!(cache_ttl("server_metrics").is_none());
+    }
+
+    const SCHEDULE_WRITES: [&str; 7] = [
+        "create_schedule",
+        "update_schedule",
+        "delete_schedule",
+        "add_schedule_task",
+        "update_schedule_task",
+        "delete_schedule_task",
+        "reorder_schedule_tasks",
+    ];
+
+    #[test]
+    fn schedule_writes_are_gated_and_never_given_to_the_copilot() {
+        for t in SCHEDULE_WRITES {
+            assert!(is_write_tool(t) && WRITE_TOOLS.contains(&t), "{t} : modifiant (allow_writes)");
+            assert!(INFRA_TOOLS.contains(&t), "{t} : configuration persistante, jamais au Copilote");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&t), "{t}");
+            assert!(tool_for_game(t, "generic") && tool_for_game(t, "satisfactory"), "{t} : tous les jeux");
+            assert!(cache_ttl(t).is_none());
+        }
+        assert!(!is_write_tool("list_schedules"));
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap()["inputSchema"].clone();
+        assert_eq!(schema("create_schedule")["required"], json!(["server_id", "name", "cron"]));
+        assert!(schema("delete_schedule")["required"].as_array().unwrap().contains(&json!("confirm_name")));
+        assert_eq!(schema("create_schedule")["properties"]["tasks"]["type"], "array");
+    }
+
+    #[test]
+    fn schedule_inputs_are_parsed_then_validated() {
+        let cron = parse_cron(" 0  4 * * 1-5 ").unwrap();
+        assert_eq!((cron.minute.as_str(), cron.hour.as_str(), cron.day_of_week.as_str()), ("0", "4", "1-5"));
+        assert!(parse_cron("0 4 * *").is_err(), "4 champs");
+        assert!(parse_cron("0 4 * * * *").is_err(), "6 champs");
+        // Valeurs hors bornes : refusées par la validation du cœur (avant tout envoi).
+        let bad = crate::PanelScheduleInput { name: "Nuit".into(), cron: parse_cron("0 24 * * *").unwrap(), is_active: true, only_when_online: false };
+        assert!(bad.validated().is_err());
+
+        let t = schedule_task_input(&json!({ "action": "power", "payload": "restart", "time_offset": 60 }), None).unwrap();
+        assert_eq!((t.action.as_str(), t.payload.as_str(), t.time_offset, t.continue_on_failure), ("power", "restart", 60, false));
+        assert!(schedule_task_input(&json!({ "payload": "say a" }), None).is_err(), "action requise");
+        assert!(schedule_task_input(&json!({ "action": "command", "payload": "say a", "time_offset": 901 }), None)
+            .unwrap()
+            .validated()
+            .is_err());
+        assert!(schedule_task_input(&json!({ "action": "command", "payload": "say a\nop x" }), None)
+            .unwrap()
+            .validated()
+            .is_err(), "une seule commande par action");
+        // Modification : les champs omis gardent la valeur actuelle.
+        let current = crate::PanelTask {
+            id: 3,
+            sequence_id: 1,
+            action: "command".into(),
+            payload: "say bonjour".into(),
+            time_offset: 30,
+            continue_on_failure: true,
+        };
+        let t = schedule_task_input(&json!({ "time_offset": 5 }), Some(&current)).unwrap();
+        assert_eq!((t.payload.as_str(), t.time_offset, t.continue_on_failure), ("say bonjour", 5, true));
+    }
+
+    #[test]
+    fn task_reorder_must_cite_each_task_once() {
+        let task = |id| crate::PanelTask {
+            id,
+            sequence_id: id,
+            action: "command".into(),
+            payload: "say x".into(),
+            time_offset: 0,
+            continue_on_failure: false,
+        };
+        let schedule: crate::PanelSchedule = serde_json::from_value(json!({ "id": 9, "name": "Nuit" })).unwrap();
+        let schedule = crate::PanelSchedule { tasks: vec![task(1), task(2), task(3)], ..schedule };
+        assert!(check_task_order(&schedule, &[3, 1, 2]).is_ok());
+        assert!(check_task_order(&schedule, &[3, 1]).is_err(), "oubli");
+        assert!(check_task_order(&schedule, &[3, 1, 1, 2]).is_err(), "doublon");
+        assert!(check_task_order(&schedule, &[3, 1, 4]).is_err(), "étrangère");
+    }
+
+    #[test]
+    fn mcp_config_reads_older_files_without_the_gateway() {
+        // Un `mcp.json` d'une version précédente : passerelle désactivée par défaut.
+        let cfg: McpConfig = serde_json::from_value(json!({ "enabled": true, "allow_writes": false })).unwrap();
+        assert!(!cfg.official_gateway && !cfg.allow_writes);
+        assert!(!McpConfig::default().official_gateway);
     }
 }

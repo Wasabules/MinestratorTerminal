@@ -174,6 +174,25 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 | `diagnose_startup` | | `server_id` | **Docteur démarrage** : en un appel, rassemble commande de démarrage + fin de `logs/latest.log` + dernier crash-report, et **pré-scanne** les pannes connues (EULA, port occupé, OOM, version Java, dépendance/mixin de mod, monde corrompu). |
 | `inspect_region` | | `server_id`, `path` | Inspecte un fichier de région `.mca` et repère les chunks **structurellement corrompus** (pointeurs/longueurs invalides). Lecture seule. |
 
+#### Tâches planifiées du panel (exécutées par l'hébergeur)
+
+Lecture avec `list_schedules` (ci-dessus). Les écritures passent par les endpoints du panel
+(`panel_schedules.rs`) et sont **vérifiées avant envoi** : cron en 5 champs aux bornes valides,
+actions `command` (une seule ligne, 500 caractères au plus) ou `power`
+(`start`/`restart`/`stop`/`kill`), délai `time_offset` de 0 à 900 s. Configuration **persistante**
+(rejouée chaque jour, même app fermée) : ces outils rejoignent `INFRA_TOOLS` et ne sont **jamais**
+donnés au Copilote.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `create_schedule` | ✎ | `server_id`, `name`, `cron`, `is_active?`, `only_when_online?`, `tasks?[{action, payload, time_offset?, continue_on_failure?}]` | Crée la tâche planifiée puis ses actions dans l'ordre (toutes vérifiées **avant** la création ; id retrouvé par le nom, l'API ne le renvoyant pas). `cron` = « minute heure jour-du-mois mois jour-de-semaine », ex. `0 4 * * *`. |
+| `update_schedule` | ✎ | `server_id`, `schedule_id`, `name?`, `cron?`, `is_active?`, `only_when_online?` | Champs omis = valeur actuelle. `is_active=false` suspend sans supprimer. |
+| `delete_schedule` | ✎ | `server_id`, `schedule_id`, `confirm_name` | Supprime la tâche et ses actions ; `confirm_name` = nom **exact** de la tâche (vérifié, jamais révélé dans l'erreur). |
+| `add_schedule_task` | ✎ | `server_id`, `schedule_id`, `action`, `payload`, `time_offset?`, `continue_on_failure?` | Ajoute une action **à la fin**. |
+| `update_schedule_task` | ✎ | `server_id`, `schedule_id`, `task_id`, `action?`, `payload?`, `time_offset?`, `continue_on_failure?` | Modifie une action ; champs omis = valeur actuelle. |
+| `delete_schedule_task` | ✎ | `server_id`, `schedule_id`, `task_id` | Retire une action. |
+| `reorder_schedule_tasks` | ✎ | `server_id`, `schedule_id`, `task_ids` | Nouvel ordre ; chaque action citée **exactement une fois**. |
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -206,7 +225,8 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 
 ## 6. Contrôle & sécurité (réglages)
 
-Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mcp.json`), lus par le serveur :
+Réglages modifiables depuis le GUI (Réglages → MCP) et persistés (`mcp.json`), lus par le serveur
+(le troisième, `official_gateway`, active la passerelle décrite plus bas) :
 
 - **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé.
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
@@ -224,10 +244,12 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
   nouvel outil est donc gaté par défaut (impossible de l'exposer en écriture par oubli).
 - **Liste blanche d'env** (`MINESTRATOR_MCP_ALLOWED_TOOLS`) : le lanceur peut restreindre le sous-ensemble
   d'outils exposés (utilisée quand le Copilote lance un agent CLI en mode lecture).
-- **Actions destructives volontairement absentes** du catalogue : `restore_snapshot`,
-  `delete_snapshot`, `restore_backup`, `repair_region` ne sont **pas** des outils MCP → un agent ne
-  peut jamais les déclencher. Elles n'existent que dans l'app, derrière un « Appliquer » (intention
-  explicite de l'utilisateur). Seul `create_snapshot` (additif) est exposé.
+- **Actions destructives volontairement absentes** du catalogue local : `restore_snapshot`,
+  `delete_snapshot`, `restore_backup`, `repair_region` ne sont **pas** des outils MCP. Elles
+  n'existent que dans l'app, derrière un « Appliquer » (intention explicite de l'utilisateur). Seul
+  `create_snapshot` (additif) est exposé. Seule la passerelle (ci-dessous, désactivée par défaut)
+  relaie les restaurations et suppressions de l'officiel, et uniquement avec une confirmation
+  `confirm_name` vérifiée localement.
 - **Suppression d'un serveur gardée** : `mybox_delete_server` exige le nom exact du serveur
   (`confirm_name`, vérifié avant tout appel) et fait par défaut une snapshot préalable. Les
   écritures MyBox sont validées localement avant envoi (ressources, emplacements, champs requis) :
@@ -237,6 +259,52 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 > Desktop, Claude Code…). L'usage inverse — le Copilote interne comme *client* du **MCP officiel
 > MineStrator** (délégation de la gestion, ne gardant en local que `LOCAL_KEEP_TOOLS`) — est décrit
 > dans [`COPILOT.md`](./COPILOT.md).
+
+### Passerelle vers le MCP officiel MineStrator
+
+Le serveur local peut **relayer** les outils du MCP officiel (`https://mcp.sttr.io/minestrator`,
+107 outils en 10 toolsets) : le client n'a qu'**une** connexion, et la clé API reste **au
+trousseau** (compte actif, `secrets::read_key()`) au lieu d'être collée en clair dans sa config
+MCP. Politique dans `crates/minestrator-core/src/official_relay.rs`.
+
+- **Activation** : réglage `official_gateway` (Réglages → MCP, persisté dans `mcp.json`),
+  **désactivé par défaut** ; la variable `MINESTRATOR_MCP_OFFICIAL` (`1`/`0`, `true`/`false`,
+  `on`/`off`) prime, pour le binaire headless. Désactivé par défaut parce qu'il ajoute une
+  soixantaine d'outils au contexte de chaque client (coût en jetons), une dépendance réseau au
+  `tools/list`, des actions au niveau du compte (tickets, hébergements web, bases, offres) que
+  l'utilisateur n'a pas demandées en installant le MCP de l'app — et qu'il ferait doublon avec un
+  MCP officiel déjà configuré à côté.
+- **Toolsets** : tous **sauf `files`**, que notre SFTP remplace — webhosting compris.
+- **Sans doublon** : la table d'équivalences (`EQUIVALENTS`, partagée avec le Copilote) masque
+  chaque outil officiel dont nous avons l'équivalent (`list_servers`, `get_server_live` →
+  `server_status`, `send_console_command` → `send_command`, `manage_player` → `player_action`,
+  MyBox → nos outils d'architecte, `delete_server_from_mybox` → `mybox_delete_server`, schedules →
+  nos outils ci-dessus, `install_mod`/`install_plugin` → `install_mod`, paramètres, démarrage,
+  snapshots, backups, disque, historique, docteur…) ; pour Spark, c'est notre
+  `parse_spark_report` qui s'efface devant `get_spark_report`. Un officiel portant le nom d'un de
+  nos outils est toujours masqué. Appeler un outil masqué renvoie l'outil local qui le remplace.
+- **Gating** : un outil relayé est en **lecture** s'il figure dans la liste `readonly=1` de
+  l'officiel (il est alors appelé sur une connexion `readonly=1`) ; tout autre outil, inconnu
+  compris, est **modifiant** → soumis à `allow_writes` et à la liste blanche d'env. Après une
+  écriture, le cache de lecture local est purgé.
+- **Destructifs** : un outil modifiant dont l'annotation `destructiveHint` n'est pas
+  explicitement `false` (défaut de la spécification MCP) n'est relayé qu'avec un argument
+  **`confirm_name` obligatoire**, ajouté à son schéma et **vérifié localement avant relais** contre
+  le nom exact de la ressource, lu à la source : serveur (`reinstall_server`, `change_version`,
+  `install_modpack`, `restore_smartbackup`, `restore_snapshot` — la cible écrasée), snapshot
+  (`delete_snapshot`), MyBox (`restore_db_backup`), site web (son domaine, via `get_webhosting` :
+  `reset_webhosting`, `delete_webhosting`, `restore_webhosting_backup`, suppression de fichiers,
+  extraction, changement de domaine, boîtes mail, installation de CMS). Le nom attendu n'est
+  jamais révélé dans l'erreur. Un destructif sans ressource vérifiable est masqué ; un destructif
+  qui a un équivalent local gardé l'est aussi (`delete_server_from_mybox`, `delete_schedule`).
+- **Sorties** : anonymisées comme celles de nos outils (`redact_ai`) ; `reveal_credentials`
+  (mots de passe en clair) est retiré des schémas et des appels.
+- **Cache** : catalogue gardé 10 min par processus (empreinte de la clé : un changement de compte
+  le renouvelle). Officiel injoignable ou sans clé : nos outils seuls, avertissement au journal,
+  nouvel essai après une minute — jamais de plantage.
+- **Serveur lancé par le Copilote** (`MINESTRATOR_MCP_COPILOT_SERVER=<id>`) : pas de passerelle,
+  mais un relais restreint à la politique du Copilote (lecture + liste blanche, voir
+  [`COPILOT.md`](./COPILOT.md) §4) ; tout appel, local ou relayé, visant un autre serveur est refusé.
 
 ## 7. Se connecter (depuis n'importe quel client MCP)
 
@@ -274,7 +342,8 @@ Build du binaire autonome : `cargo build -p minestrator-mcp --release`
 ## 8. Limites connues (héritées de l'API publique)
 
 - Les **snapshots/backups** se **listent** (`list_snapshots`, `list_backups`) et un snapshot se
-  **crée** (`create_snapshot`), mais la **restauration** n'est pas exposée à l'agent (voir §6).
+  **crée** (`create_snapshot`), mais la **restauration** n'est pas un outil local (voir §6) ; seule
+  la passerelle vers le MCP officiel la relaie, avec confirmation vérifiée.
 - Pas d'endpoint **documenté** de listing des bans/ops — `list_players` donne les drapeaux
   op/whitelist/banni de chaque joueur déjà venu (endpoint non documenté), et `read_file` lit
   `banned-players.json` / `ops.json` ; la modération (`player_action`) reste disponible.

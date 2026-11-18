@@ -369,9 +369,10 @@ export const api = {
     invoke<ChatReply>('chat_send', { sessionId, serverId, serverName, message, autonomous }),
   /** Réinitialise une conversation assistant. */
   chatReset: (sessionId: string) => invoke<void>('chat_reset', { sessionId }),
-  /** Pré-chauffe (best-effort) le process agent persistant d'une session avant le 1er message. */
-  chatWarm: (sessionId: string, autonomous: boolean) =>
-    invoke<void>('chat_warm', { sessionId, autonomous }),
+  /** Pré-chauffe (best-effort) le process agent persistant d'une session avant le 1er message,
+   *  borné au serveur de la conversation. */
+  chatWarm: (sessionId: string, serverId: number, autonomous: boolean) =>
+    invoke<void>('chat_warm', { sessionId, serverId, autonomous }),
 
   // --- Filet de sécurité : backups & snapshots ---
   /** Backups quotidiens automatiques d'un serveur (récents d'abord). */

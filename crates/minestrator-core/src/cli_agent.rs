@@ -13,13 +13,18 @@
 //!   `--tools` + `--strict-mcp-config`, OpenCode règles `permission: deny` (respectées par
 //!   `--auto`), Gemini mode `default` (confirmations refusées en non-interactif) + `tools.exclude`.
 //!
-//! La config de l'agent (avec la clé API si le MCP officiel est branché) vit dans un [`RunDir`]
-//! privé, effacé à la fin du processus.
+//! - **MCP officiel** : jamais branché directement sur l'agent. Notre serveur MCP le relaie, borné
+//!   au serveur de la session et à la politique du Copilote (`official_relay.rs`) ; la clé API
+//!   reste au trousseau.
+//!
+//! La config de l'agent vit dans un [`RunDir`] privé, effacé à la fin du processus.
 //!
 //! Robustesse : le parsing Claude Code (éprouvé) reste dans `copilot.rs` et est réutilisé tel
 //! quel ; OpenCode/Gemini ont un parsing **défensif** (chaque champ optionnel, dégradation propre).
 
-use crate::config::{MCP_ALLOWED_TOOLS_ENV, MCP_FORCE_ENABLED_ENV};
+use crate::config::{
+    MCP_ALLOWED_TOOLS_ENV, MCP_COPILOT_SERVER_ENV, MCP_FORCE_ENABLED_ENV, MCP_OFFICIAL_ENV,
+};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -99,9 +104,12 @@ pub struct RunCtx<'a> {
     pub resume: Option<&'a str>,
     /// Diffuser la réponse token-par-token (chat) vs pas (diagnostic).
     pub streaming: bool,
-    /// Brancher aussi le **MCP officiel** MineStrator (gestion) : `Some(readonly)` = ajouté avec ce
-    /// mode (`readonly` ⇒ aucun outil modifiant), `None` = non branché. La clé vient du trousseau.
-    pub official_mcp: Option<bool>,
+    /// Relayer les outils du **MCP officiel** MineStrator par NOTRE serveur MCP (politique du
+    /// Copilote, `official_relay.rs`). L'agent ne s'y connecte jamais lui-même : ni clé API dans sa
+    /// config, ni outil officiel hors liste blanche. Les noms permis figurent dans `allowed_tools`.
+    pub official_relay: bool,
+    /// Serveur de la session : notre serveur MCP refuse tout appel visant un autre serveur.
+    pub scope_server: Option<i64>,
 }
 
 /// Plan de lancement concret : arguments, répertoire de travail, variables d'env du processus.
@@ -125,8 +133,8 @@ const STALE_RUN_DIR: Duration = Duration::from_secs(24 * 3600);
 static RUN_SEQ: AtomicU64 = AtomicU64::new(0);
 static PURGE_ONCE: Once = Once::new();
 
-/// Dossier éphémère d'un lancement d'agent : il reçoit la config MCP de l'agent, qui contient la
-/// clé API quand le MCP officiel est branché.
+/// Dossier éphémère d'un lancement d'agent : il reçoit la config MCP de l'agent (aucune clé API :
+/// le MCP officiel passe par notre serveur, qui lit la clé au trousseau).
 ///
 /// - Créé **neuf** (jamais réutilisé : un dossier pré-existant au même nom est refusé) et, sous
 ///   Unix, en `0700` : le répertoire temporaire est partagé entre utilisateurs (`/tmp`).
@@ -248,33 +256,26 @@ fn write_json(path: &Path, v: &Value) -> Result<(), String> {
         .map_err(|e| format!("écriture config ({}) : {e}", path.display()))
 }
 
-/// Env du serveur MCP (embarqué dans le fichier de config de l'agent) : force l'activation +
-/// impose la liste blanche d'outils.
-fn mcp_server_env(allowed: &[String]) -> Value {
-    json!({
+/// Env du serveur MCP (embarqué dans le fichier de config de l'agent) : force l'activation,
+/// impose la liste blanche d'outils, borne au serveur de la session et active (ou coupe
+/// explicitement : le réglage « passerelle » de l'utilisateur ne doit pas s'y appliquer) le relais
+/// du MCP officiel selon la politique du Copilote.
+fn mcp_server_env(ctx: &RunCtx) -> Value {
+    let mut env = json!({
         MCP_FORCE_ENABLED_ENV: "1",
-        MCP_ALLOWED_TOOLS_ENV: allowed.join(","),
-    })
+        MCP_ALLOWED_TOOLS_ENV: ctx.allowed_tools.join(","),
+        MCP_OFFICIAL_ENV: if ctx.official_relay { "1" } else { "0" },
+    });
+    if let Some(id) = ctx.scope_server {
+        env[MCP_COPILOT_SERVER_ENV] = json!(id.to_string());
+    }
+    env
 }
 
 /// Ajoute une paire `drapeau valeur` aux arguments CLI (évite le doublon `push`/`push`).
 fn push_flag(args: &mut Vec<String>, flag: &str, value: &str) {
     args.push(flag.to_string());
     args.push(value.to_string());
-}
-
-/// URL + en-tête d'auth du MCP OFFICIEL pour un agent (toolsets de gestion, `readonly` optionnel).
-/// `None` si aucune clé au trousseau (on ne branche alors pas l'officiel). La clé est écrite dans le
-/// fichier de config de l'agent, dans son [`RunDir`] : privé, et effacé à la fin du processus.
-fn official_url_auth(readonly: bool) -> Option<(String, String)> {
-    let key = crate::secrets::read_key().ok().flatten()?;
-    let ro = if readonly { "&readonly=1" } else { "" };
-    let url = format!(
-        "{}?toolsets=core,actions,content,backups,mybox,schedules,databases,config{}",
-        crate::config::OFFICIAL_MCP_URL,
-        ro
-    );
-    Some((url, format!("Bearer {key}")))
 }
 
 /// Outils natifs d'OpenCode **refusés** dans `opencode.json` (`permission`). Indispensable : `--auto`
@@ -342,15 +343,8 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
             servers.insert(
                 "minestrator".into(),
                 json!({ "type": "stdio", "command": exe, "args": ["--mcp"],
-                        "env": mcp_server_env(ctx.allowed_tools) }),
+                        "env": mcp_server_env(ctx) }),
             );
-            let official = ctx.official_mcp.and_then(official_url_auth);
-            if let Some((url, auth)) = &official {
-                servers.insert(
-                    "minestrator_official".into(),
-                    json!({ "type": "http", "url": url, "headers": { "Authorization": auth } }),
-                );
-            }
             write_json(&cfg, &json!({ "mcpServers": servers }))?;
             // `--allowedTools` ne fait qu'AJOUTER des autorisations : un `Bash` autorisé dans les
             // réglages de l'utilisateur resterait utilisable. `--tools` retire les outils natifs
@@ -363,7 +357,7 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
                 "--tools".to_string(),
                 claude_builtin_tools(ctx.web_search),
                 "--allowedTools".to_string(),
-                claude_allowed_tools(ctx.allowed_tools, ctx.web_search, official.is_some()),
+                claude_allowed_tools(ctx.allowed_tools, ctx.web_search),
                 "--output-format".to_string(),
                 "stream-json".to_string(),
                 "--verbose".to_string(),
@@ -388,15 +382,8 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
             mcp.insert(
                 "minestrator".into(),
                 json!({ "type": "local", "command": [exe, "--mcp"],
-                        "environment": mcp_server_env(ctx.allowed_tools), "enabled": true }),
+                        "environment": mcp_server_env(ctx), "enabled": true }),
             );
-            if let Some((url, auth)) = ctx.official_mcp.and_then(official_url_auth) {
-                mcp.insert(
-                    "minestrator_official".into(),
-                    json!({ "type": "remote", "url": url,
-                            "headers": { "Authorization": auth }, "enabled": true }),
-                );
-            }
             let mut permission = serde_json::Map::new();
             for tool in OPENCODE_DENIED {
                 permission.insert((*tool).into(), json!("deny"));
@@ -440,14 +427,8 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
             servers.insert(
                 "minestrator".into(),
                 json!({ "command": exe, "args": ["--mcp"],
-                        "env": mcp_server_env(ctx.allowed_tools), "trust": true }),
+                        "env": mcp_server_env(ctx), "trust": true }),
             );
-            if let Some((url, auth)) = ctx.official_mcp.and_then(official_url_auth) {
-                servers.insert(
-                    "minestrator_official".into(),
-                    json!({ "httpUrl": url, "headers": { "Authorization": auth }, "trust": true }),
-                );
-            }
             let mut exclude: Vec<&str> = GEMINI_EXCLUDED.to_vec();
             let mut tools = serde_json::Map::new();
             if ctx.web_search {
@@ -478,17 +459,13 @@ pub fn plan_run(agent: CliAgent, ctx: &RunCtx) -> Result<RunPlan, String> {
     }
 }
 
-/// Liste `--allowedTools` de Claude Code : outils MCP préfixés + serveur officiel (tous ses outils)
-/// + outils web natifs si activés.
-fn claude_allowed_tools(allowed: &[String], web_search: bool, official: bool) -> String {
+/// Liste `--allowedTools` de Claude Code : nos outils MCP préfixés (outils officiels relayés
+/// compris, nommés un à un — jamais un serveur entier) + outils web natifs si activés.
+fn claude_allowed_tools(allowed: &[String], web_search: bool) -> String {
     let mut parts: Vec<String> = allowed
         .iter()
         .map(|t| format!("mcp__minestrator__{t}"))
         .collect();
-    if official {
-        // `mcp__<serveur>` (sans nom d'outil) autorise TOUS les outils de ce serveur MCP.
-        parts.push("mcp__minestrator_official".to_string());
-    }
     if web_search {
         parts.push("WebSearch".to_string());
         parts.push("WebFetch".to_string());
@@ -694,18 +671,18 @@ mod tests {
     #[test]
     fn claude_allowlist_prefixes_and_adds_web() {
         let allowed = vec!["read_file".to_string(), "list_files".to_string()];
-        let s = claude_allowed_tools(&allowed, true, false);
+        let s = claude_allowed_tools(&allowed, true);
         assert_eq!(
             s,
             "mcp__minestrator__read_file,mcp__minestrator__list_files,WebSearch,WebFetch"
         );
-        let s2 = claude_allowed_tools(&allowed, false, false);
+        let s2 = claude_allowed_tools(&allowed, false);
         assert_eq!(s2, "mcp__minestrator__read_file,mcp__minestrator__list_files");
-        // Officiel activé → tout le serveur `minestrator_official` est autorisé.
-        let s3 = claude_allowed_tools(&allowed, false, true);
+        // Un outil officiel relayé est nommé comme les nôtres : jamais un serveur entier autorisé.
+        let relayed = vec!["read_file".to_string(), "get_console_logs".to_string()];
         assert_eq!(
-            s3,
-            "mcp__minestrator__read_file,mcp__minestrator__list_files,mcp__minestrator_official"
+            claude_allowed_tools(&relayed, false),
+            "mcp__minestrator__read_file,mcp__minestrator__get_console_logs"
         );
     }
 
@@ -747,7 +724,7 @@ mod tests {
 
     // --- Dossier éphémère & durcissement des outils natifs ------------------
 
-    /// Contexte minimal : MCP officiel NON branché (`plan_run` ne lit alors pas le trousseau).
+    /// Contexte minimal : relais du MCP officiel coupé, sans portée.
     fn ctx<'a>(allowed: &'a [String], web_search: bool) -> RunCtx<'a> {
         RunCtx {
             exe: PathBuf::from("minestrator-terminal"),
@@ -757,8 +734,39 @@ mod tests {
             effort: "medium",
             resume: None,
             streaming: false,
-            official_mcp: None,
+            official_relay: false,
+            scope_server: None,
         }
+    }
+
+    #[test]
+    fn official_mcp_is_relayed_by_our_server_never_connected_directly() {
+        let allowed = vec!["read_file".to_string(), "get_console_logs".to_string()];
+        let relayed = RunCtx { official_relay: true, scope_server: Some(42), ..ctx(&allowed, false) };
+        // Claude Code : un seul serveur MCP (le nôtre), sans clé ; relais et portée dans son env.
+        let plan = plan_run(CliAgent::ClaudeCode, &relayed).unwrap();
+        let cfg = read_json(&plan.dir.path().join("mcp.json"));
+        let servers = cfg["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 1, "aucune connexion directe au MCP officiel");
+        let env = &servers["minestrator"]["env"];
+        assert_eq!(env[MCP_OFFICIAL_ENV], "1");
+        assert_eq!(env[MCP_COPILOT_SERVER_ENV], "42");
+        assert_eq!(env[MCP_ALLOWED_TOOLS_ENV], "read_file,get_console_logs");
+        assert!(!cfg.to_string().contains("Bearer"), "jamais de clé dans la config de l'agent");
+        // OpenCode et Gemini : idem.
+        let plan = plan_run(CliAgent::OpenCode, &relayed).unwrap();
+        let cfg = read_json(&plan.dir.path().join("opencode.json"));
+        assert_eq!(cfg["mcp"].as_object().unwrap().len(), 1);
+        assert_eq!(cfg["mcp"]["minestrator"]["environment"][MCP_COPILOT_SERVER_ENV], "42");
+        let plan = plan_run(CliAgent::Gemini, &relayed).unwrap();
+        let cfg = read_json(&plan.dir.path().join(".gemini").join("settings.json"));
+        assert_eq!(cfg["mcpServers"].as_object().unwrap().len(), 1);
+        assert_eq!(cfg["mcpServers"]["minestrator"]["env"][MCP_OFFICIAL_ENV], "1");
+        // Relais coupé : coupé explicitement (le réglage « passerelle » de l'utilisateur ne s'applique pas).
+        let plan = plan_run(CliAgent::ClaudeCode, &ctx(&allowed, false)).unwrap();
+        let cfg = read_json(&plan.dir.path().join("mcp.json"));
+        assert_eq!(cfg["mcpServers"]["minestrator"]["env"][MCP_OFFICIAL_ENV], "0");
+        assert!(cfg["mcpServers"]["minestrator"]["env"].get(MCP_COPILOT_SERVER_ENV).is_none());
     }
 
     fn read_json(path: &Path) -> Value {

@@ -790,6 +790,13 @@
           </div>
           <input type="checkbox" bind:checked={mcp.allow_writes} onchange={saveMcp} />
         </label>
+        <label class="toggle-row">
+          <div class="tl">
+            <div class="tl-title">{t('settings.mcpOfficialGateway')}</div>
+            <div class="tl-desc dim">{t('settings.mcpOfficialGatewayDesc')}</div>
+          </div>
+          <input type="checkbox" bind:checked={mcp.official_gateway} onchange={saveMcp} />
+        </label>
       </div>
 
       <h2>{t('settings.mcpConnect')}</h2>

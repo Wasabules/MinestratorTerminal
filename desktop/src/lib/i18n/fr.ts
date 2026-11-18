@@ -1034,6 +1034,9 @@ export const fr = {
     mcpAllowWrites: 'Autoriser les actions modifiantes',
     mcpAllowWritesDesc:
       'Power actions, commandes, modération, écriture de fichiers. Décoche pour un mode lecture seule (diagnostic uniquement).',
+    mcpOfficialGateway: 'Relayer le MCP officiel MineStrator',
+    mcpOfficialGatewayDesc:
+      "Ajoute les outils du MCP officiel (hors fichiers, déjà couverts en SFTP) sur cette même connexion, sans doublon avec ceux de l'app. Ta clé reste dans le trousseau, rien à coller dans le client. Les actions destructives exigent le nom exact de la ressource.",
     mcpConnect: 'Connexion',
     mcpConfigHint: 'Renseigne ce serveur dans ton client MCP (format « mcpServers ») :',
     mcpCommand: 'Ou, commande brute :',

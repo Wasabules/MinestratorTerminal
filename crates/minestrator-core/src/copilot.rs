@@ -15,12 +15,13 @@ use crate::events::{
 };
 use crate::llm::{LlmClient, Msg, Provider, ToolResult, ToolSpec};
 use crate::mcp::{is_write_tool, READ_TOOLS, WRITE_TOOLS};
+use crate::official_relay::{self, Catalog};
 use crate::store::now_secs;
 use crate::util::tail;
 use crate::{cli, mcp, secrets, Core};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -68,10 +69,10 @@ fn tool_disabled(name: &str, disabled: &[String]) -> bool {
     disabled.iter().any(|d| d == name)
 }
 
-/// Noms d'outils MCP autorisés pour l'agent CLI : lecture toujours, + écriture si `autonomous`,
-/// moins ceux interdits par la politique. Sert de liste blanche côté serveur MCP (garde-fou
-/// uniforme) et, pour Claude Code, de base à `--allowedTools`.
-fn allowed_tool_names(cfg: &CopilotConfig, autonomous: bool) -> Vec<String> {
+/// Noms de NOS outils MCP autorisés pour l'agent CLI : lecture toujours, + écriture si
+/// `autonomous`, moins ceux interdits par la politique. `official_up` : le MCP officiel répond, le
+/// catalogue local est alors recentré (voir [`cli_allowed_tools`], qui y ajoute les outils officiels).
+fn allowed_tool_names(cfg: &CopilotConfig, autonomous: bool, official_up: bool) -> Vec<String> {
     let mut v: Vec<String> = READ_TOOLS.iter().map(|s| s.to_string()).collect();
     if autonomous {
         // Jamais la gestion de l'infrastructure MyBox (créer/supprimer des serveurs…) : le
@@ -84,12 +85,64 @@ fn allowed_tool_names(cfg: &CopilotConfig, autonomous: bool) -> Vec<String> {
         );
     }
     // Quand le MCP officiel prend la gestion, NOTRE serveur est recentré sur SFTP + exclusifs
-    // (`LOCAL_KEEP_TOOLS`) — le reste est délégué à l'officiel, pas de doublon pour l'agent.
-    if cfg.use_official_mcp {
+    // (`LOCAL_KEEP_TOOLS`) — le reste est délégué à l'officiel, pas de doublon pour l'agent. S'il
+    // ne répond pas, l'agent garde notre catalogue complet.
+    if official_up {
         v.retain(|n| crate::mcp::LOCAL_KEEP_TOOLS.contains(&n.as_str()));
     }
     v.retain(|n| !tool_disabled(n, &cfg.disabled_tools));
     v
+}
+
+/// Liste blanche complète de l'agent CLI, et « relayer l'officiel ? ». L'agent ne se connecte
+/// jamais lui-même au MCP officiel : NOTRE serveur `--mcp` le relaie, borné au serveur de la
+/// session et à la politique du Copilote (lecture + liste blanche en autonome, deny-by-default,
+/// `official_relay.rs`). La liste nomme donc aussi les outils officiels permis, dédoublonnés
+/// contre les nôtres — elle sert de garde-fou côté serveur ET, pour Claude Code, d'`--allowedTools`.
+async fn cli_allowed_tools(cfg: &CopilotConfig, autonomous: bool) -> (Vec<String>, bool) {
+    let cat = if cfg.use_official_mcp {
+        official_relay::copilot_catalog().await
+    } else {
+        None
+    };
+    let mut names = allowed_tool_names(cfg, autonomous, cat.is_some());
+    let Some(cat) = cat else {
+        return (names, false);
+    };
+    let local: HashSet<String> = names.iter().cloned().collect();
+    let view = official_relay::copilot_view(&cat, &local, autonomous);
+    names.retain(|n| !view.masked_local.contains(n));
+    names.extend(
+        view.tools
+            .into_iter()
+            .map(|t| t.name)
+            .filter(|n| !tool_disabled(n, &cfg.disabled_tools)),
+    );
+    (names, true)
+}
+
+/// Outils locaux destructifs qui ne sont PAS des outils MCP : atteints uniquement par
+/// « Appliquer » (intention explicite de l'utilisateur), jamais par un agent.
+const APPLY_ONLY_TOOLS: &[&str] = &["restore_snapshot", "restore_backup", "delete_snapshot", "repair_region"];
+
+/// Outil de NOTRE couche (MCP local ou « Appliquer ») ? Sinon, c'est un nom d'outil officiel (ou
+/// inventé) : il suit alors la politique du Copilote pour l'officiel.
+pub(crate) fn is_local_tool(name: &str) -> bool {
+    READ_TOOLS.contains(&name) || WRITE_TOOLS.contains(&name) || APPLY_ONLY_TOOLS.contains(&name)
+}
+
+/// Message renvoyé au modèle pour un outil hors de son catalogue (nom halluciné, outil réservé,
+/// action modifiante en mode suggestion) : refus explicite, rien n'est exécuté.
+fn refusal(name: &str, autonomous: bool) -> String {
+    if crate::mcp::INFRA_TOOLS.contains(&name) {
+        format!("Action refusée : « {name} » est réservé à l'app et au serveur MCP local (jamais exécuté par le Copilote).")
+    } else if !autonomous
+        && (WRITE_TOOLS.contains(&name) || official_relay::COPILOT_OFFICIAL_WRITES.contains(&name))
+    {
+        format!("Action non exécutée (mode suggestion). Propose-la via {CHAT_MARK}.")
+    } else {
+        format!("Outil « {name} » indisponible ici : n'utilise que les outils proposés dans cette conversation.")
+    }
 }
 
 /// Binaire à lancer : `cli_command` s'il est renseigné, sinon le binaire par défaut de l'agent.
@@ -587,7 +640,7 @@ async fn run_cli_agentic(
     let exe = std::env::current_exe().map_err(|e| format!("chemin de l'exécutable : {e}"))?;
     let agent = cfg.cli_agent;
     // Diagnostic = LECTURE SEULE (non autonome), pas de streaming de réponse (phases seulement).
-    let allowed = allowed_tool_names(cfg, false);
+    let (allowed, official_relay) = cli_allowed_tools(cfg, false).await;
     let plan = crate::cli_agent::plan_run(
         agent,
         &crate::cli_agent::RunCtx {
@@ -598,7 +651,8 @@ async fn run_cli_agentic(
             effort: cfg.effort.claude_level(),
             resume: None,
             streaming: false,
-            official_mcp: cfg.use_official_mcp.then_some(true), // diagnostic = lecture seule
+            official_relay,
+            scope_server: Some(inc.server_id),
         },
     )?;
     let family = core.server_family(inc.server_id).await;
@@ -793,15 +847,22 @@ async fn diagnose_http(
     let console_tail = core.redact_ai(&console_tail);
 
     let client = LlmClient::new(cfg.provider, &cfg.base_url, &key, &cfg.model);
-    // Diagnostic = LECTURE SEULE → MCP officiel en `readonly` (aucun outil modifiant n'existe). Pas
-    // de cache (one-shot) ; repli sur le catalogue local complet si l'officiel est indisponible.
-    let api_token = crate::secrets::read_key().ok().flatten();
-    let official = match (cfg.use_official_mcp, api_token.as_deref()) {
-        (true, Some(tok)) => crate::official_mcp::list_tools(tok, true).await.unwrap_or_default(),
-        _ => Vec::new(),
+    // Diagnostic = LECTURE SEULE : de l'officiel, seuls ses outils de lecture (liste `readonly=1`),
+    // appelés sur une connexion `readonly=1`. Repli sur le catalogue local complet s'il ne répond pas.
+    let official = if cfg.use_official_mcp {
+        official_relay::copilot_catalog().await
+    } else {
+        None
     };
     let family = core.server_family(inc.server_id).await;
-    let (tools, official_names) = merge_tools(agent_tools(&cfg.disabled_tools, &family), official);
+    let (tools, official_names) = merge_tools(
+        agent_tools(&cfg.disabled_tools, &family),
+        official.as_deref(),
+        false,
+        &cfg.disabled_tools,
+    );
+    // Seuls les outils effectivement proposés s'exécutent (un nom inventé est refusé).
+    let offered: HashSet<String> = tools.iter().map(|t| t.name.clone()).collect();
     let system = with_effort(&system_prompt(&family), cfg.effort);
     let mut transcript = vec![Msg::User(user_prompt(inc, &console_tail))];
 
@@ -822,22 +883,21 @@ async fn diagnose_http(
                     id: call.id.clone(),
                     content: "Diagnostic enregistré.".into(),
                 });
+            } else if !offered.contains(&call.name) {
+                results.push(ToolResult {
+                    id: call.id.clone(),
+                    content: "Outil non autorisé pour le diagnostic (lecture seule) : n'utilise que les outils proposés.".into(),
+                });
+            } else if let Some(refus) = official_relay::scope_violation(inc.server_id, &call.input) {
+                results.push(ToolResult { id: call.id.clone(), content: refus });
             } else if official_names.contains(&call.name) {
                 core.emit(CoreEvent::CopilotProgress(CopilotProgress {
                     id: id.to_string(),
                     phase: friendly_tool(&call.name, Some(&call.input)),
                 }));
-                let out = match api_token.as_deref() {
-                    Some(tok) => {
-                        // Succès comme échec sont redactés : un échec d'outil (`isError`) porte
-                        // aussi du contenu venu du serveur.
-                        crate::official_mcp::call_tool(tok, true, &call.name, call.input.clone())
-                            .await
-                            .map(|o| core.redact_ai(&o))
-                            .unwrap_or_else(|e| format!("Erreur outil : {}", core.redact_ai(&e)))
-                    }
-                    None => "Clé API MineStrator indisponible.".to_string(),
-                };
+                // Politique revérifiée à l'exécution (lecture seule ici) ; succès comme échec sont
+                // anonymisés : un échec d'outil (`isError`) porte aussi du contenu venu du serveur.
+                let out = official_relay::copilot_call(core, inc.server_id, false, &call.name, call.input.clone()).await;
                 results.push(ToolResult {
                     id: call.id.clone(),
                     content: truncate(&out, TOOL_OUTPUT_CAP),
@@ -913,42 +973,36 @@ fn agent_tools(disabled: &[String], family: &str) -> Vec<ToolSpec> {
 
 // --- MCP officiel (voie API HTTP) -----------------------------------------
 
-/// Catalogue d'outils du MCP officiel, avec CACHE de session par variante `readonly` (évite un
-/// `tools/list` réseau à chaque message). Vide si l'officiel est désactivé/injoignable → repli sur
-/// le catalogue local complet. Récupère la clé API au trousseau.
-async fn official_tools_cached(
-    readonly: bool,
-    cache: &mut Option<(bool, Vec<ToolSpec>)>,
-) -> Vec<ToolSpec> {
-    if let Some((ro, tools)) = cache.as_ref() {
-        if *ro == readonly {
-            return tools.clone();
-        }
-    }
-    let tools = match crate::secrets::read_key() {
-        Ok(Some(token)) => crate::official_mcp::list_tools(&token, readonly).await.unwrap_or_default(),
-        _ => Vec::new(),
-    };
-    *cache = Some((readonly, tools.clone()));
-    tools
-}
-
-/// Fusionne les outils officiels (gestion) et le catalogue local. Quand l'officiel fournit des
-/// outils, le local est RECENTRÉ sur le SFTP + les exclusifs (`LOCAL_KEEP_TOOLS`) + `report_diagnosis`
-/// → aucun doublon. Renvoie le catalogue fusionné + l'ensemble des noms officiels (pour le routing).
+/// Fusionne nos outils et ceux du MCP officiel (catalogue en cache, `official_relay.rs`). Quand
+/// l'officiel répond, le local est RECENTRÉ sur le SFTP + les exclusifs (`LOCAL_KEEP_TOOLS`) +
+/// `report_diagnosis`, et de l'officiel ne viennent que les outils permis au Copilote : lecture,
+/// plus la liste blanche d'actions en `autonomous` — jamais le reste (deny-by-default). La table
+/// d'équivalences retire les doublons. Renvoie le catalogue fusionné + les noms officiels (routing).
 fn merge_tools(
     mut local: Vec<ToolSpec>,
-    official: Vec<ToolSpec>,
-) -> (Vec<ToolSpec>, std::collections::HashSet<String>) {
-    use std::collections::HashSet;
-    if official.is_empty() {
+    official: Option<&Catalog>,
+    autonomous: bool,
+    disabled: &[String],
+) -> (Vec<ToolSpec>, HashSet<String>) {
+    let Some(cat) = official else {
         return (local, HashSet::new());
-    }
+    };
     local.retain(|t| {
         crate::mcp::LOCAL_KEEP_TOOLS.contains(&t.name.as_str()) || t.name == "report_diagnosis"
     });
-    let names: HashSet<String> = official.iter().map(|t| t.name.clone()).collect();
-    local.extend(official);
+    let local_names: HashSet<String> = local.iter().map(|t| t.name.clone()).collect();
+    let view = official_relay::copilot_view(cat, &local_names, autonomous);
+    local.retain(|t| !view.masked_local.contains(&t.name));
+    let mut names = HashSet::new();
+    for t in view.tools {
+        if tool_disabled(&t.name, disabled) {
+            continue;
+        }
+        if let Some(spec) = crate::official_mcp::to_tool_spec(&t.def) {
+            names.insert(t.name);
+            local.push(spec);
+        }
+    }
     (local, names)
 }
 
@@ -1306,14 +1360,12 @@ pub struct ChatSession {
     /// Mode (autonome ?) pour lequel le process vivant a été lancé : le toolset MCP est figé au
     /// spawn, donc un changement de mode impose un respawn.
     persistent_autonomous: bool,
+    /// Serveur auquel le process vivant est borné (portée figée au spawn, comme le mode).
+    persistent_scope: Option<i64>,
     /// La voie persistante s'est révélée inutilisable → on reste sur le one-shot pour cette session.
     no_persistent: bool,
     /// Échecs consécutifs de la voie persistante (2 → on bascule définitivement en one-shot).
     persistent_fails: u8,
-    /// Cache du catalogue d'outils du MCP officiel (voie API HTTP) — évite un `tools/list` réseau à
-    /// chaque message. Le `bool` mémorise le `readonly` avec lequel il a été récupéré (re-fetch si
-    /// l'autonomie change). `Some(_, [])` = officiel désactivé/injoignable → catalogue local complet.
-    official_tools: Option<(bool, Vec<ToolSpec>)>,
 }
 
 impl ChatSession {
@@ -1323,9 +1375,9 @@ impl ChatSession {
             cli_session: None,
             persistent: None,
             persistent_autonomous: false,
+            persistent_scope: None,
             no_persistent: false,
             persistent_fails: 0,
-            official_tools: None,
         }
     }
 }
@@ -1364,18 +1416,22 @@ async fn chat_http(
 ) -> Result<ChatReply, String> {
     let key = resolve_key(cfg)?;
     let client = LlmClient::new(cfg.provider, &cfg.base_url, &key, &cfg.model);
-    // MCP officiel (gestion) : chat non-autonome ⇒ readonly (aucun outil modifiant n'existe pour la
-    // connexion). Catalogue mis en cache sur la session ; repli sur le local complet s'il est vide.
-    let readonly = !autonomous;
+    // MCP officiel (gestion, catalogue en cache) : lecture toujours, et en autonome sa seule liste
+    // blanche d'actions bornées au serveur ; repli sur le local complet s'il ne répond pas.
     let official = if cfg.use_official_mcp {
-        official_tools_cached(readonly, &mut session.official_tools).await
+        official_relay::copilot_catalog().await
     } else {
-        Vec::new()
+        None
     };
     let family = core.server_family(server_id).await;
-    let (tools, official_names) =
-        merge_tools(chat_tools(autonomous, &cfg.disabled_tools, &family), official);
-    let api_token = crate::secrets::read_key().ok().flatten(); // pour exécuter les outils officiels
+    let (tools, official_names) = merge_tools(
+        chat_tools(autonomous, &cfg.disabled_tools, &family),
+        official.as_deref(),
+        autonomous,
+        &cfg.disabled_tools,
+    );
+    // Défense en profondeur : seuls les outils proposés s'exécutent, sur le seul serveur de la session.
+    let offered: HashSet<String> = tools.iter().map(|t| t.name.clone()).collect();
     let system = with_effort(&chat_system(autonomous, &family), cfg.effort);
 
     let prompt = if session.transcript.is_empty() {
@@ -1411,24 +1467,18 @@ async fn chat_http(
                 id: id.to_string(),
                 phase: friendly_tool(&call.name, Some(&call.input)),
             }));
-            let content = if official_names.contains(&call.name) {
-                // Outil de gestion délégué au MCP officiel (résultat redacté avant de repartir au LLM).
-                match api_token.as_deref() {
-                    Some(tok) => {
-                        crate::official_mcp::call_tool(tok, readonly, &call.name, call.input.clone())
-                            .await
-                            .map(|out| core.redact_ai(&out))
-                            .unwrap_or_else(|e| format!("Erreur outil : {}", core.redact_ai(&e)))
-                    }
-                    None => "Clé API MineStrator indisponible pour le MCP officiel.".to_string(),
-                }
+            let content = if !offered.contains(&call.name) {
+                // Nom inventé, outil réservé (INFRA_TOOLS, restaurations…) ou action en suggestion.
+                refusal(&call.name, autonomous)
+            } else if let Some(refus) = official_relay::scope_violation(server_id, &call.input) {
+                refus
+            } else if official_names.contains(&call.name) {
+                // Outil délégué au MCP officiel : politique revérifiée, résultat anonymisé.
+                official_relay::copilot_call(core, server_id, autonomous, &call.name, call.input.clone()).await
             } else if READ_TOOLS.contains(&call.name.as_str()) {
                 mcp::dispatch(core, &call.name, call.input.clone())
                     .await
                     .unwrap_or_else(|e| format!("Erreur outil : {e}"))
-            } else if crate::mcp::INFRA_TOOLS.contains(&call.name.as_str()) {
-                // Hors de son catalogue : le Copilote ne gère jamais l'infrastructure MyBox.
-                "Action refusée : la gestion des MyBox est réservée à l'app et au serveur MCP local.".to_string()
             } else if autonomous && is_write_tool(&call.name) {
                 let args = prepare_action_args(server_id, &call.name, call.input.clone());
                 mcp::dispatch(core, &call.name, args)
@@ -1494,15 +1544,17 @@ async fn chat_cli(
 async fn ensure_persistent_spawn(
     cfg: &CopilotConfig,
     session: &mut ChatSession,
+    server_id: i64,
     autonomous: bool,
 ) -> Result<(), String> {
     let reusable = session.persistent.as_mut().map(|p| p.is_alive()).unwrap_or(false)
-        && session.persistent_autonomous == autonomous;
+        && session.persistent_autonomous == autonomous
+        && session.persistent_scope == Some(server_id);
     if reusable {
         return Ok(());
     }
     let exe = std::env::current_exe().map_err(|e| format!("chemin de l'exécutable : {e}"))?;
-    let allowed = allowed_tool_names(cfg, autonomous);
+    let (allowed, official_relay) = cli_allowed_tools(cfg, autonomous).await;
     let restore = session.cli_session.as_deref();
     let plan = crate::cli_agent::plan_run(
         crate::cli_agent::CliAgent::ClaudeCode,
@@ -1514,7 +1566,8 @@ async fn ensure_persistent_spawn(
             effort: cfg.effort.claude_level(),
             resume: restore,
             streaming: true,
-            official_mcp: cfg.use_official_mcp.then_some(!autonomous),
+            official_relay,
+            scope_server: Some(server_id),
         },
     )?;
     let crate::cli_agent::RunPlan { mut args, cwd, env, dir } = plan;
@@ -1529,17 +1582,18 @@ async fn ensure_persistent_spawn(
         restore.is_some(),
     )?);
     session.persistent_autonomous = autonomous;
+    session.persistent_scope = Some(server_id);
     Ok(())
 }
 
 /// F — pré-chauffe : démarre le process persistant AVANT le 1er message (best-effort, silencieux),
 /// pour que celui-ci tape un process déjà chaud (Node + MCP prêts). Le contexte serveur et le
 /// system prompt partent avec le 1er vrai message, pas ici.
-pub(crate) async fn chat_warm(cfg: &CopilotConfig, session: &mut ChatSession, autonomous: bool) {
+pub(crate) async fn chat_warm(cfg: &CopilotConfig, session: &mut ChatSession, server_id: i64, autonomous: bool) {
     if session.no_persistent {
         return;
     }
-    let _ = ensure_persistent_spawn(cfg, session, autonomous).await;
+    let _ = ensure_persistent_spawn(cfg, session, server_id, autonomous).await;
 }
 
 /// D — voie persistante : réutilise (ou (re)démarre) le process `claude` de la session et lui pousse
@@ -1556,7 +1610,7 @@ async fn chat_cli_persistent(
     id: &str,
 ) -> Result<ChatReply, String> {
     let agent = crate::cli_agent::CliAgent::ClaudeCode;
-    ensure_persistent_spawn(cfg, session, autonomous).await?;
+    ensure_persistent_spawn(cfg, session, server_id, autonomous).await?;
     let p = session.persistent.as_mut().expect("process persistant présent");
 
     // 1er tour d'un process à froid → on préfixe system prompt + contexte serveur (comme le one-shot).
@@ -1616,7 +1670,7 @@ async fn chat_cli_oneshot(
 ) -> Result<ChatReply, String> {
     let exe = std::env::current_exe().map_err(|e| format!("chemin de l'exécutable : {e}"))?;
     let agent = cfg.cli_agent;
-    let allowed = allowed_tool_names(cfg, autonomous);
+    let (allowed, official_relay) = cli_allowed_tools(cfg, autonomous).await;
     let plan = crate::cli_agent::plan_run(
         agent,
         &crate::cli_agent::RunCtx {
@@ -1627,7 +1681,8 @@ async fn chat_cli_oneshot(
             effort: cfg.effort.claude_level(),
             resume: session.cli_session.as_deref(),
             streaming: true,
-            official_mcp: cfg.use_official_mcp.then_some(!autonomous),
+            official_relay,
+            scope_server: Some(server_id),
         },
     )?;
 
@@ -1774,4 +1829,88 @@ pub(crate) fn extract_session_id(ndjson: &str) -> Option<String> {
         fallback.get_or_insert_with(|| sid.to_string());
     }
     fallback
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Extrait du catalogue officiel : lectures, actions de la liste blanche et hors liste.
+    fn catalog() -> Catalog {
+        let tool = |name: &str, read: bool, destructive: bool| {
+            json!({ "name": name, "description": name,
+                    "annotations": { "readOnlyHint": read, "destructiveHint": destructive },
+                    "inputSchema": { "type": "object", "properties": { "server_id": {} }, "required": ["server_id"] } })
+        };
+        Catalog {
+            tools: vec![
+                tool("get_console_logs", true, false),
+                tool("get_spark_report", true, false),
+                tool("diagnose_server", true, false),
+                tool("power_action", false, false),
+                tool("send_console_command", false, false),
+                tool("reinstall_server", false, true),
+                tool("delete_server_from_mybox", false, true),
+                tool("create_ticket", false, false),
+                tool("restore_snapshot", false, true),
+            ],
+            read: ["get_console_logs", "get_spark_report", "diagnose_server"]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+        }
+    }
+
+    fn names(tools: &[ToolSpec]) -> HashSet<&str> {
+        tools.iter().map(|t| t.name.as_str()).collect()
+    }
+
+    #[test]
+    fn chat_catalog_follows_the_official_policy() {
+        let cat = catalog();
+        // Suggestion : lecture seulement, aucun outil modifiant (officiel ou local).
+        let (tools, official) = merge_tools(chat_tools(false, &[], "minecraft"), Some(&cat), false, &[]);
+        let offered = names(&tools);
+        assert!(offered.contains("get_console_logs") && official.contains("get_console_logs"));
+        assert!(!offered.contains("power_action") && !offered.contains("send_console_command"));
+        // Autonome : + la liste blanche, jamais le reste.
+        let (tools, official) = merge_tools(chat_tools(true, &[], "minecraft"), Some(&cat), true, &[]);
+        let offered = names(&tools);
+        assert!(official.contains("power_action") && official.contains("send_console_command"));
+        for n in ["reinstall_server", "delete_server_from_mybox", "create_ticket", "restore_snapshot"] {
+            assert!(!offered.contains(n), "{n} ne doit pas être proposé au Copilote");
+        }
+        // Ni infrastructure, ni outils internes destructifs (atteints seulement par « Appliquer »).
+        for n in crate::mcp::INFRA_TOOLS.iter().chain(APPLY_ONLY_TOOLS) {
+            assert!(!offered.contains(n), "{n}");
+        }
+        // Doublons : le meilleur de chaque paire, une seule fois.
+        assert!(offered.contains("diagnose_startup") && !offered.contains("diagnose_server"));
+        assert!(offered.contains("get_spark_report") && !offered.contains("parse_spark_report"));
+        assert_eq!(offered.len(), tools.len(), "noms en double");
+        // Permissions fines : un outil officiel interdit disparaît aussi.
+        let disabled = vec!["power_action".to_string()];
+        let (tools, _) = merge_tools(chat_tools(true, &disabled, "minecraft"), Some(&cat), true, &disabled);
+        assert!(!names(&tools).contains("power_action"));
+        // Officiel injoignable : catalogue local complet, sans outil officiel.
+        let (tools, official) = merge_tools(chat_tools(true, &[], "minecraft"), None, true, &[]);
+        assert!(official.is_empty() && names(&tools).contains("power_action"));
+    }
+
+    #[test]
+    fn tools_outside_the_catalog_are_refused_clearly() {
+        assert!(refusal("mybox_delete_server", true).contains("réservé"));
+        assert!(refusal("create_schedule", true).contains("réservé"));
+        assert!(refusal("power_action", false).contains(CHAT_MARK));
+        assert!(refusal("send_console_command", false).contains(CHAT_MARK));
+        assert!(refusal("restore_snapshot", true).contains("indisponible"));
+        assert!(refusal("outil_invente", true).contains("indisponible"));
+        // « Appliquer » : nos outils (internes compris) restent locaux ; le reste suit la politique officielle.
+        for n in ["power_action", "restore_backup", "repair_region", "read_file"] {
+            assert!(is_local_tool(n), "{n}");
+        }
+        for n in ["send_console_command", "reinstall_server", "outil_invente"] {
+            assert!(!is_local_tool(n), "{n}");
+        }
+    }
 }
