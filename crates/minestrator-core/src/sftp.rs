@@ -1,5 +1,9 @@
 //! Client SFTP natif (SSH via `russh` + `russh-sftp`). Session poolée par serveur.
-//! Les identifiants viennent de `GET /server/{id}` et restent dans le cœur.
+//!
+//! Hôte, port et utilisateur viennent de `GET /server/{id}`. Le **mot de passe**, lui, n'y figure
+//! plus (l'API l'a retiré de ses réponses fin 2026, malgré sa documentation) : l'utilisateur le saisit
+//! une fois par serveur, il est rangé dans le stockage sécurisé (`secrets`) et ne quitte jamais le
+//! cœur. Si l'API le renvoie à nouveau, il sert de second essai.
 
 use crate::api::ApiClient;
 use crate::error::{Error, Result};
@@ -76,18 +80,64 @@ impl SftpManager {
         self.sessions.lock().unwrap().remove(&id);
     }
 
+    /// Range une session déjà ouverte (ex. celle qui vient de valider un mot de passe).
+    pub fn insert(&self, id: i64, conn: SftpConn) -> Arc<SftpConn> {
+        let conn = Arc::new(conn);
+        self.sessions.lock().unwrap().insert(id, conn.clone());
+        conn
+    }
+
+    /// Ferme toutes les sessions (déconnexion du compte).
+    pub fn clear(&self) {
+        self.sessions.lock().unwrap().clear();
+    }
+
     pub async fn ensure(&self, api: &ApiClient, token: &str, id: i64) -> Result<Arc<SftpConn>> {
         if let Some(conn) = self.cached(id) {
             return Ok(conn);
         }
         let creds = api.get_sftp_creds(token, id).await?;
-        let conn = Arc::new(open(creds).await?);
-        self.sessions.lock().unwrap().insert(id, conn.clone());
-        Ok(conn)
+        let stored = match crate::secrets::read_sftp_password(id) {
+            Ok(stored) => stored,
+            // Sans mot de passe de l'API, l'erreur du stockage est la seule explication utile.
+            Err(e) if creds.password.is_empty() => return Err(e),
+            Err(e) => {
+                tracing::warn!(server = id, "lecture du mot de passe SFTP enregistré : {e}");
+                None
+            }
+        };
+        let conn = connect(creds, stored).await?;
+        Ok(self.insert(id, conn))
     }
 }
 
-async fn open(creds: SftpCreds) -> Result<SftpConn> {
+/// Mots de passe à essayer, dans l'ordre : celui que l'utilisateur a enregistré (il l'a validé à
+/// la saisie), puis celui de l'API s'il en renvoie un. Vide = rien à essayer.
+fn password_candidates(stored: Option<String>, from_api: &str) -> Vec<String> {
+    let mut out: Vec<String> = stored.into_iter().filter(|p| !p.is_empty()).collect();
+    if !from_api.is_empty() && !out.iter().any(|p| p == from_api) {
+        out.push(from_api.to_string());
+    }
+    out
+}
+
+/// Ouvre une session en essayant chaque mot de passe candidat. Seul un refus d'authentification
+/// fait passer au suivant : une panne réseau est remontée telle quelle.
+pub async fn connect(creds: SftpCreds, stored: Option<String>) -> Result<SftpConn> {
+    let candidates = password_candidates(stored, &creds.password);
+    if candidates.is_empty() {
+        return Err(Error::SftpPasswordRequired);
+    }
+    for password in candidates {
+        match open(SftpCreds { password, ..creds.clone() }).await {
+            Err(Error::SftpAuth) => continue,
+            other => return other,
+        }
+    }
+    Err(Error::SftpAuth)
+}
+
+pub(crate) async fn open(creds: SftpCreds) -> Result<SftpConn> {
     // Sonde périodique : sans elle, une session inactive meurt en silence (veille du téléphone,
     // NAT qui oublie la connexion, coupure réseau en arrière-plan) et l'app ne l'apprend qu'à la
     // prochaine opération, qui échoue. `keepalive_max` laisse tomber la session après quatre
@@ -542,4 +592,44 @@ pub async fn remove_recursive(conn: &SftpConn, dir: &str) -> Result<()> {
         }
     }
     conn.sftp.remove_dir(dir).await.map_err(sftp_err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn creds(password: &str) -> SftpCreds {
+        SftpCreds {
+            host: "sftp.invalid".into(),
+            port: 2022,
+            user: "joueur.abc12345".into(),
+            password: password.into(),
+        }
+    }
+
+    #[test]
+    fn stored_password_comes_first_then_api_one() {
+        assert_eq!(password_candidates(Some("perso".into()), "api"), ["perso", "api"]);
+        // Identiques : un seul essai, pas deux poignées de main pour le même refus.
+        assert_eq!(password_candidates(Some("même".into()), "même"), ["même"]);
+        assert_eq!(password_candidates(None, "api"), ["api"]);
+        assert_eq!(password_candidates(Some("perso".into()), ""), ["perso"]);
+        assert!(password_candidates(Some(String::new()), "").is_empty());
+        assert!(password_candidates(None, "").is_empty());
+    }
+
+    #[tokio::test]
+    async fn no_password_anywhere_asks_the_user_without_connecting() {
+        // L'hôte n'existe pas : si une connexion était tentée, l'erreur serait réseau.
+        let err = connect(creds(""), None).await.err().expect("doit échouer");
+        assert!(matches!(err, Error::SftpPasswordRequired), "{err:?}");
+    }
+
+    #[test]
+    fn debug_never_prints_the_password() {
+        let shown = format!("{:?}", creds("motdepasse-secret"));
+        assert!(!shown.contains("motdepasse-secret"), "{shown}");
+        assert!(shown.contains("<masqué>"));
+        assert!(format!("{:?}", creds("")).contains("<absent>"));
+    }
 }

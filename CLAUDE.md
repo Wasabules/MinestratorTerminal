@@ -138,10 +138,15 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
 - **Adaptation par jeu** : `core/src/games.rs` (`GameCapabilities`, dérivé du nom d'egg Pterodactyl) est
   la **source unique** qui pilote les vues exposées, l'autocomplétion et la coloration de la console, la
   marketplace et les outils du Copilote. Un nouveau jeu se déclare là, pas dans les composants.
-- **Secrets** : `core/src/secrets.rs` aiguille automatiquement — `keyring` natif sur desktop, backend
-  **fichier** (`secrets/file_store.rs`, dossier privé de l'app) sur Android/iOS et pour le daemon via
-  `MINESTRATOR_SECRETS_FILE` + `MINESTRATOR_DATA_DIR`. Dossier = `util::data_dir()` ; **jamais** le
-  répertoire temporaire (partagé sous Unix), fichier en `0600`.
+- **Secrets** : **aucun identifiant ni secret en clair** — tout passe par `core/src/secrets.rs`, qui
+  aiguille vers le stockage sécurisé natif : trousseau de l'OS (`keyring`) sur desktop, **Keystore
+  Android** (`android-native-keyring-store`, migration automatique de l'ancien `secrets.json`) sur
+  Android. Le daemon force le backend fichier (`secrets/file_store.rs`, `MINESTRATOR_SECRETS_FILE`
+  + `MINESTRATOR_DATA_DIR`) : dossier machine à accès restreint, contenu **chiffré DPAPI** sous
+  Windows. Un nouveau secret = un compte `KEYRING_ACCOUNT_*` dans `config.rs` + ses fonctions dans
+  `secrets.rs` ; jamais dans un `PersistedConfig`, `localStorage` ou un journal. Le **mot de passe
+  SFTP** n'est plus fourni par l'API : saisi une fois par serveur (`sftp-password-<id>`), vérifié
+  avant d'être enregistré, purgé à la déconnexion (`sftp_passwords.json` ne liste que les ids).
 - **Service d'arrière-plan** (`docs/SERVICE.md`) : `core/src/service.rs` porte le protocole IPC, la
   décision « qui supervise » et le lien côté app (superviseur local mis en veille quand le service
   surveille le même compte). Le service ne s'embarque dans les installeurs qu'avec la surcouche

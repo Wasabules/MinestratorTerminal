@@ -162,6 +162,29 @@ pub async fn sftp_list(
     core.sftp_list(server_id, &path).await
 }
 
+// --- Mot de passe SFTP (l'API ne le transmet plus : saisi une fois par serveur) -----------
+
+/// Vérifie le mot de passe en ouvrant une session, puis l'enregistre dans le stockage sécurisé.
+/// Refusé par le serveur → erreur `sftp_auth`, rien n'est enregistré.
+#[tauri::command]
+pub async fn sftp_set_password(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    password: String,
+) -> Result<(), Error> {
+    core.set_sftp_password(server_id, &password).await
+}
+
+#[tauri::command]
+pub fn sftp_forget_password(core: State<'_, Arc<Core>>, server_id: i64) -> Result<(), Error> {
+    core.forget_sftp_password(server_id)
+}
+
+#[tauri::command]
+pub fn sftp_has_password(core: State<'_, Arc<Core>>, server_id: i64) -> bool {
+    core.has_sftp_password(server_id)
+}
+
 #[tauri::command]
 pub async fn sftp_read_text(
     core: State<'_, Arc<Core>>,

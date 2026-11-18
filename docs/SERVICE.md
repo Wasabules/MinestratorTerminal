@@ -71,15 +71,23 @@ core (`MINESTRATOR_SECRETS_FILE=1`) dans son **dossier de données machine**
 |---|---|---|
 | Linux | `/var/lib/minestrator-daemon` → `/var/lib/private/minestrator-daemon` | `DynamicUser=yes` : utilisateur système dédié et sans privilège ; `StateDirectoryMode=0700` ; `/var/lib/private` est en 0700 root ; fichier `0600` (backend fichier durci) |
 | macOS | `/Library/Application Support/MinestratorTerminal/service` | dossier `0700` root, daemon root, `Umask 077` |
-| Windows | `%ProgramData%\MinestratorTerminal\service` | **DACL protégée** (héritage coupé) : `SYSTEM`, `Administrateurs`, `LocalService` (compte du service) seulement |
+| Windows | `%ProgramData%\MinestratorTerminal\service` | **DACL protégée** (héritage coupé) : `SYSTEM`, `Administrateurs`, `LocalService` (compte du service) seulement ; contenu **chiffré DPAPI** avec la clé de `LocalService` |
 
-**Pourquoi pas DPAPI « machine » sous Windows ?** `CryptProtectData` avec
-`CRYPTPROTECT_LOCAL_MACHINE` est déchiffrable par **n'importe quel processus de la machine** :
-il ne protège que contre une copie du fichier hors machine, pas contre un autre utilisateur
-local. La vraie barrière est la DACL ; DPAPI en plus n'apporterait qu'un obscurcissement. La
-DPAPI « utilisateur » est exclue (le service doit tourner sans l'utilisateur). Une évolution
-possible est un compte de service virtuel (`NT SERVICE\MinestratorDaemon`) pour que la DACL ne
-vise que ce service et non tout `LocalService`.
+**DPAPI sous Windows : celle du compte du service, pas celle de la machine.** `CryptProtectData`
+avec `CRYPTPROTECT_LOCAL_MACHINE` serait déchiffrable par **n'importe quel processus de la
+machine** : simple obscurcissement. Le fichier est donc chiffré avec la DPAPI **du compte qui
+exécute le service** (`LocalService`, dont le profil est chargé par le SCM) et une entropie propre
+à l'app : copié ailleurs ou lu par un autre compte, il est inexploitable, même si la DACL venait à
+être élargie. Un fichier en clair laissé par une version antérieure est relu puis réécrit chiffré.
+Seul le service écrit ce fichier (la clé arrive par IPC) : l'installation élevée n'y touche pas,
+sinon il serait chiffré pour le mauvais compte. Une évolution possible reste un compte de service
+virtuel (`NT SERVICE\MinestratorDaemon`) pour ne plus partager la clé DPAPI ni la DACL avec les
+autres services `LocalService`.
+
+**macOS et Linux** : un service système n'a pas d'équivalent sûr au trousseau de session. Le
+trousseau système macOS et les identifiants systemd reposent eux aussi sur l'accès réservé à
+root ; le fichier `0600` d'un dossier `0700` appartenant au compte du service offre la même
+garantie, sans dépendance supplémentaire.
 
 Sans cette DACL, un sous-dossier de `%ProgramData%` hérite d'un accès en lecture pour
 `Utilisateurs` : `secrets.json` serait lisible par tous. Elle est appliquée par l'installation
@@ -104,7 +112,7 @@ Le service s'appuie sur le comportement durci annoncé pour le backend fichier :
 - dossier = `MINESTRATOR_DATA_DIR` (toujours défini par le service) ; erreur explicite sinon,
   **jamais** de repli vers le répertoire temporaire ;
 - `secrets.json` écrit atomiquement, sans suivre de lien symbolique, en `0600` sous Unix
-  (droits trop ouverts corrigés à la lecture).
+  (droits trop ouverts corrigés à la lecture), chiffré DPAPI sous Windows.
 
 Points souhaitables, non bloquants : sous Windows, que le fichier temporaire d'écriture atomique
 soit créé **dans le même dossier** (il hérite alors de la DACL protégée) — c'est déjà le cas

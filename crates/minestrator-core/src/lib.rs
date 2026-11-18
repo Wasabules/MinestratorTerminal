@@ -87,7 +87,7 @@ use console::ConsoleManager;
 use copilot::ChatSession;
 use persist::PersistedConfig;
 use sftp::SftpManager;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 use store::{now_secs, MetricsStore};
 use tokio::sync::broadcast;
@@ -106,6 +106,10 @@ pub struct Core {
     ficsit_paths: PersistedConfig<HashMap<i64, String>>,
     /// Réglages par jeu (non-secrets) : ex. le `username` Factorio. Secrets → trousseau.
     game_settings: PersistedConfig<GameSettings>,
+    /// Serveurs dont le mot de passe SFTP est enregistré : **identifiants seulement**, les mots de
+    /// passe sont dans le stockage sécurisé. Sert à l'UI et à les purger à la déconnexion (le
+    /// trousseau ne sait pas lister ses entrées).
+    sftp_saved: PersistedConfig<BTreeSet<i64>>,
     /// Une conversation = une cellule verrouillable (Mutex async). Le Mutex sync externe ne protège
     /// QUE l'accès à la map ; le tour, lui, tient le Mutex async de la cellule → warm et send (et
     /// deux envois concurrents) se sérialisent sur la MÊME session au lieu de s'écraser.
@@ -154,6 +158,7 @@ impl Core {
             privacy: PersistedConfig::load(&dir, "privacy.json"),
             ficsit_paths: PersistedConfig::load(&dir, "ficsit_paths.json"),
             game_settings: PersistedConfig::load(&dir, "game_settings.json"),
+            sftp_saved: PersistedConfig::load(&dir, "sftp_passwords.json"),
             service_link: service::ServiceLink::new(&dir),
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
@@ -446,6 +451,7 @@ impl Core {
     pub fn logout(&self) -> Result<()> {
         *self.token_cache.lock().unwrap() = None;
         *self.user_id_cache.lock().unwrap() = None;
+        self.purge_sftp_passwords();
         secrets::delete_key()
     }
 
@@ -1817,6 +1823,61 @@ impl Core {
         let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
         let mut noop = |_: u64, _: u64| {};
         self.drop_on_err(id, sftp::upload(&conn, local, remote_dir, &mut noop).await)
+    }
+
+    // --- Mot de passe SFTP (un par serveur) ---------------------------------
+
+    /// Vérifie le mot de passe SFTP d'un serveur en ouvrant une session, puis l'enregistre dans le
+    /// stockage sécurisé. Un mot de passe refusé n'est **pas** enregistré (`SftpAuth`). La session
+    /// ouverte pour la vérification est gardée : l'opération suivante n'en rouvre pas une.
+    pub async fn set_sftp_password(&self, id: i64, password: &str) -> Result<()> {
+        // Collé depuis le panel : un retour à la ligne final n'appartient pas au mot de passe.
+        let password = password.trim_end_matches(['\r', '\n']);
+        if password.is_empty() {
+            return Err(Error::SftpPasswordRequired);
+        }
+        let creds = self.api.get_sftp_creds(&self.token()?, id).await?;
+        let conn = sftp::open(models::SftpCreds { password: password.to_string(), ..creds }).await?;
+        secrets::store_sftp_password(id, password)?;
+        let mut ids = self.sftp_saved.get();
+        ids.insert(id);
+        self.sftp_saved.set(ids);
+        self.sftp.insert(id, conn);
+        Ok(())
+    }
+
+    /// Oublie le mot de passe SFTP enregistré d'un serveur et ferme sa session.
+    pub fn forget_sftp_password(&self, id: i64) -> Result<()> {
+        secrets::delete_sftp_password(id)?;
+        let mut ids = self.sftp_saved.get();
+        ids.remove(&id);
+        self.sftp_saved.set(ids);
+        self.sftp.drop_session(id);
+        Ok(())
+    }
+
+    /// Un mot de passe SFTP est-il enregistré pour ce serveur ? (Sans lecture du trousseau.)
+    pub fn has_sftp_password(&self, id: i64) -> bool {
+        self.sftp_saved.with(|ids| ids.contains(&id))
+    }
+
+    /// Supprime tous les mots de passe SFTP enregistrés : ils appartiennent au compte et partent
+    /// avec lui. Un échec de suppression garde l'identifiant, pour réessayer à la prochaine.
+    fn purge_sftp_passwords(&self) {
+        self.sftp.clear();
+        let remaining: BTreeSet<i64> = self
+            .sftp_saved
+            .get()
+            .into_iter()
+            .filter(|&id| match secrets::delete_sftp_password(id) {
+                Ok(()) => false,
+                Err(e) => {
+                    tracing::warn!(server = id, "suppression du mot de passe SFTP : {e}");
+                    true
+                }
+            })
+            .collect();
+        self.sftp_saved.set(remaining);
     }
 
     pub fn sftp_disconnect(&self, id: i64) {

@@ -1,15 +1,19 @@
-//! Backend de secrets **fichier** (mobile : Android/iOS) : `keyring` n'a pas de backend mobile.
+//! Backend de secrets **fichier** : service d'arrière-plan (opt-in `MINESTRATOR_SECRETS_FILE`),
+//! iOS, et source de la migration Android (l'app Android ≤ 0.6.0 y rangeait ses secrets).
 //!
-//! Stocke un JSON `{ compte: valeur }` dans le dossier privé de l'app — sandbox par-app,
-//! chiffrée au repos (File-Based Encryption sur Android, Data Protection sur iOS ; liée au
-//! verrouillage de l'appareil). Sert aussi au daemon headless (opt-in `MINESTRATOR_SECRETS_FILE`).
+//! Un service système tourne sans session utilisateur, donc sans trousseau : ses secrets vivent
+//! dans un JSON `{ compte: valeur }` du dossier de données du service, accessible au seul compte
+//! du service (DACL sous Windows, `0700`/`0600` sous Unix, cf. le daemon).
 //!
-//! Dossier : `MINESTRATOR_DATA_DIR` (posé par `mobile/src-tauri` et le daemon), sinon le dossier de
-//! données standard de l'OS. **Jamais le répertoire temporaire** : il est partagé entre
-//! utilisateurs sur Linux/macOS (`/tmp`). Sous Unix, le fichier est en `0600`.
+//! - **Windows** : le contenu est en plus **chiffré par DPAPI** avec la clé du compte qui exécute
+//!   le processus (`LocalService` pour le service) : le fichier copié ailleurs, ou lu par un autre
+//!   compte, est inexploitable. Un ancien fichier en clair est relu puis réécrit chiffré.
+//! - **Unix** : fichier `0600` dans un dossier `0700`. Il n'existe pas de stockage plus sûr pour un
+//!   service système : le trousseau système macOS et les secrets systemd reposent eux aussi sur
+//!   l'accès réservé à root.
 //!
-//! Non chargé sur desktop (backend `keyring`), mais compilé partout pour vérification.
-//! Durcissement Keystore matériel : amélioration future (cf. `docs/PUSH.md` / mobile/README.md).
+//! Dossier : `MINESTRATOR_DATA_DIR`, sinon le dossier de données standard de l'OS. **Jamais le
+//! répertoire temporaire** : il est partagé entre utilisateurs sur Linux/macOS (`/tmp`).
 #![allow(dead_code)]
 
 use crate::error::{Error, Result};
@@ -33,13 +37,25 @@ fn base_dir() -> Result<PathBuf> {
     })
 }
 
+/// Contenu du fichier → table des secrets. Accepte le JSON en clair (Unix, ou fichier Windows
+/// antérieur au chiffrement) et, sous Windows, le blob DPAPI.
+fn decode(bytes: &[u8]) -> Result<BTreeMap<String, String>> {
+    let plain = bytes.iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'{');
+    let json = if plain { bytes.to_vec() } else { seal::open(bytes)? };
+    serde_json::from_slice(&json).map_err(|e| Error::Keyring(format!("{FILE_NAME} illisible : {e}")))
+}
+
+fn encode(map: &BTreeMap<String, String>) -> Result<Vec<u8>> {
+    let json = serde_json::to_vec(map).map_err(|e| Error::Keyring(e.to_string()))?;
+    seal::seal(&json)
+}
+
 fn load_in(dir: &Path) -> Result<BTreeMap<String, String>> {
     let path = dir.join(FILE_NAME);
     match std::fs::read(&path) {
         Ok(bytes) => {
             restrict_permissions(&path);
-            serde_json::from_slice(&bytes)
-                .map_err(|e| Error::Keyring(format!("{FILE_NAME} illisible : {e}")))
+            decode(&bytes)
         }
         Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(BTreeMap::new()),
         Err(e) => Err(Error::Keyring(format!("accès à {FILE_NAME} : {e}"))),
@@ -51,7 +67,7 @@ fn load_in(dir: &Path) -> Result<BTreeMap<String, String>> {
 fn save_in(dir: &Path, map: &BTreeMap<String, String>) -> Result<()> {
     std::fs::create_dir_all(dir)
         .map_err(|e| Error::Keyring(format!("création du dossier de secrets : {e}")))?;
-    let bytes = serde_json::to_vec(map).map_err(|e| Error::Keyring(e.to_string()))?;
+    let bytes = encode(map)?;
     let tmp = dir.join(TMP_NAME);
     // Reste d'une écriture interrompue (ou lien planté) : on retire l'entrée elle-même.
     let _ = std::fs::remove_file(&tmp);
@@ -88,9 +104,25 @@ fn restrict_permissions(path: &Path) {
     let _ = path;
 }
 
+/// Le fichier est-il encore en clair alors que la plateforme sait le chiffrer ?
+fn needs_reseal(dir: &Path) -> bool {
+    seal::ENABLED
+        && std::fs::read(dir.join(FILE_NAME))
+            .map(|b| b.iter().find(|c| !c.is_ascii_whitespace()) == Some(&b'{'))
+            .unwrap_or(false)
+}
+
 pub fn read(account: &str) -> Result<Option<String>> {
     let _g = LOCK.lock().unwrap();
-    Ok(load_in(&base_dir()?)?.get(account).cloned())
+    let dir = base_dir()?;
+    let map = load_in(&dir)?;
+    // Fichier hérité d'une version qui ne chiffrait pas : réécrit chiffré dès la première lecture.
+    if needs_reseal(&dir) {
+        if let Err(e) = save_in(&dir, &map) {
+            tracing::warn!("chiffrement du fichier de secrets : {e}");
+        }
+    }
+    Ok(map.get(account).cloned())
 }
 
 pub fn write(account: &str, value: &str) -> Result<()> {
@@ -107,6 +139,121 @@ pub fn delete(account: &str) -> Result<()> {
     let mut map = load_in(&dir)?;
     map.remove(account);
     save_in(&dir, &map)
+}
+
+/// Tous les secrets du fichier, `None` s'il n'existe pas (migration vers un stockage sécurisé).
+pub fn take_all() -> Result<Option<BTreeMap<String, String>>> {
+    let _g = LOCK.lock().unwrap();
+    let dir = base_dir()?;
+    if !dir.join(FILE_NAME).exists() {
+        return Ok(None);
+    }
+    load_in(&dir).map(Some)
+}
+
+/// Supprime le fichier de secrets (après migration).
+pub fn remove_file() -> Result<()> {
+    let _g = LOCK.lock().unwrap();
+    let dir = base_dir()?;
+    let _ = std::fs::remove_file(dir.join(TMP_NAME));
+    match std::fs::remove_file(dir.join(FILE_NAME)) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(Error::Keyring(format!("suppression de {FILE_NAME} : {e}"))),
+    }
+}
+
+/// Chiffrement au repos du fichier (DPAPI sous Windows ; aucun ailleurs, cf. doc du module).
+#[cfg(windows)]
+mod seal {
+    use crate::error::{Error, Result};
+    use windows_sys::Win32::Foundation::LocalFree;
+    use windows_sys::Win32::Security::Cryptography::{
+        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
+    };
+
+    pub const ENABLED: bool = true;
+
+    /// Entropie propre à l'app : un blob DPAPI d'un autre logiciel du même compte ne se
+    /// déchiffre pas ici, et inversement.
+    const ENTROPY: &[u8] = b"MinestratorTerminal/secrets/v1";
+
+    fn blob(data: &[u8]) -> CRYPT_INTEGER_BLOB {
+        CRYPT_INTEGER_BLOB { cbData: data.len() as u32, pbData: data.as_ptr() as *mut u8 }
+    }
+
+    /// Copie le résultat alloué par DPAPI puis le libère.
+    unsafe fn take(out: CRYPT_INTEGER_BLOB) -> Vec<u8> {
+        let v = std::slice::from_raw_parts(out.pbData, out.cbData as usize).to_vec();
+        LocalFree(out.pbData as _);
+        v
+    }
+
+    pub fn seal(plain: &[u8]) -> Result<Vec<u8>> {
+        let input = blob(plain);
+        let entropy = blob(ENTROPY);
+        let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+        // SAFETY : les blobs d'entrée pointent sur des tranches vivantes pendant l'appel ; la
+        // sortie, allouée par DPAPI, est copiée puis libérée par `take`.
+        let ok = unsafe {
+            CryptProtectData(
+                &input,
+                std::ptr::null(),
+                &entropy,
+                std::ptr::null(),
+                std::ptr::null(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut out,
+            )
+        };
+        if ok == 0 {
+            return Err(Error::Keyring(format!(
+                "chiffrement DPAPI : {}",
+                std::io::Error::last_os_error()
+            )));
+        }
+        Ok(unsafe { take(out) })
+    }
+
+    pub fn open(sealed: &[u8]) -> Result<Vec<u8>> {
+        let input = blob(sealed);
+        let entropy = blob(ENTROPY);
+        let mut out = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+        // SAFETY : idem `seal`.
+        let ok = unsafe {
+            CryptUnprotectData(
+                &input,
+                std::ptr::null_mut(),
+                &entropy,
+                std::ptr::null(),
+                std::ptr::null(),
+                CRYPTPROTECT_UI_FORBIDDEN,
+                &mut out,
+            )
+        };
+        if ok == 0 {
+            return Err(Error::Keyring(format!(
+                "déchiffrement DPAPI (fichier d'un autre compte ou corrompu) : {}",
+                std::io::Error::last_os_error()
+            )));
+        }
+        Ok(unsafe { take(out) })
+    }
+}
+
+#[cfg(not(windows))]
+mod seal {
+    use crate::error::{Error, Result};
+
+    pub const ENABLED: bool = false;
+
+    pub fn seal(plain: &[u8]) -> Result<Vec<u8>> {
+        Ok(plain.to_vec())
+    }
+
+    pub fn open(_: &[u8]) -> Result<Vec<u8>> {
+        Err(Error::Keyring("fichier de secrets illisible : JSON attendu".into()))
+    }
 }
 
 #[cfg(test)]
@@ -141,6 +288,37 @@ mod tests {
     fn missing_file_is_empty() {
         let dir = test_dir("missing");
         assert!(load_in(&dir).unwrap().is_empty());
+    }
+
+    #[test]
+    fn plaintext_file_from_older_versions_is_still_read() {
+        let dir = test_dir("legacy");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(FILE_NAME), br#"{"api-key":"ancienne"}"#).unwrap();
+        assert_eq!(load_in(&dir).unwrap().get("api-key").map(String::as_str), Some("ancienne"));
+        assert_eq!(needs_reseal(&dir), seal::ENABLED);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn secrets_are_encrypted_at_rest_on_windows() {
+        let dir = test_dir("dpapi");
+        let mut map = BTreeMap::new();
+        map.insert("api-key".to_string(), "valeur-secrète-reconnaissable".to_string());
+        save_in(&dir, &map).unwrap();
+        let raw = std::fs::read(dir.join(FILE_NAME)).unwrap();
+        let needle = b"valeur-secr";
+        assert!(!raw.windows(needle.len()).any(|w| w == needle), "secret lisible en clair");
+        assert!(!needs_reseal(&dir));
+        assert_eq!(load_in(&dir).unwrap(), map);
+        // Un blob altéré est refusé au lieu d'être lu de travers.
+        let mut bad = raw.clone();
+        let last = bad.len() - 1;
+        bad[last] ^= 0xff;
+        std::fs::write(dir.join(FILE_NAME), bad).unwrap();
+        assert!(load_in(&dir).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[cfg(unix)]

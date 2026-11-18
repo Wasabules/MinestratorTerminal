@@ -3,7 +3,7 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
-  import { api, humanizeError } from '#lib/ipc.ts';
+  import { api, humanizeError, isAppError } from '#lib/ipc.ts';
   import { t, getLocale } from '#lib/i18n/index.ts';
   import { fmtBytes as fmtSize } from '#lib/copilot/format.ts';
   import { tabs, type ServerTab } from '#lib/tabs/tabs.svelte.ts';
@@ -29,6 +29,7 @@
     type SftpSortKey,
   } from '#lib/sftp/columns.svelte.ts';
   import FileEditor from './FileEditor.svelte';
+  import SftpPasswordDialog from './SftpPasswordDialog.svelte';
   import NbtTree from '../NbtTree.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
@@ -38,6 +39,9 @@
   let entries = $state<SftpEntry[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  // Mot de passe SFTP manquant ou refusé : l'API ne le transmet plus (cf. SftpPasswordDialog).
+  let needPassword = $state(false);
+  let pwDialog = $state<'required' | 'rejected' | 'change' | null>(null);
   let dragOver = $state(false);
   let colsMenu = $state(false);
 
@@ -141,14 +145,31 @@
     return out;
   }
 
+  /** Affiche une erreur ; un mot de passe SFTP manquant ou refusé ouvre directement sa saisie. */
+  function fail(e: unknown) {
+    error = humanizeError(e);
+    if (isAppError(e) && (e.kind === 'sftp_password_required' || e.kind === 'sftp_auth')) {
+      needPassword = true;
+      pwDialog = e.kind === 'sftp_auth' ? 'rejected' : 'required';
+    }
+  }
+
+  function passwordSaved() {
+    pwDialog = null;
+    needPassword = false;
+    error = null;
+    void load(cwd);
+  }
+
   async function load(path: string) {
     loading = true;
     error = null;
+    needPassword = false;
     try {
       entries = await api.sftpList(serverId, path);
       cwd = path;
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     } finally {
       loading = false;
     }
@@ -187,7 +208,7 @@
       const content = await api.sftpReadText(serverId, entry.path);
       editor = { path: entry.path, name: entry.name, content };
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -197,7 +218,7 @@
       const list = await api.sftpArchiveList(serverId, entry.path);
       archive = { path: entry.path, name: entry.name, entries: list };
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
   function closeArchive() {
@@ -209,7 +230,7 @@
       const content = await api.sftpArchiveReadText(serverId, ar.path, e.name);
       editor = { path: ar.path, name: basename(e.name), content, readonly: true };
     } catch (err) {
-      error = humanizeError(err);
+      fail(err);
     }
   }
   async function extractEntry(ar: { path: string }, e: ArchiveEntry) {
@@ -218,7 +239,7 @@
     try {
       await api.sftpExtractEntry(serverId, ar.path, e.name, dest);
     } catch (err) {
-      error = humanizeError(err);
+      fail(err);
     }
   }
   async function openGz(entry: SftpEntry) {
@@ -226,7 +247,7 @@
       const content = await api.sftpGzText(serverId, entry.path);
       editor = { path: entry.path, name: entry.name.replace(/\.gz$/i, ''), content, readonly: true };
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -236,7 +257,7 @@
       const uri = await api.sftpReadDataUri(serverId, entry.path);
       image = { name: entry.name, uri };
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -261,7 +282,7 @@
       const root = await api.sftpNbtTree(serverId, entry.path);
       showNbt(entry.name, root, { kind: 'file', path: entry.path });
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -274,7 +295,7 @@
       const chunks = await api.sftpRegionChunks(serverId, entry.path);
       if (region && region.path === entry.path) region.chunks = chunks;
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
       if (region?.path === entry.path) region = null;
     }
   }
@@ -283,7 +304,7 @@
       const root = await api.sftpRegionChunkTree(serverId, rg.path, c.x, c.z);
       showNbt(`chunk (${c.x}, ${c.z})`, root, { kind: 'chunk', path: rg.path, x: c.x, z: c.z });
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
   async function openReport(rg: { name: string; path: string }) {
@@ -292,7 +313,7 @@
       const text = await api.sftpInspectRegion(serverId, rg.path);
       if (report?.name === rg.name) report = { name: rg.name, text };
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
       if (report?.name === rg.name) report = null;
     }
   }
@@ -321,7 +342,7 @@
           : await api.sftpRegionChunkSnbt(serverId, s.path, s.x, s.z);
       return nbtSnbtText;
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
       return null;
     }
   }
@@ -400,7 +421,7 @@
       for (const p of paths) await api.sftpDelete(serverId, p, byPath.get(p) ?? false);
       await load(cwd);
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -503,7 +524,7 @@
       else if (kind === 'rename' && target) await api.sftpRename(serverId, target.path, join(cwd, name));
       await load(cwd);
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -515,7 +536,7 @@
       await api.sftpDelete(serverId, entry.path, entry.is_dir);
       await load(cwd);
     } catch (e) {
-      error = humanizeError(e);
+      fail(e);
     }
   }
 
@@ -612,9 +633,22 @@
     <button class="tb ghost ico-btn" onclick={() => openPrompt('mkdir')}><Icon name="plus" size={14} /> {t('sftp.newFolder')}</button>
     <button class="tb ghost ico-btn" onclick={() => openPrompt('newfile')}><Icon name="plus" size={14} /> {t('sftp.newFile')}</button>
     <button class="tb primary ico-btn" onclick={doUploadDialog}><Icon name="upload" size={15} /> {t('sftp.upload')}</button>
+    <button
+      class="tb ghost ico-btn"
+      title={t('sftp.password.button')}
+      aria-label={t('sftp.password.button')}
+      onclick={() => (pwDialog = 'change')}
+    ><Icon name="key" size={15} /></button>
   </div>
 
-  {#if error}<div class="bar err">{error}</div>{/if}
+  {#if error}
+    <div class="bar err">
+      {error}
+      {#if needPassword}
+        <button class="btn small pwbtn" onclick={() => (pwDialog = 'required')}><Icon name="key" size={13} /> {t('sftp.password.button')}</button>
+      {/if}
+    </div>
+  {/if}
 
   {#if selected.size > 0}
     <div class="selbar">
@@ -658,7 +692,8 @@
     {#if loading}
       <div class="center"><span class="spinner"></span></div>
     {:else if sorted.length === 0}
-      <div class="center dim">{t('sftp.empty')}</div>
+      <!-- Sans mot de passe, le dossier n'a pas pu être lu : « vide » serait faux. -->
+      {#if !needPassword}<div class="center dim">{t('sftp.empty')}</div>{/if}
     {:else}
       {#each sorted as entry (entry.path)}
         <div class="row" class:sel={selected.has(entry.path)}>
@@ -703,6 +738,9 @@
   </div>
 
   {#if dragOver}<div class="dropzone">{t('sftp.dropHere')}</div>{/if}
+  {#if pwDialog}
+    <SftpPasswordDialog {serverId} reason={pwDialog} onsaved={passwordSaved} onclose={() => (pwDialog = null)} />
+  {/if}
 </div>
 
 {#if editor}
@@ -1030,6 +1068,9 @@
   }
   .grow {
     flex: 1;
+  }
+  .bar.err .pwbtn {
+    margin-left: 10px;
   }
   .bar.err {
     padding: 8px 14px;

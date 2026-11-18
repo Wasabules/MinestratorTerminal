@@ -18,8 +18,8 @@ pub const EGG_HEADER_BASE: &str = "https://cdn.minestrator.com/eggs/server_heade
 
 pub const USER_AGENT: &str = concat!("MinestratorCore/", env!("CARGO_PKG_VERSION"));
 
-// Sur Android, le backend secrets est fichier (pas de `keyring`) → cette constante n'y sert pas.
-#[cfg_attr(target_os = "android", allow(dead_code))]
+/// Service sous lequel tous les secrets sont rangés dans le stockage sécurisé de l'OS
+/// (trousseau desktop, Keystore Android). Les comptes ci-dessous en sont les entrées.
 pub const KEYRING_SERVICE: &str = "MinestratorTerminal";
 pub const KEYRING_ACCOUNT: &str = "api-key";
 /// Préfixe de compte trousseau pour les clés LLM du Copilote (une par fournisseur :
@@ -28,6 +28,9 @@ pub const KEYRING_ACCOUNT_LLM_PREFIX: &str = "llm-key-";
 /// Préfixe de compte trousseau pour les secrets par jeu (ex. `game-secret-factorio` = token du
 /// compte factorio.com pour télécharger des mods).
 pub const KEYRING_ACCOUNT_GAME_PREFIX: &str = "game-secret-";
+/// Préfixe de compte trousseau pour le mot de passe SFTP d'un serveur (`sftp-password-<id>`) :
+/// l'API ne le transmet plus, l'utilisateur le saisit une fois par serveur.
+pub const KEYRING_ACCOUNT_SFTP_PREFIX: &str = "sftp-password-";
 
 /// Version d'API Anthropic (en-tête `anthropic-version`).
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";

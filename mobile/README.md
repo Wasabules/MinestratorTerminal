@@ -100,9 +100,11 @@ Slice de départ livré : **onboarding (clé API) → liste serveurs → Overvie
 Console live**. À étoffer ensuite :
 
 - ✅ **Joueurs** : liste en ligne + actions kick/ban/op et par pseudo (`api.playerAction`).
-- ✅ **Secrets Android** : backend **fichier** dans le dossier privé de l'app (chiffré au repos par
-  Android FBE) — le core aiguille automatiquement (`keyring` sur desktop). Durcissement Keystore
-  matériel = amélioration future.
+- ✅ **Secrets Android** : **Keystore Android** (`android-native-keyring-store`) — valeurs chiffrées
+  AES-GCM par une clé non exportable du Keystore, dans des `SharedPreferences` privées. Clé API,
+  clés LLM et mots de passe SFTP par serveur y vivent ; l'ancien `secrets.json` en clair (≤ 0.6.0)
+  est migré puis supprimé au premier lancement. Le contexte JNI vient de `ndk-context`, initialisé
+  par Tauri : aucun code Kotlin à ajouter.
 - ✅ **Alertes app fermée (on-device)** : réglage *Surveillance en arrière-plan* → un **service
   Android au premier plan** (`MonitorService`) garde le process vivant, donc le superviseur Rust +
   `forward()` continuent de poster les alertes app fermée (Home / changement d'app). Aucun serveur
