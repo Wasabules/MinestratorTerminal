@@ -5,6 +5,7 @@
   import { isFake, fakeText } from "../../fake.svelte";
   import { suggest, recordUsage } from "../../mcCommands";
   import Icon from "../Icon.svelte";
+  import Masked from "../Masked.svelte";
   import type { UnlistenFn } from "@tauri-apps/api/event";
 
   let {
@@ -161,7 +162,8 @@
   });
 </script>
 
-<div class="console">
+<!-- Toujours sombre (`.force-dark`), comme la console desktop, quel que soit le thème. -->
+<div class="console force-dark">
   <header>
     <span class="phase" class:open={phase === "open"} class:stopped={phase === "suspended"}>
       {phase === "open" ? "●" : "○"}
@@ -209,15 +211,17 @@
 
   <div class="logwrap">
     <div class="log selectable" bind:this={logEl} onscroll={onScroll} style="font-size:{fontSize}px">
+      <!-- Mode anonyme : masque posé au rendu, sur l'historique comme sur les nouvelles lignes ;
+           les lignes gardées en mémoire restent les vraies (copie, filtres). -->
       {#each filtered as line, i (i)}
-        <div class="line {level(line)}">{line}</div>
+        <div class="line {level(line)}"><Masked value={line} /></div>
       {/each}
       {#if filtered.length === 0}
         <div class="dim">{phase === "open" ? "—" : t("console.connecting")}</div>
       {/if}
     </div>
     {#if !atBottom}
-      <button class="tobottom" onclick={scrollToBottom} aria-label="Revenir en bas">
+      <button class="tobottom" onclick={scrollToBottom} aria-label={t("console.toBottom")}>
         <Icon name="chevronDown" size={22} />
       </button>
     {/if}
@@ -248,7 +252,7 @@
       onfocus={onFocus}
       onblur={onBlur}
     />
-    <button type="submit" class="sendbtn" aria-label="Envoyer"><Icon name="send" size={18} /></button>
+    <button type="submit" class="sendbtn" aria-label={t("console.send")}><Icon name="send" size={18} /></button>
   </form>
 </div>
 
@@ -257,6 +261,7 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    background: var(--chrome);
   }
   header {
     display: flex;
@@ -269,7 +274,8 @@
     flex: none;
   }
   .phase {
-    font-size: 12px;
+    font-size: 12.5px;
+    font-weight: 800;
     color: var(--text-dim);
     display: flex;
     align-items: center;
@@ -290,20 +296,22 @@
     display: flex;
     align-items: center;
     gap: 5px;
-    background: var(--bg);
+    background: var(--inset);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     color: var(--text-muted);
-    padding: 6px 9px;
-    font-size: 13px;
-    min-height: 34px;
+    padding: 0 11px;
+    font-size: 13.5px;
+    font-weight: 800;
+    min-height: 40px;
   }
   .tool.active {
-    color: var(--brand-primary);
-    border-color: var(--brand-primary);
+    color: var(--accent-text);
+    background: var(--accent-soft);
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
   }
   .flabel {
-    font-size: 12px;
+    font-size: 12.5px;
   }
   .filterwrap {
     position: relative;
@@ -314,11 +322,12 @@
     top: calc(100% + 4px);
     background: var(--elevated);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
     z-index: 20;
     overflow: hidden;
-    min-width: 130px;
+    min-width: 150px;
+    padding: 4px;
   }
   .menu button {
     display: block;
@@ -326,13 +335,16 @@
     text-align: left;
     background: transparent;
     border: none;
+    border-radius: 7px;
     color: var(--text);
-    padding: 11px 14px;
-    font-size: 14px;
+    padding: 0 12px;
+    font-size: 14.5px;
+    font-weight: 700;
   }
   .menu button.sel {
-    color: var(--brand-primary);
-    font-weight: 600;
+    color: var(--accent-text);
+    background: var(--accent-soft);
+    font-weight: 800;
   }
   .logwrap {
     position: relative;
@@ -347,28 +359,29 @@
     padding: 10px 12px;
     font-family: var(--font-mono);
     line-height: 1.5;
-    background: #0d1114;
+    background: var(--chrome);
     -webkit-overflow-scrolling: touch;
   }
   .tobottom {
     position: absolute;
     right: 12px;
     bottom: 12px;
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
     display: grid;
     place-items: center;
     border-radius: 50%;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow);
     z-index: 5;
   }
   .line {
     white-space: pre-wrap;
     word-break: break-word;
     color: var(--text-muted);
+    font-weight: 500;
   }
   .line.warn {
     color: var(--state-pending);
@@ -393,13 +406,14 @@
   }
   .suggest button {
     flex: none;
-    background: var(--elevated);
-    border: 1px solid var(--border);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
     border-radius: 999px;
     color: var(--text);
-    padding: 7px 13px;
+    padding: 0 14px;
     font-family: var(--font-mono);
     font-size: 13px;
+    font-weight: 500;
     white-space: nowrap;
   }
   form {
@@ -412,31 +426,38 @@
   }
   input {
     flex: 1;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    min-width: 0;
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
     color: var(--text);
     padding: 12px;
     font-family: var(--font-mono);
     font-size: 14px;
+    font-weight: 500;
     outline: none;
   }
   input:focus {
     border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
+  /* Envoi : l'action de la vue, à l'accent du biome. */
   .sendbtn {
     display: grid;
     place-items: center;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--accent);
+    color: var(--on-accent);
     border: none;
-    border-radius: var(--radius-sm);
-    width: 48px;
+    border-radius: var(--radius);
+    width: 50px;
+    flex: none;
   }
   .err {
     margin: 0;
-    padding: 4px 12px;
-    color: var(--state-danger);
+    padding: 6px 12px;
+    background: var(--danger-bg);
+    color: var(--danger-ink);
     font-size: 13px;
+    font-weight: 700;
   }
 </style>
