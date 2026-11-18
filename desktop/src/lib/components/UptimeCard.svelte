@@ -1,8 +1,10 @@
 <script lang="ts">
   /**
    * Disponibilité d'un serveur (aperçu) : pourcentage sur 24 h / 7 j / 30 j et journal des
-   * coupures, calculés par le cœur à partir de la surveillance de l'app ou de son service
-   * (crates/minestrator-core/src/uptime.rs). Les périodes non surveillées ne comptent pas.
+   * coupures, calculés par le cœur à partir de la surveillance de l'app ou de son service,
+   * complétée par les minutes mesurées de l'hébergeur là où rien ne surveillait
+   * (crates/minestrator-core/src/uptime.rs). Elles prouvent que le serveur tournait, jamais une
+   * coupure : leur part est indiquée. Les périodes sans aucune mesure ne comptent pas.
    */
   import { onMount, onDestroy } from 'svelte';
   import { api } from '#lib/ipc.ts';
@@ -62,6 +64,11 @@
           <span class="s dim">
             {t('uptime.monitored', { pct: Math.round((w.monitored_s / w.seconds) * 100) })}
           </span>
+          {#if w.host_s > 0}
+            <span class="s dim" title={t('uptime.viaHostHint')}>
+              {t('uptime.viaHost', { pct: Math.round((w.host_s / w.seconds) * 100) })}
+            </span>
+          {/if}
         {:else}
           <span class="v dim">—</span>
           <span class="s dim">{t('uptime.noData')}</span>

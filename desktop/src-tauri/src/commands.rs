@@ -9,7 +9,7 @@ use minestrator_core::{
     FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
     LivePlayers, MyBoxDetails, ServerLive, ServerProperties,
     MarketInstalledMod, MarketModPage, MarketModVersion, MarketPage, MarketVersion, McpConfig,
-    MetricSample, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
+    MetricsHistory, ModInstallItem, NbtNode, PrivacyConfig, RegionChunk, ServerDetails,
     ServersOverview, SftpEntry, SftpHostKey, SmlVersion, Snapshot, SupervisorConfig, UserNotification, UserProfile,
     ContentUpdates, UpdateReport, UpdateSelection,
 };
@@ -155,14 +155,16 @@ pub async fn user_notifications(
     core.user_notifications().await
 }
 
-/// Historique local, complété par celui du service d'arrière-plan quand c'est lui qui supervise.
+/// Historique croisé : surveillance locale (et du service d'arrière-plan quand c'est lui qui
+/// supervise), complétée par les statistiques de l'hébergeur là où rien ne surveillait.
 #[tauri::command]
 pub async fn metrics_history(
     core: State<'_, Arc<Core>>,
     server_id: i64,
     since_secs: i64,
-) -> Result<Vec<MetricSample>, Error> {
-    core.metrics_history(server_id, since_secs).await
+    max_points: Option<u32>,
+) -> Result<MetricsHistory, Error> {
+    core.server_history(server_id, since_secs, max_points).await
 }
 
 #[tauri::command]

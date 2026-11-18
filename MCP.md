@@ -65,7 +65,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `list_players` | | `server_id`, `sort?`, `active_days?`, `search?`, `limit?` | Joueurs Minecraft Java **déjà venus** (`GET /server/{id}/players/offline`, non documenté) : statistiques (joueurs uniques, connectés, actifs 24 h / 7 j / 30 j, temps de jeu total) puis liste triée (`play_time` par défaut, `last_seen`, `name`) avec temps de jeu **cumulé** en heures, dernière venue, op/whitelist/banni. `active_days=7` + `sort=play_time` répond à « qui a le plus joué cette semaine » (le temps reste cumulé : l'API n'a pas de détail par période). Pseudos remplacés par un alias stable (`joueur-xxxxxx`) si l'anonymisation IA est active ; UUID jamais envoyés. |
 | `list_schedules` | | `server_id` | Tâches planifiées **du panel MineStrator** (`GET /server/{id}/schedules`, non documenté) : nom, cron, active, seulement si en ligne, prochaine/dernière exécution, actions ordonnées (commande ou alimentation, délai). Exécutées par l'hébergeur, même PC éteint — distinctes des automatisations de l'app. Commandes anonymisées. |
 | `mybox_info` | | `mybox_id` | Détail d'une MyBox (`GET /mybox/{id}`) : échéance, **renouvellement automatique**, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées. |
-| `server_metrics` | | `server_id`, `since_secs?` | **Historique** CPU/RAM/disque + **résumé** (moyennes/max) sur la fenêtre (défaut 1 h, max 14 j). |
+| `server_metrics` | | `server_id`, `since_secs?` | **Historique croisé** CPU (% d'un cœur) / RAM / disque (octets) sur la fenêtre (défaut 1 h, max 30 j) : surveillance de l'app (`source: local`, 10 s) complétée par les statistiques à la minute de l'hébergeur (`source: host`, `GET /server/{id}/stats/…`, non documenté) là où l'app ne surveillait pas. **Résumé** (moyennes pondérées par durée, max, pic et moyenne de joueurs), `coverage` (`local_s`, `host_s`, `host_available`), 120 échantillons au plus (maximum par tranche), `players` (joueurs connectés, hébergeur). |
 
 #### Contrôle & console
 
@@ -242,7 +242,10 @@ Build du binaire autonome : `cargo build -p minestrator-mcp --release`
   le détail par période.
 - Stats **live** : `GET /server/{id}/live` (un appel) ; la connexion WebSocket éphémère ne sert plus que de
   repli. Les blocs de consommation sont absents d'un serveur éteint.
-- L'historique de `server_metrics` n'existe que si l'app desktop (superviseur) a tourné.
+- L'historique fin (10 s, état Wings) de `server_metrics` n'existe que si l'app (superviseur) ou son
+  service a tourné ; ailleurs, seules les mesures à la minute de l'hébergeur (zéros exclus :
+  serveur éteint et minute non mesurée sont indiscernables) sont disponibles. Le binaire MCP
+  headless étant relancé à chaque message, il relit ces mesures à chaque appel (cache du `Core`).
 - Le marketplace ignore les projets **premium/external** (non installables → `install_mod` renvoie 403).
 - La vérification des mises à jour de l'hébergeur ne reçoit **aucun loader pour les plugins** : elle
   propose parfois la variante d'une autre plateforme à version égale (relevé du 2026-11-18 :

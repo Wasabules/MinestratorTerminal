@@ -14,6 +14,7 @@ use crate::models::{
     UserNotification, UserProfile,
     WsBulkData, WsCredentials, WsCredentialsData,
 };
+use crate::history::HostStatsData;
 use crate::panel_schedules::{PanelSchedule, PanelScheduleInput, PanelTaskInput, SchedulesData};
 use crate::updates::{ContentKind, ContentList, McVersion};
 use base64::Engine;
@@ -286,6 +287,37 @@ impl ApiClient {
     /// FlexCore), réseau, uptime — sans WebSocket. Blocs absents d'un serveur éteint.
     pub async fn get_server_live(&self, token: &str, id: i64) -> Result<ServerLive> {
         self.get(token, &format!("/server/{id}/live")).await
+    }
+
+    /// Statistiques de l'hébergeur sur une période (non documenté, panel web) : `from` et `to` en
+    /// heure de Paris, `AAAA-MM-JJTHH:MM:SS` (voir [`crate::history`] pour le format relevé).
+    /// Renvoie aussi l'heure du serveur (en-tête `Date`, secondes Unix) : elle sert à mesurer le
+    /// décalage de l'horloge locale.
+    pub(crate) async fn get_server_stats(
+        &self,
+        token: &str,
+        id: i64,
+        from: &str,
+        to: &str,
+    ) -> Result<(HostStatsData, Option<i64>)> {
+        let resp = self
+            .http
+            .get(format!("{API_BASE_URL}/server/{id}/stats/{from}/{to}"))
+            .header(header::AUTHORIZATION, Self::bearer(token))
+            .header(header::ACCEPT, "application/json")
+            .send()
+            .await?;
+        let server_now = resp
+            .headers()
+            .get(header::DATE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(crate::history::parse_http_date);
+        let data = Self::read_envelope(resp)
+            .await?
+            .ok_or_else(|| Error::Unexpected("réponse sans champ `data`".into()))?;
+        let stats = serde_json::from_value(data)
+            .map_err(|e| Error::Unexpected(format!("structure `data` inattendue : {e}")))?;
+        Ok((stats, server_now))
     }
 
     /// Réglages du serveur (`server.properties`) — permission `settings_view`, sans SFTP.

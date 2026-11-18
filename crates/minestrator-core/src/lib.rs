@@ -26,6 +26,7 @@ mod events;
 mod factorio;
 mod ficsit;
 mod games;
+mod history;
 mod llm;
 pub mod http;
 pub mod logs;
@@ -75,6 +76,7 @@ pub use ficsit::{
     FicsitVersion, SmlTarget, SmlVersion,
 };
 pub use games::GameCapabilities;
+pub use history::{HistoryPoint, HistorySource, MetricsHistory, PlayersPoint};
 pub use panel_schedules::{PanelCron, PanelSchedule, PanelScheduleInput, PanelTask, PanelTaskInput};
 pub use players::{
     InventoryItem, ItemEnchantment, KnownPlayer, PlayerDistance, PlayerFilter, PlayerFlags, PlayerInventory,
@@ -155,6 +157,8 @@ pub struct Core {
     updates_cache: updates::UpdatesCache,
     /// Listes des joueurs déjà venus, par serveur, gardées une minute (voir [`players`]).
     players: players::RosterCache,
+    /// Statistiques de l'hébergeur déjà lues (historique croisé, voir [`history`]).
+    host_stats: history::HostStatsCache,
     /// Token API mémorisé → évite une lecture BLOQUANTE du trousseau OS (DPAPI/Keychain/D-Bus) à
     /// CHAQUE appel async. Invalidé au (re)login / logout.
     token_cache: Mutex<Option<String>>,
@@ -206,6 +210,7 @@ impl Core {
             cache: cache::TtlCache::default(),
             updates_cache: updates::UpdatesCache::default(),
             players: players::RosterCache::default(),
+            host_stats: history::HostStatsCache::default(),
             token_cache: Mutex::new(None),
             user_id_cache: Mutex::new(None),
             events,

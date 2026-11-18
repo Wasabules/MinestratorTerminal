@@ -7,7 +7,7 @@
 
 use crate::models::InstalledItem;
 use crate::updates::ContentKind;
-use crate::{Core, MetricSample};
+use crate::{Core, HistoryPoint, HistorySource, MetricsHistory};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::fmt::Write as _;
@@ -432,7 +432,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "list_players" => 30,
         "list_servers" => 10,
         "server_status" => 5,
-        // Volontairement absents : server_metrics (local, déjà rapide), read_console (live),
+        // Volontairement absents : server_metrics (local, et cache propre des statistiques de
+        // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
         _ => return None,
     };
@@ -519,13 +520,22 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
 
         "server_metrics" => {
             let id = req_i64(&args, "server_id")?;
-            let since = opt_i64(&args, "since_secs", 3600).clamp(60, 14 * 24 * 3600);
-            let samples = core.metrics(id, since).map_err(es)?;
+            let since = opt_i64(&args, "since_secs", 3600).clamp(60, 30 * 24 * 3600);
+            // Résumé sur la pleine résolution, échantillons regroupés (maximum par tranche).
+            let full = core.merged_history(id, since).await.map_err(es)?;
+            let summary = summarize(&full);
+            let shown = crate::history::limit_points(full, 120);
             json_pretty(&json!({
                 "since_secs": since,
-                "count": samples.len(),
-                "summary": summarize(&samples),
-                "samples": downsample(&samples, 120),
+                "coverage": {
+                    "local_s": shown.local_s,
+                    "host_s": shown.host_s,
+                    "host_available": shown.host_ok,
+                },
+                "summary": summary,
+                "step_s": shown.step_s,
+                "samples": shown.points,
+                "players": shown.players,
             }))
         }
 
@@ -900,7 +910,7 @@ fn build_tool_list() -> Value {
         tool("list_schedules", "Tâches planifiées du panel MineStrator d'un serveur, exécutées par l'hébergeur même ordinateur éteint (à distinguer des automatisations de l'app) : nom, planification cron, active, seulement si en ligne, prochaine et dernière exécution, actions dans l'ordre (commande ou alimentation, délai en secondes).", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_players", "Joueurs Minecraft (Java) déjà venus sur un serveur, pas seulement les connectés : statistiques (joueurs uniques, connectés, actifs sur 24 h / 7 j / 30 j, temps de jeu total) puis liste triée avec temps de jeu CUMULÉ (heures), dernière venue, op/whitelist/banni. Pour « qui a le plus joué cette semaine » : sort=play_time et active_days=7 (le temps de jeu reste cumulé depuis la première venue). Pseudos remplacés par des alias stables si l'anonymisation IA est active.", obj(&[("server_id", prop_int("ID du serveur")), ("sort", prop_str("play_time (défaut) | last_seen | name")), ("active_days", prop_int("Seulement les joueurs venus dans les N derniers jours (0 = tous)")), ("search", prop_str("Filtre sur le pseudo (sous-chaîne)")), ("limit", prop_int("Joueurs listés (défaut 25, max 100)"))], &["server_id"])),
         tool("mybox_info", "Détail d'une MyBox (`mybox_id` via list_servers) : échéance, renouvellement automatique, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
-        tool("server_metrics", "Historique de consommation (CPU/RAM/disque) + résumé (moyennes/max) — pour analyser la charge et optimiser.", obj(&[("server_id", prop_int("ID du serveur")), ("since_secs", prop_int("Fenêtre en secondes (défaut 3600, max 14 j)"))], &["server_id"])),
+        tool("server_metrics", "Historique de consommation (CPU en % d'un cœur, RAM et disque en octets) + résumé (moyennes/max, pic de joueurs) — pour analyser la charge et optimiser. Croise la surveillance de l'app (`source: local`, toutes les 10 s) et les statistiques de l'hébergeur (`source: host`, à la minute) qui comblent les périodes non surveillées ; `players` : joueurs connectés (hébergeur).", obj(&[("server_id", prop_int("ID du serveur")), ("since_secs", prop_int("Fenêtre en secondes (défaut 3600, max 30 j)"))], &["server_id"])),
         tool("power_action", "Démarre/redémarre/arrête un serveur. `action` ∈ start|restart|restart10|stop|stop10|kill.", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start|restart|restart10|stop|stop10|kill"))], &["server_id", "action"])),
         tool("send_command", "Envoie une commande à la console (n'a d'effet que serveur en ligne).", obj(&[("server_id", prop_int("ID du serveur")), ("command", prop_str("Commande console"))], &["server_id", "command"])),
         tool("read_console", "100 dernières lignes de console — pour diagnostiquer un crash.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
@@ -946,43 +956,45 @@ fn build_tool_list() -> Value {
 
 // --- Résumé / helpers -----------------------------------------------------
 
-fn summarize(samples: &[MetricSample]) -> Value {
-    if samples.is_empty() {
+/// Résumé d'un historique fusionné, pondéré par la durée que couvre chaque point (10 s en local,
+/// une minute pour l'hébergeur) : les périodes vues seulement par l'hébergeur ne sont pas
+/// écrasées par la densité du local.
+fn summarize(h: &MetricsHistory) -> Value {
+    if h.points.is_empty() {
         return json!(null);
     }
-    let n = samples.len() as f64;
-    let mut cpu_sum = 0.0;
-    let mut cpu_max = 0.0f64;
-    let mut mem_sum = 0.0;
-    let mut mem_max = 0.0f64;
-    let mut disk_last = 0i64;
-    for s in samples {
-        cpu_sum += s.cpu;
-        cpu_max = cpu_max.max(s.cpu);
-        let memp = if s.mem_limit > 0 {
-            s.mem as f64 / s.mem_limit as f64 * 100.0
-        } else {
-            0.0
-        };
-        mem_sum += memp;
-        mem_max = mem_max.max(memp);
-        disk_last = s.disk;
+    let weight = |p: &HistoryPoint| if p.source == HistorySource::Local { 10.0 } else { 60.0 };
+    let (mut total, mut mem_total) = (0.0, 0.0);
+    let (mut cpu_sum, mut cpu_max) = (0.0, 0.0f64);
+    let (mut mem_sum, mut mem_max) = (0.0, 0.0f64);
+    for p in &h.points {
+        let w = weight(p);
+        total += w;
+        cpu_sum += p.cpu * w;
+        cpu_max = cpu_max.max(p.cpu);
+        if p.mem_limit > 0 {
+            let pct = p.mem as f64 / p.mem_limit as f64 * 100.0;
+            mem_total += w;
+            mem_sum += pct * w;
+            mem_max = mem_max.max(pct);
+        }
     }
-    json!({
-        "cpu_absolute_avg": (cpu_sum / n * 100.0).round() / 100.0,
-        "cpu_absolute_max": (cpu_max * 100.0).round() / 100.0,
-        "mem_pct_avg": mem_sum / n,
-        "mem_pct_max": mem_max,
-        "disk_bytes_last": disk_last,
-    })
-}
-
-fn downsample(samples: &[MetricSample], max: usize) -> Vec<&MetricSample> {
-    if samples.len() <= max {
-        return samples.iter().collect();
+    let round2 = |v: f64| (v * 100.0).round() / 100.0;
+    let mut out = json!({
+        "cpu_absolute_avg": round2(cpu_sum / total),
+        "cpu_absolute_max": round2(cpu_max),
+        "mem_pct_avg": (mem_total > 0.0).then(|| round2(mem_sum / mem_total)),
+        "mem_pct_max": (mem_total > 0.0).then(|| round2(mem_max)),
+        "disk_bytes_last": h.points.last().map(|p| p.disk),
+        "local_points": h.points.iter().filter(|p| p.source == HistorySource::Local).count(),
+        "host_points": h.points.iter().filter(|p| p.source == HistorySource::Host).count(),
+    });
+    if !h.players.is_empty() {
+        let n = h.players.len() as f64;
+        out["players_peak"] = json!(h.players.iter().map(|p| p.count).max());
+        out["players_avg"] = json!(round2(h.players.iter().map(|p| p.count as f64).sum::<f64>() / n));
     }
-    let step = (samples.len() / max).max(1);
-    samples.iter().step_by(step).collect()
+    out
 }
 
 fn req_i64(args: &Value, key: &str) -> Result<i64, String> {

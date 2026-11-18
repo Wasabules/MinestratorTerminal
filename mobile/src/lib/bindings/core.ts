@@ -2015,6 +2015,11 @@ export type UptimeWindow = {
    */
   up_s: number,
   /**
+   * Part de `monitored_s` connue seulement par les statistiques de l'hébergeur (toujours en
+   * service : il ne prouve jamais une coupure).
+   */
+  host_s: number,
+  /**
    * `up_s / monitored_s` en % ; `null` si rien n'a été surveillé.
    */
   percent: number | null,

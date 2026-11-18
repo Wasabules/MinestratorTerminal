@@ -2,6 +2,10 @@
   /**
    * Graphique d'historique CPU / RAM / disque, en SVG maison (aucune dépendance).
    *
+   * Les points viennent de la fusion du cœur (crates/minestrator-core/src/history.rs) : la
+   * surveillance de l'app (trait plein) et, là où elle n'a rien vu, les mesures à la minute de
+   * l'hébergeur (`source: host`, trait pointillé).
+   *
    * Un seul axe : les trois séries sont exprimées en pourcentage de leur limite, ce qui permet de
    * les superposer sans double échelle. La fenêtre est fixe (`range` secondes jusqu'à `now`) :
    * une période sans échantillon — app fermée, surveillance coupée — reste visible comme un trou,
@@ -16,16 +20,19 @@
    * en protanopie, d'où le bleu et l'orange.
    */
   import { t } from "../i18n";
-  import type { MetricSample } from "../types";
+  import type { HistoryPoint } from "../types";
 
   let {
     samples,
+    stepS,
     range,
     now,
     cpuLimit,
     diskLimit,
   }: {
-    samples: MetricSample[];
+    samples: HistoryPoint[];
+    /** Pas des points fournis par le cœur (s) : base du seuil de trou. */
+    stepS: number;
     /** Largeur de la fenêtre, en secondes. */
     range: number;
     /** Fin de la fenêtre (secondes Unix). */
@@ -47,7 +54,8 @@
   const chartH = H - PAD_T - PAD_B;
   const t0 = $derived(now - range);
 
-  type Point = { ts: number; cpu: number; ram: number; disk: number | null };
+  /** `host` : la tranche ne contient que des mesures de l'hébergeur. */
+  type Point = { ts: number; cpu: number; ram: number; disk: number | null; host: boolean };
   type SeriesKey = "cpu" | "ram" | "disk";
 
 
@@ -67,21 +75,23 @@
       const cpu = cpuLimit > 0 ? (s.cpu / cpuLimit) * 100 : 0;
       const ram = s.mem_limit > 0 ? (s.mem / s.mem_limit) * 100 : 0;
       const disk = diskLimit > 0 ? (s.disk / diskLimit) * 100 : null;
+      const host = s.source === "host";
       const p = acc.get(b);
       if (!p) {
-        acc.set(b, { ts: s.ts, cpu, ram, disk });
+        acc.set(b, { ts: s.ts, cpu, ram, disk, host });
       } else {
         p.ts = Math.max(p.ts, s.ts);
         p.cpu = Math.max(p.cpu, cpu);
         p.ram = Math.max(p.ram, ram);
         p.disk = disk === null || p.disk === null ? p.disk ?? disk : Math.max(p.disk, disk);
+        p.host = p.host && host;
       }
     }
     return [...acc.entries()].sort((a, b) => a[0] - b[0]).map(([, p]) => p);
   });
 
   /** Au-delà de cet écart entre deux points, la ligne s'interrompt (période sans données). */
-  const gapS = $derived(Math.max(3 * bucketSize, 60));
+  const gapS = $derived(Math.max(3 * bucketSize, 3 * stepS, 150));
 
   /**
    * Haut de l'axe : 100 %, sauf si une série le dépasse (CPU en rafale au-delà de la limite) —
@@ -101,24 +111,46 @@
     return PAD_T + (1 - Math.max(0, Math.min(yMax, pct)) / yMax) * chartH;
   }
 
-  function path(key: SeriesKey): string {
-    let d = "";
-    let prevTs: number | null = null;
+  /**
+   * Tracés d'une série, séparés par origine (`local` plein, `host` pointillé). Un trou ou une
+   * valeur absente coupe la ligne ; un changement d'origine sans trou repart du point précédent
+   * pour que la courbe reste continue.
+   */
+  function path(key: SeriesKey): { local: string; host: string } {
+    const out = { local: "", host: "" };
+    let prev: Point | null = null;
     let segLen = 0;
+    let seg: "local" | "host" = "local";
+    const close = () => {
+      if (segLen === 1) out[seg] += " l0.1 0"; // point isolé : rendu par le bout arrondi
+    };
     for (const p of points) {
       const v = p[key];
       if (v === null) {
-        prevTs = null;
+        prev = null;
         continue;
       }
-      const start = prevTs === null || p.ts - prevTs > gapS;
-      if (start && segLen === 1) d += " l0.1 0"; // point isolé : rendu par le bout arrondi
-      d += `${start ? " M" : " L"}${x(p.ts).toFixed(1)} ${y(v).toFixed(1)}`;
-      segLen = start ? 1 : segLen + 1;
-      prevTs = p.ts;
+      const src = p.host ? "host" : "local";
+      const pv = prev ? prev[key] : null;
+      const gap = !prev || pv === null || p.ts - prev.ts > gapS;
+      if (gap || src !== seg) {
+        close();
+        seg = src;
+        if (gap || !prev || pv === null) {
+          out[seg] += ` M${x(p.ts).toFixed(1)} ${y(v).toFixed(1)}`;
+          segLen = 1;
+        } else {
+          out[seg] += ` M${x(prev.ts).toFixed(1)} ${y(pv).toFixed(1)} L${x(p.ts).toFixed(1)} ${y(v).toFixed(1)}`;
+          segLen = 2;
+        }
+      } else {
+        out[seg] += ` L${x(p.ts).toFixed(1)} ${y(v).toFixed(1)}`;
+        segLen += 1;
+      }
+      prev = p;
     }
-    if (segLen === 1) d += " l0.1 0";
-    return d.trim();
+    close();
+    return { local: out.local.trim(), host: out.host.trim() };
   }
 
   const hasDisk = $derived(diskLimit > 0 && points.some((p) => p.disk !== null));
@@ -179,6 +211,22 @@
   function fmtClock(ts: number): string {
     return new Date(ts * 1000).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   }
+  /** Au-delà d'une journée, la date compte plus que l'heure. */
+  function fmtTick(ts: number): string {
+    return range > 86400
+      ? new Date(ts * 1000).toLocaleDateString(undefined, { day: "2-digit", month: "short" })
+      : fmtClock(ts);
+  }
+  function fmtWhen(ts: number): string {
+    return range > 86400
+      ? new Date(ts * 1000).toLocaleString(undefined, {
+          day: "2-digit",
+          month: "short",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : fmtClock(ts);
+  }
   function fmtPct(v: number | null | undefined): string {
     return v === null || v === undefined ? "—" : `${Math.round(v)} %`;
   }
@@ -190,9 +238,9 @@
   <div class="readout" aria-live="polite">
     <span class="when dim">
       {#if scrubIdx !== null && shown}
-        {fmtClock(shown.ts)}
+        {fmtWhen(shown.ts)}{#if shown.host}&nbsp;· {t("metrics.fromHost")}{/if}
       {:else if last}
-        {t("metrics.now")} · {fmtClock(last.ts)}
+        {t("metrics.now")} · {fmtWhen(last.ts)}
       {:else}
         &nbsp;
       {/if}
@@ -236,11 +284,12 @@
           x={x(tk)}
           y={H - 6}
           text-anchor={i === 0 ? "start" : i === xTicks.length - 1 ? "end" : "middle"}
-        >{fmtClock(tk)}</text>
+        >{fmtTick(tk)}</text>
       {/each}
 
       {#each series as s (s.key)}
-        <path class="serie {s.key}" d={s.d} />
+        <path class="serie {s.key}" d={s.d.local} />
+        <path class="serie host {s.key}" d={s.d.host} />
       {/each}
 
       {#if shown}
@@ -341,6 +390,11 @@
     stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
+  }
+  /* Mesures de l'hébergeur : pointillé, même couleur. */
+  .serie.host {
+    stroke-dasharray: 5 4;
+    stroke-linecap: butt;
   }
   .serie.cpu {
     stroke: var(--viz-cpu);

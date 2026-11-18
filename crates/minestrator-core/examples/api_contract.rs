@@ -70,6 +70,18 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
         &["api.data.stats", "api.data.times", "api.data.state", "api.data.flags"],
     ),
     ("/server/{id}/players/{uuid}/inventory", &["api.data.inventory", "api.data.equipment"]),
+    // Non documenté (panel web) : statistiques à la minute de l'hébergeur (historique croisé et
+    // disponibilité, `history.rs`). La grille est complétée de zéros : un point existe toujours.
+    (
+        "/server/{id}/stats/{début}/{fin}",
+        &[
+            "api.data.stats[].date",
+            "api.data.stats[].cpu",
+            "api.data.stats[].ram",
+            "api.data.stats[].disk",
+            "api.data.stats[].players",
+        ],
+    ),
     // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
     (
         "/server/{id}/sftp",
@@ -372,6 +384,30 @@ async fn main() {
                     if server.capabilities.player_data {
                         player_checks(&mut report, &core, &http, &key, server.id, n).await;
                     }
+                    // Bornes en heure de Paris (UTC+1 ou +2) : une fenêtre d'une heure qui finit
+                    // une heure avant « maintenant UTC » est toujours dans le passé à Paris.
+                    let end = chrono::Utc::now().naive_utc() - chrono::Duration::hours(1);
+                    let start = end - chrono::Duration::hours(1);
+                    let fmt = |d: chrono::NaiveDateTime| d.format("%Y-%m-%dT%H:%M:00").to_string();
+                    raw_checks(
+                        &mut report,
+                        &http,
+                        &key,
+                        "/server/{id}/stats/{début}/{fin}",
+                        &format!("/server/{}/stats/{}/{}", server.id, fmt(start), fmt(end)),
+                        &tag,
+                    )
+                    .await;
+                    report
+                        .call(&label("GET /server/{id}/stats (historique croisé)"), async {
+                            let h = core.server_history(server.id, 3600, Some(60)).await?;
+                            if h.host_ok {
+                                Ok(())
+                            } else {
+                                Err(Error::Unexpected("statistiques de l'hébergeur illisibles".into()))
+                            }
+                        })
+                        .await;
                     report.call(&label("GET /server/{id}/live"), core.server_live(server.id)).await;
                     report.call(&label("GET /server/{id}/activity"), core.server_activity(server.id, 5, 0)).await;
                     report.call(&label("GET /server/{id}/backups"), core.list_backups(server.id)).await;

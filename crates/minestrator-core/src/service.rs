@@ -973,7 +973,8 @@ impl Core {
     }
 
     /// Rapport de disponibilité d'un serveur (24 h / 7 j / 30 j, coupures) : historique local,
-    /// complété par celui du service quand c'est lui qui supervise.
+    /// complété par celui du service quand c'est lui qui supervise, puis par les minutes mesurées
+    /// de l'hébergeur là où rien ne surveillait (règle : [`crate::uptime`]).
     pub async fn uptime_report(&self, server_id: i64) -> Result<UptimeReport> {
         let now = now_secs();
         let from = now - uptime::WINDOWS[2] - uptime::MAX_GAP_S;
@@ -987,7 +988,9 @@ impl Core {
         } else {
             Vec::new()
         };
-        Ok(uptime::report(server_id, &uptime::merge_spans(local, remote), now))
+        let merged = uptime::merge_spans(local, remote);
+        let filled = self.fill_uptime_with_host(server_id, merged, now - uptime::WINDOWS[2], now).await;
+        Ok(uptime::report(server_id, &filled, now))
     }
 
     /// Journal des automatisations d'un serveur (compte courant) : local, complété par celui du
@@ -1509,7 +1512,7 @@ mod tests {
         assert!(matches!(r, Request::AutomationRuns { account_id: 7, server_id: None, limit: None }));
 
         // Réponses.
-        let span = UptimeSpan { start: 1, end: 2, up: true, cause: None, ended: false };
+        let span = UptimeSpan { start: 1, end: 2, up: true, cause: None, ended: false, host: false };
         let json = serde_json::to_string(&Response::Uptime(vec![span.clone()])).unwrap();
         assert!(json.starts_with(r#"{"type":"uptime","data":["#));
         assert!(matches!(serde_json::from_str::<Response>(&json).unwrap(), Response::Uptime(ref s) if s == &vec![span.clone()]));

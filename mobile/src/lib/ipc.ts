@@ -39,7 +39,7 @@ import type {
   MarketPage,
   MarketSource,
   MarketVersion,
-  MetricSample,
+  MetricsHistory,
   PlayerAction,
   PlayerInventory,
   PlayerProfile,
@@ -154,9 +154,12 @@ export const api = {
     demo(invoke<UserNotification[]>("user_notifications"), (list) =>
       list.map((n) => ({ ...n, message: fakeText(n.message) })),
     ),
-  /** Historique local (SQLite du core) des échantillons du superviseur, depuis `sinceSecs`. */
-  metricsHistory: (serverId: number, sinceSecs: number) =>
-    invoke<MetricSample[]>("metrics_history", { serverId, sinceSecs }),
+  /**
+   * Historique des `sinceSecs` dernières secondes : échantillons locaux du superviseur complétés par
+   * les statistiques de l'hébergeur (origine dans `source`), joueurs connectés, au plus `maxPoints`.
+   */
+  metricsHistory: (serverId: number, sinceSecs: number, maxPoints?: number) =>
+    invoke<MetricsHistory>("metrics_history", { serverId, sinceSecs, maxPoints: maxPoints ?? null }),
   /** Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère. */
   sampleStats: (serverId: number) => invoke<ConsoleStats | null>("sample_stats", { serverId }),
 

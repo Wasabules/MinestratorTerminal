@@ -379,7 +379,20 @@ export const fr = {
     noData: 'En attente de données live…',
     hibernated: 'Serveur en hibernation. Démarre-le pour le réveiller.',
     history: 'Historique',
-    noHistory: 'Pas encore de données — le superviseur enregistre en continu.',
+    noHistory: 'Aucune donnée sur cette période — ni surveillance de l’app, ni mesure de l’hébergeur.',
+    range7d: '7 j',
+    range30d: '30 j',
+    sourceLocal: 'Surveillance de l’app',
+    sourceHost: 'Mesure de l’hébergeur (à la minute)',
+    sourceHostShort: 'hébergeur',
+    sourceHint:
+      'Pointillés : statistiques de l’hébergeur, qui comblent les périodes où l’app ne surveillait pas (app fermée, ordinateur éteint) et prolongent l’historique au-delà de 14 jours.',
+    hostUnavailable: 'hébergeur indisponible',
+    hostUnavailableHint: 'Les statistiques de l’hébergeur n’ont pas pu être lues : seule la surveillance de l’app est affichée.',
+    playersHistory: 'Joueurs connectés',
+    playersPeak: 'pic {n}',
+    playersAvg: 'moyenne {n}',
+    playersAt: '{n} joueur(s)',
     perf: 'Analyser les performances',
     perfRunning: 'Analyse en cours…',
     perfHint: 'Lance Spark (health/tps/gc + profiler) puis le Copilote analyse — résultat dans le Copilote.',
@@ -515,7 +528,7 @@ export const fr = {
   // Suivi de disponibilité (aperçu serveur) : calculé par l'app à partir de sa propre surveillance.
   uptime: {
     title: 'Disponibilité',
-    hint: 'Calculée à partir de la surveillance de l’application ou de son service d’arrière-plan. Les périodes où rien ne surveillait ne comptent pas comme des coupures.',
+    hint: 'Calculée à partir de la surveillance de l’application ou de son service d’arrière-plan, complétée par les mesures de l’hébergeur là où rien ne surveillait. Les périodes sans aucune mesure ne comptent pas comme des coupures.',
     window: {
       '86400': '24 h',
       '604800': '7 jours',
@@ -523,6 +536,9 @@ export const fr = {
     },
     noData: 'Pas encore de données',
     monitored: 'surveillé {pct} % du temps',
+    viaHost: 'dont {pct} % d’après l’hébergeur',
+    viaHostHint:
+      'Minutes mesurées par l’hébergeur pendant que rien ne surveillait : elles prouvent que le serveur tournait, jamais une coupure.',
     outages: 'Coupures (30 jours)',
     noOutage: 'Aucune coupure sur la période surveillée.',
     ongoing: 'en cours',

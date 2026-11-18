@@ -763,7 +763,10 @@
       "players": "int",
       "date": "str"
      }
-    ]
+    ],
+    "retention_days": "int",
+    "data_available_from": "str",
+    "date_start_clamped": "bool"
    }
   },
   "GET /server/{x}/websocket": {
