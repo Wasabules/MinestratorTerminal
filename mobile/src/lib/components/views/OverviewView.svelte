@@ -2,6 +2,8 @@
   import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
   import Icon from "../Icon.svelte";
+  import MetricsCard from "../MetricsCard.svelte";
+  import { alerts } from "../../stores/alerts.svelte";
   import type {
     ConsoleStats,
     LiveLight,
@@ -221,6 +223,21 @@
   const diskUsed = $derived(stats?.disk_bytes ?? 0);
   const diskLimit = $derived((live?.disk.limit ?? 0) * 1024 ** 2);
 
+  /** Dernières alertes du superviseur pour ce serveur (journal local, cf. écran Alertes). */
+  const serverAlerts = $derived(alerts.forServer(serverId).slice(0, 3));
+
+  function alertColor(severity: string): string {
+    if (severity === "critical") return "var(--state-danger)";
+    return severity === "info" ? "var(--state-running)" : "var(--state-pending)";
+  }
+
+  /** Secondes Unix → `12/08 23:29` (même forme que le journal d'activité). */
+  function alertDate(ts: number): string {
+    const d = new Date(ts * 1000);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  }
+
   const gauges = $derived([
     { key: "overview.cpu", pct: clamp((cpuVal / cpuLimit) * 100), value: `${cpuVal.toFixed(0)}%` },
     {
@@ -359,6 +376,28 @@
         {/each}
       </div>
     </div>
+  {/if}
+
+  <MetricsCard {serverId} {active} {cpuLimit} {diskLimit} />
+
+  {#if serverAlerts.length > 0}
+    <section class="acts">
+      <h3>{t("alerts.recent")}</h3>
+      <ul>
+        {#each serverAlerts as a (a.id)}
+          <li class="act">
+            <span class="a-dot" style="background:{alertColor(a.severity)}"></span>
+            <span class="a-body">
+              <span class="a-top">
+                <strong>{t(`alerts.kind.${a.kind}`) !== `alerts.kind.${a.kind}` ? t(`alerts.kind.${a.kind}`) : a.kind}</strong>
+                <span class="a-date dim">{alertDate(a.ts)}</span>
+              </span>
+              <span class="a-msg selectable">{a.message}</span>
+            </span>
+          </li>
+        {/each}
+      </ul>
+    </section>
   {/if}
 
   {#if live?.motd}
@@ -594,6 +633,21 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .a-dot {
+    width: 9px;
+    height: 9px;
+    margin: 0 10px 0 11px;
+    border-radius: 50%;
+    flex: none;
+    align-self: flex-start;
+    margin-top: 6px;
+  }
+  .a-msg {
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
   }
   .a-ko {
     flex: none;
