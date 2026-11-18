@@ -28,6 +28,11 @@ use tokio::sync::broadcast::error::RecvError;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Fournisseur crypto de rustls AVANT tout client HTTP : reqwest est compilé sans fournisseur
+    // par défaut (`rustls-no-provider`, unifié pour tout le binaire) et panique s'il n'y en a pas.
+    // En dev, Tauri mobile relaie le serveur de dev avec son propre client reqwest, construit
+    // avant `setup` : sans cette ligne, l'app plantait au démarrage.
+    minestrator_core::http::ensure_default_provider();
     // Journaux : initialisés dans `setup`, une fois le dossier privé de l'app connu (le fichier
     // y est écrit). Ce qui précède `setup` n'est que l'enregistrement des plugins.
     tauri::Builder::default()

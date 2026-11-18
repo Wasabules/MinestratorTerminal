@@ -34,7 +34,12 @@ pub fn ensure_default_provider() {
 }
 
 /// `ClientBuilder` au TLS configuré, à compléter (timeouts, user-agent…).
+///
+/// Installe d'abord le fournisseur crypto par défaut : avec `rustls-no-provider`, reqwest en exige
+/// un au moment de `build()`, même avec une configuration préconstruite, et panique sinon. Sur
+/// mobile, un client peut être construit avant `Core::new` (l'app plantait au démarrage).
 pub fn builder() -> reqwest::ClientBuilder {
+    ensure_default_provider();
     reqwest::Client::builder().tls_backend_preconfigured(TLS.clone())
 }
 
