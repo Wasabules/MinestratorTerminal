@@ -170,7 +170,21 @@ Regroupés par domaine (liste réelle des fichiers).
   garde le SFTP fin + les outils exclusifs (`inspect_region`, Spark, docteur démarrage).
 
 ### 3.5 Sécurité & confidentialité
-- **`secrets`** — stockage sécurisé natif : clé API, clés LLM par fournisseur (`llm-key-<slug>`),
+- **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app
+  seulement ; le service reste à clé unique). Clé du compte **actif** sous `api-key` (ce que lisent
+  le MCP headless, les agents CLI, le superviseur et l'activation du service), clés des comptes
+  **inactifs** sous `api-key-<idUtilisateur>`, liste non secrète (id, pseudo, date d'ajout, compte
+  actif) dans `accounts.json`, constituée d'elle-même au premier lancement (`Core::session_user`).
+  L'échange de clés n'a **aucune fenêtre de perte** : copie vérifiée de la clé active à l'écart,
+  installation de la cible (rétablissement en cas d'échec), ménage en dernier ; une interruption
+  laisse au pire un doublon, résorbé à la résolution suivante du profil (la clé active fait foi).
+  Une bascule ferme consoles et sessions SFTP, vide les caches (token, id utilisateur, TTL) et les
+  conversations de l'assistant, redécide qui supervise (`service_tick`), réveille le superviseur et
+  émet `CoreEvent::AccountSwitched`. L'index `sftp_passwords.json` rattache chaque serveur à son
+  compte (l'ancien format, liste d'ids, est rattaché au compte actif) : retirer un compte n'efface
+  que ses mots de passe. Testé sur le backend fichier d'un dossier temporaire, pannes injectées.
+- **`secrets`** — stockage sécurisé natif : clés API (compte actif `api-key`, comptes inactifs
+  `api-key-<id>`), clés LLM par fournisseur (`llm-key-<slug>`),
   secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`). Trousseau de l'OS
   (`keyring`) sur desktop ; **Keystore Android** (`android-native-keyring-store` : AES-GCM, clé non
   exportable) sur Android, avec migration puis suppression de l'ancien `secrets.json` en clair.
@@ -281,7 +295,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 
 | Domaine | Commandes (extraits) |
 |---|---|
-| **Auth** | `validate_and_store_key`, `has_stored_key`, `get_user`, `logout` |
+| **Auth & comptes** | `validate_and_store_key` (connexion : la clé devient celle du compte actif), `has_stored_key`, `get_user` (profil + mise en cohérence de la liste des comptes), `logout` (retire le compte actif, renvoie celui qui prend la relève), `accounts_list`, `account_add`, `account_switch`, `account_remove` |
 | **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
@@ -317,6 +331,7 @@ observer le même serveur indépendamment.
 | `chat://delta` | `{ id = session_id, text }` | streaming des réponses assistant |
 | `sftp://progress` | `{ id = transferId, name, direction, done, total, status, error }` | gestionnaire de transferts |
 | `mods://install-progress` | `ModInstallProgress` (`{ id, phase, mod_name, done, total, status, error }`) | suivi d'une installation de mods par lot |
+| `account://switched` | `AccountSwitch` (`{ previous, current }`, `current = null` : plus aucun compte) | toutes les fenêtres ferment les onglets serveurs et se rechargent sur le nouveau compte |
 
 *(`CoreEvent::ConsoleLog` est interne — déclencheur Copilote — et n'est pas relayé au webview.)*
 
@@ -369,7 +384,13 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   trousseau OS. `readDetachSpec` (dans `+page.svelte`) rouvre l'onglet demandé ; `isPointerOutsideWindow`
   détecte le glisser-hors-fenêtre depuis la `TabBar`.
 - **Garde d'auth** — `routes/+layout.svelte` : au boot, `has_stored_key` puis `get_user` valident la clé ;
-  un `$effect` redirige entre `/onboarding` et `/`. `logout` efface la clé et ramène à l'onboarding.
+  un `$effect` redirige entre `/onboarding` et `/`. `logout` retire le compte actif : l'app bascule
+  sur un autre compte enregistré, ou revient à l'onboarding (qui propose aussi les comptes restants).
+- **Comptes** — `stores/accounts.svelte.ts` (`applyAccountSwitch`, idempotent : appelé par l'action
+  et par l'event `account://switched`) ferme les onglets serveurs et recharge le profil ;
+  `+page.svelte` remonte le workspace par `{#key}` sur l'id du compte, donc toutes les listes se
+  rechargent. Sélecteur dans `UserMenu`, `AddAccountDialog`, Réglages → Comptes
+  (`settings/AccountsSection.svelte`, section mémorisée par `stores/settingsNav.svelte.ts`).
 - **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique), `ConsoleView`
   (xterm + envoi de commandes), `SftpView` (+ `FileEditor` CodeMirror, archives, NBT, `.mca`), `PlayersView`,
   `MarketplaceView` (mods/plugins), `AssistantView` (chat Copilote streamé), `BackupsView`

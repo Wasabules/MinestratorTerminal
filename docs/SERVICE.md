@@ -105,6 +105,12 @@ La clé ne passe **jamais** par une ligne de commande (visible dans la liste des
 un fichier temporaire. `clear_key` (bouton « Désactiver ») la fait oublier ; `uninstall` efface
 toujours `secrets.json`.
 
+**Plusieurs comptes dans l'app.** La clé transmise est celle du compte **actif** au moment de
+l'activation. Le service reste à **clé unique** (`Core::authenticate_and_store` remplace, jamais
+il ne garde d'autre clé) et **garde ce compte** quand l'app change de compte ou retire ce compte
+de sa liste : il a sa propre copie. Pour lui faire surveiller un autre compte, on bascule l'app sur
+ce compte puis « Surveiller le compte actif » (nouveau `set_key`).
+
 ### Attentes vis-à-vis de `secrets/file_store.rs`
 
 Le service s'appuie sur le comportement durci annoncé pour le backend fichier :
@@ -168,6 +174,13 @@ Dans le doute, l'app garde son superviseur : mieux vaut une alerte en double qu'
 signalée. Le premier tour est fait **avant** de démarrer le superviseur local, pour qu'il n'ouvre
 pas ses connexions monitor pour rien. La mise en veille ferme les connexions monitor ; la sortie
 de veille les rouvre aussitôt.
+
+**Changement de compte dans l'app** (`core/src/accounts.rs`) : la décision est refaite aussitôt,
+avec le nouveau compte, **avant** de réveiller le superviseur local. Si le service surveille un
+autre compte que le nouveau compte actif, le superviseur local sort de veille et supervise le
+compte actif (le service continue de son côté) ; si l'app revient sur le compte du service, le
+superviseur local se remet en veille. Les alertes du service ne sont relayées que tant qu'il
+surveille le compte actif.
 
 Quand le service supervise :
 - **historique** : `metrics_history` fusionne l'historique local et celui du service ;
@@ -320,9 +333,11 @@ déplacer), écrit `/Library/LaunchDaemons/com.geoffreylecoq.minestratorterminal
 ## 5. UI — Réglages › Service d'arrière-plan
 
 `desktop/src/lib/components/settings/ServiceSection.svelte` (i18n : espace de noms `service.*`,
-fr + en). Affiche l'état du service, qui supervise, le compte surveillé, l'activité (serveurs
-surveillés, dernier relevé), la version, le dossier de données, le push FCM. Actions selon les
-droits :
+fr + en). Affiche l'état du service, qui supervise, le compte surveillé (en précisant s'il s'agit
+du compte actif de l'app ou d'un autre — `same_account`), l'activité (serveurs surveillés, dernier
+relevé), la version, le dossier de données, le push FCM. Réglages → Comptes signale aussi le compte
+surveillé par le service. Quand le service surveille un autre compte, « Activer » devient
+« Surveiller le compte actif ». Actions selon les droits :
 
 | Action | Droits | Effet |
 |---|---|---|

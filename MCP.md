@@ -32,6 +32,10 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
 ## 3. Authentification & données
 
 - **Auth** : clé API lue dans le trousseau OS (`service=MinestratorTerminal`). Aucune clé en clair.
+  Avec plusieurs comptes enregistrés dans l'app, c'est toujours la clé du **compte actif**
+  (entrée `api-key`) : le MCP agit sur ce compte-là. Un processus MCP déjà lancé garde en mémoire
+  la clé lue à son démarrage — après un changement de compte dans l'app, relancer le client MCP
+  (les agents CLI du Copilote, eux, sont relancés automatiquement).
 - **Historique** : partage la base SQLite de métriques de l'app (mode WAL) → lecture concurrente sûre.
 - **Anonymisation** : les sorties potentiellement sensibles (`read_file`, `read_console`,
   `analyze_performance`, `inspect_region`…) passent par le filtre de rédaction avant de partir vers
