@@ -14,6 +14,7 @@
   import NotificationsView from "#lib/components/NotificationsView.svelte";
   import AlertsView from "#lib/components/AlertsView.svelte";
   import UpdateBanner from "#lib/components/UpdateBanner.svelte";
+  import Logo from "#lib/components/Logo.svelte";
   import type { MyBoxSummary, ServerListItem } from "#lib/types.ts";
 
   let selected = $state<{ server: ServerListItem; box: MyBoxSummary | null } | null>(null);
@@ -144,7 +145,7 @@
 {/if}
 
 {#if !auth.booted}
-  <div class="splash"><div class="logo"></div></div>
+  <div class="splash"><div class="logo"><Logo size={46} /></div></div>
 {:else if !auth.isAuthed}
   <Onboarding />
 {:else if showSettings}
@@ -188,9 +189,12 @@
     transform: translateX(-50%);
     padding: 3px 10px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--brand-tertiary) 85%, black);
-    color: #fff;
-    font-size: 10px;
+    /* Violet « veille » de l'End, identique dans les deux thèmes (encre sombre : 8:1). */
+    background: #c79bff;
+    color: #1e0b3a;
+    font-size: 10.5px;
+    font-weight: 800;
+    letter-spacing: 0.03em;
     pointer-events: none;
     opacity: 0.85;
   }
@@ -200,10 +204,13 @@
     display: grid;
     place-items: center;
   }
+  /* Tuile du logo : toujours sombre (DESIGN.md). */
   .logo {
     width: 76px;
     height: 76px;
-    border-radius: 22px;
-    background: var(--brand-gradient);
+    display: grid;
+    place-items: center;
+    border-radius: 20px;
+    background: #0d1113;
   }
 </style>
