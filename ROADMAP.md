@@ -32,7 +32,9 @@
   transferts reprenables, recherche.
 - **Paramètres `server.properties`** via l'API, valeurs secrètes masquées.
 - **Snapshots et backups**, journal d'activité, notifications de l'hébergeur.
-- **Joueurs** — kick, ban, op, whitelist.
+- **Joueurs** — kick, ban, op, whitelist ; tous les joueurs déjà venus (Minecraft Java) avec temps
+  de jeu, dernière venue, recherche et tri, fiche (activité, état, combats) et inventaire en
+  lecture ; statistiques (actifs 24 h / 7 j / 30 j, plus gros temps de jeu).
 - **Marketplaces** — Modrinth / CurseForge / Spigot, mods Satisfactory (ficsit), Factorio,
   Thunderstore, uMod.
 - **Adaptation par jeu** — vues, outils et commandes selon le jeu détecté.
@@ -97,7 +99,8 @@
   (« si CPU > 90 % pendant 5 min → redémarrage + notification »).
 - **Macros de commandes** — séquences enregistrées, un clic = N commandes.
 - **Actions groupées multi-serveurs** — tout redémarrer, diffuser un message partout.
-- **Statistiques joueurs** — temps de jeu, première et dernière connexion, pics.
+- **Statistiques joueurs** — reste : temps de jeu **par période** (l'API ne donne que le cumul :
+  il faudrait des relevés locaux datés) et pics de fréquentation.
 - **Synchronisation SFTP local ↔ distant** — surveillance de dossier et diff (développement de
   plugins).
 - **Console unifiée multi-serveurs** — vue « tour de contrôle » et recherche globale des logs.

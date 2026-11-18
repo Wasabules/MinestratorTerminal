@@ -255,17 +255,17 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 |---|---|---|---|---|
 | PUT | `/server/{id_server}/command` | ✓ | écriture, non testé |  |
 | PUT | `/server/{id_server}/command/minecraft/ban` | ✓ | écriture, non testé |  |
-| PUT | `/server/{id_server}/command/minecraft/inventory` | — | écriture, non testé |  |
+| PUT | `/server/{id_server}/command/minecraft/inventory` | — | écriture, non testé | Édition d'un joueur **connecté** : `{ player, slot (hotbar.N, inventory.N, armor.head…, weapon.offhand), item, count, namespaced?, enchantments?, syntax? }` ; le panel confirme en relisant la console. Non repris par l'app. |
 | PUT | `/server/{id_server}/command/minecraft/kick` | ✓ | écriture, non testé |  |
 | PUT | `/server/{id_server}/command/minecraft/op/add` | ✓ | écriture, non testé |  |
 | PUT | `/server/{id_server}/command/minecraft/op/remove` | ✓ | écriture, non testé |  |
 | PUT | `/server/{id_server}/command/minecraft/unban` | ✓ | écriture, non testé |  |
 | PUT | `/server/{id_server}/command/minecraft/whitelist/add` | ✓ | écriture, non testé |  |
 | PUT | `/server/{id_server}/command/minecraft/whitelist/remove` | ✓ | écriture, non testé |  |
-| GET | `/server/{id_server}/players/offline` | — | ✓ GET |  |
-| GET | `/server/{id_server}/players/{id}/inventory` | — | non testé |  |
-| PUT | `/server/{id_server}/players/{id}/inventory/slots` | — | écriture, non testé |  |
-| GET | `/server/{id_server}/players/{id}/profile` | — | non testé |  |
+| GET | `/server/{id_server}/players/offline` | — | ✓ GET | Joueurs déjà venus (dossier `playerdata` du monde). `?limit` (200 au plus) `&offset` `&search` (sous-chaîne du pseudo : `total` = correspondances, `total_all` = tous). **Toujours trié par dernière sauvegarde décroissante** (aucun paramètre de tri). `play_time` en ticks (20 par seconde), `mtime` en secondes Unix. Utilisé par l'app (`players.rs`). |
+| GET | `/server/{id_server}/players/{id}/inventory` | — | ✓ GET | Inventaire lu dans le fichier du joueur : `inventory` (emplacements `0`-`8` barre d'action, `9`-`35` sac), `equipment` (`head`, `chest`, `legs`, `feet`, `offhand`), objets `{ id, count, components }` ; `online.is_online` (le fichier peut dater de la dernière sauvegarde). Utilisé par l'app, en lecture seule. |
+| PUT | `/server/{id_server}/players/{id}/inventory/slots` | — | écriture, non testé | Édition d'un joueur **hors ligne** : `{ sha256 (celui de la lecture), ops: [{ slot: hotbar.N, inventory.N, armor.head…, weapon.offhand ; item ; count ; enchantments? }] }`, conflit si le fichier a changé. Non repris par l'app. |
+| GET | `/server/{id_server}/players/{id}/profile` | — | ✓ GET | Fiche d'un joueur (`{id}` = UUID) : `times` (première venue, dernière connexion, dernière venue), `state` (`game_mode` 0-3, vie, faim, niveau), `stats` (`play_time` en ticks, sessions, morts, éliminations ; `null` si jamais incrémentées ; `distances` en cm par mode). Erreurs `API_PLAYERDATA_*`. Utilisé par l'app. |
 | PUT | `/server/{id_server}/poweraction` | ✓ | écriture, non testé |  |
 | PATCH | `/server/{id_server}/poweraction/messages` | ✓ | écriture, non testé |  |
 
@@ -951,6 +951,64 @@ online.available : bool
 online.names[] : tableau (vide lors du relevé)
 online.uuids[] : tableau (vide lors du relevé)
 online.count : int
+```
+
+</details>
+
+<details><summary><code>GET /server/{id_server}/players/{id}/inventory</code></summary>
+
+```
+uuid : str
+data_version : int
+mtime : int
+sha256 : str
+roundtrip_ok : bool
+format.stack : str
+format.equipment : str
+inventory.0.id : str
+inventory.0.count : int
+inventory.0.components.minecraft:custom_name : obj
+inventory.0.components.minecraft:custom_data : obj
+equipment.head.id : str
+equipment.head.count : int
+online.is_online : bool
+online.players_online : int
+online.query_available : bool
+online.uuids_available : bool
+```
+
+</details>
+
+<details><summary><code>GET /server/{id_server}/players/{id}/profile</code></summary>
+
+```
+uuid : str
+name : str
+data_version : int
+mtime : int
+flags.op : bool
+flags.whitelisted : bool
+flags.banned : bool
+state.game_mode : int
+state.health : int
+state.max_health : null
+state.food_level : int
+state.xp_level : int
+state.xp_progress : int
+state.xp_total : int
+stats.play_time : int
+stats.sessions : int
+stats.deaths : null
+stats.mob_kills : null
+stats.player_kills : null
+stats.distances.walk_one_cm : int
+stats.distances.sprint_one_cm : int
+stats.distances.fall_one_cm : int
+stats.distances.fly_one_cm : int
+times.first_played : int
+times.last_login : int
+times.last_played : int
+times.last_seen : int
 ```
 
 </details>

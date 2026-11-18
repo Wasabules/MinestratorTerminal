@@ -4,6 +4,7 @@
 
 use minestrator_core::{
     PanelSchedule, PanelScheduleInput,
+    PlayerInventory, PlayerProfile, PlayersPage, PlayersQuery,
     Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
     LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
     ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
@@ -268,6 +269,40 @@ pub async fn player_action(
     player: String,
 ) -> Result<(), Error> {
     core.player_action(id, &action, &player).await
+}
+
+// --- Joueurs déjà venus (Minecraft Java) -----------------------------------
+
+/// Joueurs déjà venus : recherche, filtre, tri, pagination et statistiques (liste complète gardée
+/// une minute par le cœur ; `refresh` la relit).
+#[tauri::command]
+pub async fn known_players(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    query: PlayersQuery,
+    refresh: bool,
+) -> Result<PlayersPage, Error> {
+    core.known_players(server_id, query, refresh).await
+}
+
+/// Fiche d'un joueur (statistiques, état, dates de venue).
+#[tauri::command]
+pub async fn player_profile(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    uuid: String,
+) -> Result<PlayerProfile, Error> {
+    core.player_profile(server_id, &uuid).await
+}
+
+/// Inventaire d'un joueur, en lecture seule.
+#[tauri::command]
+pub async fn player_inventory(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    uuid: String,
+) -> Result<PlayerInventory, Error> {
+    core.player_inventory(server_id, &uuid).await
 }
 
 // --- Console WebSocket ----------------------------------------------------

@@ -59,6 +59,17 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
     ("/server/{id}/plugins", &["api.data.plugins"]),
     ("/server/{id}/mods", &["api.data.mods"]),
     ("/server/{id}/datapacks", &["api.data.level_name", "api.data.datapacks"]),
+    // Non documenté (panel web) : joueurs déjà venus, fiche et inventaire (`players.rs`). Les
+    // champs par joueur sont vérifiés à part (un serveur sans joueur n'a pas de `players[0]`).
+    (
+        "/server/{id}/players/offline",
+        &["api.data.total_all", "api.data.players", "api.data.online.available"],
+    ),
+    (
+        "/server/{id}/players/{uuid}/profile",
+        &["api.data.stats", "api.data.times", "api.data.state", "api.data.flags"],
+    ),
+    ("/server/{id}/players/{uuid}/inventory", &["api.data.inventory", "api.data.equipment"]),
     // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
     (
         "/server/{id}/sftp",
@@ -229,6 +240,44 @@ async fn raw_checks(
     }
 }
 
+/// Joueurs déjà venus (Minecraft Java) : liste, puis fiche et inventaire du plus récent. Seuls les
+/// gabarits d'endpoints apparaissent dans le rapport, jamais un UUID ou un pseudo.
+async fn player_checks(report: &mut Report, core: &Core, http: &reqwest::Client, key: &str, id: i64, n: usize) {
+    use minestrator_core::{PlayerFilter, PlayerSort, PlayersQuery};
+    let tag = format!(" (serveur {n})");
+    let label = |what: &str| format!("{what}{tag}");
+    let offline = format!("/server/{id}/players/offline?limit=1");
+    raw_checks(report, http, key, "/server/{id}/players/offline", &offline, &tag).await;
+    let query = PlayersQuery {
+        search: String::new(),
+        sort: PlayerSort::LastSeen,
+        filter: PlayerFilter::All,
+        offset: 0,
+        limit: 1,
+    };
+    let Some(page) = report.call(&label("GET /server/{id}/players/offline"), core.known_players(id, query, true)).await
+    else {
+        return;
+    };
+    let Some(player) = page.players.first() else { return };
+    // Lus avec tolérance : leur disparition viderait les colonnes « temps de jeu » et « dernière venue ».
+    report.check(
+        label("/server/{id}/players/offline → players[].mtime, players[].play_time"),
+        if player.last_seen.is_some() && player.play_time_secs.is_some() {
+            Ok(())
+        } else {
+            Err("champ absent".into())
+        },
+    );
+    let uuid = player.uuid.clone();
+    report.call(&label("GET /server/{id}/players/{uuid}/profile"), core.player_profile(id, &uuid)).await;
+    let path = format!("/server/{id}/players/{uuid}/profile");
+    raw_checks(report, http, key, "/server/{id}/players/{uuid}/profile", &path, &tag).await;
+    report.call(&label("GET /server/{id}/players/{uuid}/inventory"), core.player_inventory(id, &uuid)).await;
+    let path = format!("/server/{id}/players/{uuid}/inventory");
+    raw_checks(report, http, key, "/server/{id}/players/{uuid}/inventory", &path, &tag).await;
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     let key = match std::env::var("MINESTRATOR_API_KEY") {
@@ -320,6 +369,9 @@ async fn main() {
                         &tag,
                     )
                     .await;
+                    if server.capabilities.player_data {
+                        player_checks(&mut report, &core, &http, &key, server.id, n).await;
+                    }
                     report.call(&label("GET /server/{id}/live"), core.server_live(server.id)).await;
                     report.call(&label("GET /server/{id}/activity"), core.server_activity(server.id, 5, 0)).await;
                     report.call(&label("GET /server/{id}/backups"), core.list_backups(server.id)).await;

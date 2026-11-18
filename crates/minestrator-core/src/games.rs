@@ -20,6 +20,10 @@ pub struct GameCapabilities {
     pub log_format: String,
     /// Vue Joueurs + carte joueurs de l'Aperçu + commandes joueur de la console.
     pub players: bool,
+    /// Joueurs déjà venus (liste, temps de jeu, fiche, inventaire), lus par l'hébergeur dans le
+    /// dossier `playerdata/` du monde : Minecraft **Java** seulement (Bedrock range ses joueurs
+    /// dans la base du monde, que l'hébergeur ne lit pas).
+    pub player_data: bool,
     /// Marketplace de mods : `"minecraft"` (Modrinth/CF/Spigot via MineStrator) | `"ficsit"` | `"none"`.
     pub mods: String,
     /// Sauvegardes/snapshots (true partout aujourd'hui ; champ prévu pour le futur).
@@ -71,6 +75,7 @@ fn caps(
         console_autocomplete: console_autocomplete.into(),
         log_format: log_format.into(),
         players,
+        player_data: players && console_autocomplete == "minecraft_java",
         mods: mods.into(),
         backups: true,
         properties: family == "minecraft",
@@ -247,5 +252,17 @@ mod tests {
         assert_eq!(c.family, "minecraft");
         // Sans id du tout (ancienne réponse d'API), comportement historique inchangé.
         assert_eq!(capabilities_for_egg(None, "Satisfactory", false).mods, "ficsit");
+    }
+
+    #[test]
+    fn player_data_is_java_only() {
+        assert!(capabilities_for("Paper 1.21", false).player_data);
+        assert!(capabilities_for_egg(Some(EGG_MINECRAFT_JAVA), "", false).player_data);
+        // Bedrock a des joueurs, mais pas de `playerdata/` lisible par l'hébergeur.
+        assert!(capabilities_for("Nukkit", true).players);
+        assert!(!capabilities_for("Nukkit", true).player_data);
+        assert!(!capabilities_for_egg(Some(EGG_MINECRAFT_BEDROCK), "", true).player_data);
+        assert!(!capabilities_for("Satisfactory", false).player_data);
+        assert!(!capabilities_for("Palworld", false).player_data);
     }
 }

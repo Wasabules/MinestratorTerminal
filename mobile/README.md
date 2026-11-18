@@ -99,7 +99,8 @@ Puis dans **Settings → Secrets and variables → Actions**, créer :
 Slice de départ livré : **onboarding (clé API) → liste serveurs → Overview (jauges + power) →
 Console live**. À étoffer ensuite :
 
-- ✅ **Joueurs** : liste en ligne + actions kick/ban/op et par pseudo (`api.playerAction`).
+- ✅ **Joueurs** : liste en ligne + actions kick/ban/op et par pseudo (`api.playerAction`) ; joueurs
+  déjà venus (Minecraft Java : recherche, tri, temps de jeu) et fiche en lecture avec l'inventaire.
 - ✅ **Secrets Android** : **Keystore Android** (`android-native-keyring-store`) — valeurs chiffrées
   AES-GCM par une clé non exportable du Keystore, dans des `SharedPreferences` privées. Clé API,
   clés LLM et mots de passe SFTP par serveur y vivent ; l'ancien `secrets.json` en clair (≤ 0.6.0)

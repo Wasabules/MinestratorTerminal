@@ -117,6 +117,7 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "read_properties",
     "mybox_info",
     "list_schedules",
+    "list_players",
     "list_installed_mods",
     "list_installed_plugins",
     // Vérification des mises à jour : pure comparaison côté hébergeur, rien n'est installé.
@@ -169,6 +170,7 @@ pub(crate) fn is_write_tool(name: &str) -> bool {
 /// l'IA d'un serveur d'un autre jeu.
 pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "player_action",
+    "list_players",
     "market_search",
     "list_mod_versions",
     "install_mod",
@@ -231,6 +233,8 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     // Mises à jour des mods/plugins/datapacks, avec le garde-fou local : hors catalogue de l'officiel.
     "check_updates",
     "update_mods",
+    // Joueurs déjà venus, temps de jeu, dernière venue (endpoint non documenté) : hors officiel.
+    "list_players",
     // Mods Satisfactory (ficsit.app) : hors catalogue de l'officiel.
     "ficsit_search",
     "ficsit_versions",
@@ -424,6 +428,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "list_files" | "read_file" | "read_startup" | "read_properties" | "search_files" => 15,
         "mybox_info" => 30,
         "list_schedules" => 15,
+        // Liste des joueurs : déjà gardée une minute par le cœur (purgée par une action joueur).
+        "list_players" => 30,
         "list_servers" => 10,
         "server_status" => 5,
         // Volontairement absents : server_metrics (local, déjà rapide), read_console (live),
@@ -489,6 +495,26 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             let id = req_i64(&args, "server_id")?;
             // Les commandes planifiées sont du texte libre : même filtre que la console.
             json_pretty(&core.panel_schedules(id).await.map_err(es)?).map(|s| core.redact_ai(&s))
+        }
+
+        "list_players" => {
+            let id = req_i64(&args, "server_id")?;
+            let sort = match opt_str(&args, "sort", "play_time").as_str() {
+                "last_seen" => crate::PlayerSort::LastSeen,
+                "name" => crate::PlayerSort::Name,
+                _ => crate::PlayerSort::PlayTime,
+            };
+            let query = crate::players::AiQuery {
+                sort,
+                search: opt_str(&args, "search", ""),
+                active_days: opt_i64(&args, "active_days", 0).clamp(0, 3650),
+                limit: opt_i64(&args, "limit", 25).clamp(1, 100) as usize,
+            };
+            let roster = core.player_roster(id, false).await.map_err(es)?;
+            // Pseudos remplacés par un alias stable si l'anonymisation IA est active.
+            let anonymize = core.get_privacy_config().redact_ai;
+            let report = crate::players::ai_report(&roster, &query, crate::store::now_secs(), anonymize);
+            json_pretty(&report).map(|s| core.redact_ai(&s))
         }
 
         "server_metrics" => {
@@ -872,6 +898,7 @@ fn build_tool_list() -> Value {
         tool("list_servers", "Liste tous les serveurs : id, nom, statut, adresse, MyBox. À appeler en premier pour obtenir les `server_id`.", obj(&[], &[])),
         tool("server_status", "État temps réel d'un serveur : état, consommation instantanée (CPU en centièmes de cœur dont FlexCore/`is_bursting`, RAM et disque en Mo), réseau cumulé, uptime, joueurs, version, MOTD.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_schedules", "Tâches planifiées du panel MineStrator d'un serveur, exécutées par l'hébergeur même ordinateur éteint (à distinguer des automatisations de l'app) : nom, planification cron, active, seulement si en ligne, prochaine et dernière exécution, actions dans l'ordre (commande ou alimentation, délai en secondes).", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("list_players", "Joueurs Minecraft (Java) déjà venus sur un serveur, pas seulement les connectés : statistiques (joueurs uniques, connectés, actifs sur 24 h / 7 j / 30 j, temps de jeu total) puis liste triée avec temps de jeu CUMULÉ (heures), dernière venue, op/whitelist/banni. Pour « qui a le plus joué cette semaine » : sort=play_time et active_days=7 (le temps de jeu reste cumulé depuis la première venue). Pseudos remplacés par des alias stables si l'anonymisation IA est active.", obj(&[("server_id", prop_int("ID du serveur")), ("sort", prop_str("play_time (défaut) | last_seen | name")), ("active_days", prop_int("Seulement les joueurs venus dans les N derniers jours (0 = tous)")), ("search", prop_str("Filtre sur le pseudo (sous-chaîne)")), ("limit", prop_int("Joueurs listés (défaut 25, max 100)"))], &["server_id"])),
         tool("mybox_info", "Détail d'une MyBox (`mybox_id` via list_servers) : échéance, renouvellement automatique, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
         tool("server_metrics", "Historique de consommation (CPU/RAM/disque) + résumé (moyennes/max) — pour analyser la charge et optimiser.", obj(&[("server_id", prop_int("ID du serveur")), ("since_secs", prop_int("Fenêtre en secondes (défaut 3600, max 14 j)"))], &["server_id"])),
         tool("power_action", "Démarre/redémarre/arrête un serveur. `action` ∈ start|restart|restart10|stop|stop10|kill.", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start|restart|restart10|stop|stop10|kill"))], &["server_id", "action"])),

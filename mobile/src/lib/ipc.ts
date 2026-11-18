@@ -15,6 +15,8 @@ import {
   fakeRef,
   fakeText,
   fakeProperty,
+  fakeUuid,
+  realUuid,
 } from "./fake.svelte";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
@@ -30,6 +32,7 @@ import type {
   ContentUpdates,
   Egg,
   InstalledItem,
+  KnownPlayer,
   LiveLight,
   LivePlayers,
   MarketKind,
@@ -38,6 +41,10 @@ import type {
   MarketVersion,
   MetricSample,
   PlayerAction,
+  PlayerInventory,
+  PlayerProfile,
+  PlayersPage,
+  PlayersQuery,
   PowerAction,
   ServerDetails,
   ServerProperties,
@@ -74,6 +81,16 @@ function fakeProfile(u: UserProfile): UserProfile {
 /** Mode démo : compte enregistré (pseudo). */
 function fakeAccount(a: Account): Account {
   return { ...a, pseudo: fakePlayer(a.pseudo) };
+}
+
+/** Mode démo : joueur déjà venu (pseudo et UUID ; l'UUID affiché reste utilisable, cf. `realUuid`). */
+function fakeKnownPlayer(p: KnownPlayer): KnownPlayer {
+  return { ...p, uuid: fakeUuid(p.uuid), name: p.name ? fakePlayer(p.name) : p.name };
+}
+
+/** Mode démo : objet d'inventaire (un nom personnalisé peut contenir un pseudo, une adresse). */
+function fakeItem<T extends { name: string; custom_name: boolean } | null>(item: T): T {
+  return item && item.custom_name ? { ...item, name: fakeText(item.name) } : item;
 }
 
 export const api = {
@@ -219,6 +236,29 @@ export const api = {
   sendCommand: (id: number, command: string) => invoke<void>("send_command", { id, command }),
   playerAction: (id: number, action: PlayerAction, player: string) =>
     invoke<void>("player_action", { id, action, player }),
+  /** Joueurs déjà venus (Minecraft Java) : page triée/filtrée et statistiques (cache Rust d'une minute). */
+  knownPlayers: (serverId: number, query: PlayersQuery, refresh = false) =>
+    demo(invoke<PlayersPage>("known_players", { serverId, query, refresh }), (page) => ({
+      ...page,
+      players: page.players.map(fakeKnownPlayer),
+      stats: { ...page.stats, top_play_time: page.stats.top_play_time.map(fakeKnownPlayer) },
+    })),
+  /** Fiche d'un joueur. */
+  playerProfile: (serverId: number, uuid: string) =>
+    demo(invoke<PlayerProfile>("player_profile", { serverId, uuid: realUuid(uuid) }), (p) => ({
+      ...p,
+      uuid: fakeUuid(p.uuid),
+      name: p.name ? fakePlayer(p.name) : p.name,
+    })),
+  /** Inventaire d'un joueur, en lecture seule. */
+  playerInventory: (serverId: number, uuid: string) =>
+    demo(invoke<PlayerInventory>("player_inventory", { serverId, uuid: realUuid(uuid) }), (inv) => ({
+      ...inv,
+      hotbar: inv.hotbar.map(fakeItem),
+      main: inv.main.map(fakeItem),
+      armor: inv.armor.map(fakeItem),
+      offhand: fakeItem(inv.offhand),
+    })),
   consoleConnect: (connId: string, serverId: number) =>
     invoke<void>("console_connect", { connId, serverId }),
   consoleDisconnect: (connId: string) => invoke<void>("console_disconnect", { connId }),
