@@ -25,7 +25,7 @@ export type AppError = {
  * Discriminant d'une [`Error`], tel qu'il part dans le champ `kind` du JSON (type TypeScript
  * `AppErrorKind`). Un variant d'[`Error`] ajouté doit être rattaché ici via [`Error::error_kind`].
  */
-export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "sftp_password_required" | "service";
+export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "sftp_password_required" | "account_exists" | "account_not_found" | "service";
 
 // --- Compte, serveurs, journal (models.rs, games.rs) ---
 
@@ -1307,4 +1307,36 @@ export type SupervisorHeartbeat = {
    */
   monitored: number,
   suspended: boolean,
+};
+
+// --- Comptes MineStrator (accounts.rs) ---
+
+/**
+ * Compte MineStrator enregistré sur l'appareil (aucun secret : la clé reste dans le stockage
+ * sécurisé).
+ */
+export type Account = {
+  /**
+   * Identifiant utilisateur MineStrator.
+   */
+  id: number,
+  pseudo: string,
+  /**
+   * Date d'ajout sur l'appareil (secondes Unix).
+   */
+  added_at: number,
+  /**
+   * Compte actif (celui de l'app, du MCP et des agents du Copilote).
+   */
+  active: boolean,
+};
+
+/**
+ * Payload de l'event `account://switched` : le compte actif a changé (bascule, ajout depuis
+ * l'écran de connexion, retrait). L'UI ferme les onglets serveurs de l'ancien compte et
+ * recharge ses listes ; `current = null` ramène à l'écran de connexion.
+ */
+export type AccountSwitch = {
+  previous: number | null,
+  current: Account | null,
 };

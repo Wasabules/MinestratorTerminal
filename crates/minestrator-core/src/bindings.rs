@@ -288,6 +288,9 @@ pub fn core() -> Bindings {
         .add::<service::ServiceOverview>()
         .add::<service::ServiceStatus>()
         .add::<supervisor::SupervisorHeartbeat>()
+        .section("Comptes MineStrator (accounts.rs)")
+        .add::<Account>()
+        .add::<AccountSwitch>()
 }
 
 /// Racine du dépôt, d'après le dossier d'un crate du workspace (`env!("CARGO_MANIFEST_DIR")`),

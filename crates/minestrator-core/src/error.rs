@@ -43,6 +43,14 @@ pub enum Error {
     #[error("Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.")]
     SftpPasswordRequired,
 
+    /// La clé ajoutée appartient à un compte MineStrator déjà enregistré sur cet appareil.
+    #[error("Ce compte MineStrator est déjà enregistré sur cet appareil.")]
+    AccountExists,
+
+    /// Compte inconnu de la liste, ou dont la clé n'est plus dans le stockage sécurisé.
+    #[error("Compte introuvable : sa clé n'est plus enregistrée sur cet appareil.")]
+    AccountNotFound,
+
     /// Service d'arrière-plan (IPC, installation, élévation). `code` est un identifiant stable
     /// (`unreachable`, `forbidden`, `elevation_cancelled`…) que l'UI traduit via `service.errors.*`.
     #[error("Service d'arrière-plan ({code}) : {detail}")]
@@ -75,6 +83,8 @@ pub enum ErrorKind {
     Api,
     SftpAuth,
     SftpPasswordRequired,
+    AccountExists,
+    AccountNotFound,
     /// Service d'arrière-plan : le sous-cas est dans `code` (cf. [`ErrorPayload::code`]).
     Service,
 }
@@ -93,6 +103,8 @@ impl ErrorKind {
             ErrorKind::Api => "api",
             ErrorKind::SftpAuth => "sftp_auth",
             ErrorKind::SftpPasswordRequired => "sftp_password_required",
+            ErrorKind::AccountExists => "account_exists",
+            ErrorKind::AccountNotFound => "account_not_found",
             ErrorKind::Service => "service",
         }
     }
@@ -127,6 +139,8 @@ impl Error {
             Error::Api { .. } => ErrorKind::Api,
             Error::SftpAuth => ErrorKind::SftpAuth,
             Error::SftpPasswordRequired => ErrorKind::SftpPasswordRequired,
+            Error::AccountExists => ErrorKind::AccountExists,
+            Error::AccountNotFound => ErrorKind::AccountNotFound,
             Error::Service { .. } => ErrorKind::Service,
         }
     }
@@ -200,6 +214,16 @@ mod tests {
                 Error::SftpPasswordRequired,
                 "sftp_password_required",
                 "Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.",
+            ),
+            (
+                Error::AccountExists,
+                "account_exists",
+                "Ce compte MineStrator est déjà enregistré sur cet appareil.",
+            ),
+            (
+                Error::AccountNotFound,
+                "account_not_found",
+                "Compte introuvable : sa clé n'est plus enregistrée sur cet appareil.",
             ),
         ]
     }

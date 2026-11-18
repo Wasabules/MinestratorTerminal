@@ -21,7 +21,13 @@ pub const USER_AGENT: &str = concat!("MinestratorCore/", env!("CARGO_PKG_VERSION
 /// Service sous lequel tous les secrets sont rangés dans le stockage sécurisé de l'OS
 /// (trousseau desktop, Keystore Android). Les comptes ci-dessous en sont les entrées.
 pub const KEYRING_SERVICE: &str = "MinestratorTerminal";
+/// Clé API du compte MineStrator **actif**. Le serveur MCP headless, les agents CLI du Copilote,
+/// le superviseur et l'activation du service d'arrière-plan la lisent ici, sans rien savoir des
+/// autres comptes enregistrés.
 pub const KEYRING_ACCOUNT: &str = "api-key";
+/// Préfixe de compte trousseau pour la clé API d'un compte MineStrator **inactif**
+/// (`api-key-<idUtilisateur>`) : mise de côté au changement de compte, reprise au retour.
+pub const KEYRING_ACCOUNT_KEY_PREFIX: &str = "api-key-";
 /// Préfixe de compte trousseau pour les clés LLM du Copilote (une par fournisseur :
 /// `llm-key-anthropic`, `llm-key-openai`, …). Permet de changer de fournisseur sans perdre les clés.
 pub const KEYRING_ACCOUNT_LLM_PREFIX: &str = "llm-key-";
