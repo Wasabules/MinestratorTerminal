@@ -56,6 +56,12 @@ mod uptime;
 mod util;
 mod webhook;
 mod world;
+// Contenu, monde et audit : outils MCP check_plugin_deps, world_info (world.rs) et audit_server.
+mod findings;
+mod jar_meta;
+mod plugin_deps;
+mod server_audit;
+mod yaml_lite;
 
 pub use accounts::{Account, AccountSwitch};
 pub use archive::ArchiveEntry;

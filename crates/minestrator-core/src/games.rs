@@ -36,6 +36,19 @@ pub struct GameCapabilities {
     pub broadcast: Option<String>,
 }
 
+impl GameCapabilities {
+    /// Minecraft **Java** : jars de plugins et de mods, `level.dat`, JVM — ce que lisent les
+    /// outils de contenu, de monde et d'audit.
+    pub(crate) fn is_minecraft_java(&self) -> bool {
+        self.family == "minecraft" && self.console_autocomplete == "minecraft_java"
+    }
+
+    /// Minecraft **Bedrock** : `server.properties` seulement (ni JVM, ni jars, ni `level.dat` Java).
+    pub(crate) fn is_minecraft_bedrock(&self) -> bool {
+        self.family == "minecraft" && self.console_autocomplete == "minecraft_bedrock"
+    }
+}
+
 /// Commande de diffusion d'un jeu (voir [`GameCapabilities::broadcast`]). Prudence : on n'en
 /// déclare que pour les jeux dont la console l'accepte à coup sûr — une commande inconnue serait
 /// au mieux ignorée, au pire interprétée autrement.
@@ -264,5 +277,15 @@ mod tests {
         assert!(!capabilities_for_egg(Some(EGG_MINECRAFT_BEDROCK), "", true).player_data);
         assert!(!capabilities_for("Satisfactory", false).player_data);
         assert!(!capabilities_for("Palworld", false).player_data);
+    }
+
+    #[test]
+    fn minecraft_editions_are_told_apart() {
+        let java = capabilities_for_egg(Some(EGG_MINECRAFT_JAVA), "", false);
+        let bedrock = capabilities_for_egg(Some(EGG_MINECRAFT_BEDROCK), "", true);
+        assert!(java.is_minecraft_java() && !java.is_minecraft_bedrock());
+        assert!(bedrock.is_minecraft_bedrock() && !bedrock.is_minecraft_java());
+        let other = capabilities_for("Satisfactory", false);
+        assert!(!other.is_minecraft_java() && !other.is_minecraft_bedrock());
     }
 }

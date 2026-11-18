@@ -138,6 +138,11 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "parse_spark_report",
     "diagnose_startup",
     "inspect_region",
+    // Contenu, monde et audit (plugin_deps.rs, world.rs, server_audit.rs) : lectures seules
+    // (jars lus à la demande, level.dat, réglages ; vérification des mises à jour sans effet).
+    "check_plugin_deps",
+    "world_info",
+    "audit_server",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -221,6 +226,10 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "diagnose_startup",
     "inspect_region",
     "repair_region",
+    // Contenu, monde et audit : Minecraft seulement (l'audit dit « jeu non géré » ailleurs).
+    "check_plugin_deps",
+    "world_info",
+    "audit_server",
 ];
 
 /// Outils propres à **Satisfactory** (mods via ficsit.app).
@@ -275,6 +284,11 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "ficsit_search",
     "ficsit_versions",
     "install_ficsit_mod",
+    // Contenu, monde et audit : dépendances des jars, level.dat, audit de configuration — hors
+    // catalogue de l'officiel.
+    "check_plugin_deps",
+    "world_info",
+    "audit_server",
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -473,6 +487,9 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "list_players" => 30,
         "list_servers" => 10,
         "server_status" => 5,
+        // Contenu, monde et audit : lisent des dizaines de fichiers (jars, .dat, réglages).
+        "check_plugin_deps" => 60,
+        "world_info" | "audit_server" => 30,
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1126,6 +1143,26 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             ))
         }
 
+        // --- Contenu, monde et audit (plugin_deps.rs, world.rs, server_audit.rs) ------------
+        // Sorties déjà anonymisées (redact_ai) par chaque outil ; aucun secret n'y figure.
+        "check_plugin_deps" => {
+            let id = req_i64(&args, "server_id")?;
+            let details = args.get("details").and_then(Value::as_bool).unwrap_or(false);
+            core.check_plugin_deps(id, details).await.map_err(es)
+        }
+
+        "world_info" => {
+            let id = req_i64(&args, "server_id")?;
+            let world = args.get("world").and_then(Value::as_str).map(str::to_string);
+            crate::world::world_info(core, id, world.as_deref()).await
+        }
+
+        "audit_server" => {
+            let id = req_i64(&args, "server_id")?;
+            let force = args.get("force_updates").and_then(Value::as_bool).unwrap_or(false);
+            core.audit_server(id, force).await.map_err(es)
+        }
+
         _ => Err(format!("outil inconnu : {name}")),
     }
 }
@@ -1200,6 +1237,10 @@ fn build_tool_list() -> Value {
         tool("ficsit_search", "Cherche des mods SATISFACTORY dans le catalogue ficsit.app (SMR). `query` vide = parcours trié. `order_by` ∈ popularity|hotness|downloads|last_version_date|name (défaut popularity). Renvoie id, mod_reference, name, downloads. À réserver aux serveurs Satisfactory (pas Minecraft).", obj(&[("query", prop_str("Recherche par nom (optionnel, ≥ 3 car.)")), ("order_by", prop_str("Tri (défaut popularity)")), ("page", prop_int("Page (défaut 1)"))], &[])),
         tool("ficsit_versions", "Versions d'un mod Satisfactory (par son `mod_id` ficsit, renvoyé par ficsit_search) : `id` de version + contrainte SML + dépendances — nécessaires pour installer.", obj(&[("mod_id", prop_str("id ficsit du mod"))], &["mod_id"])),
         tool("install_ficsit_mod", "Installe un mod SATISFACTORY : télécharge le mod + SML + dépendances (cible LinuxServer) et les écrit dans Mods/ via SFTP, avec ARRÊT puis REDÉMARRAGE automatiques du serveur. `reference` = mod_reference, `version_id` via ficsit_versions. ✎ (modifiant — redémarre le serveur)", obj(&[("server_id", prop_int("ID du serveur")), ("reference", prop_str("mod_reference du mod")), ("version_id", prop_str("ID de la version à installer"))], &["server_id", "reference", "version_id"])),
+        // --- Contenu, monde et audit ---
+        tool("check_plugin_deps", "Contrôle les DÉPENDANCES des plugins et mods d'un serveur Minecraft Java en lisant le descripteur embarqué dans chaque .jar de plugins/ et mods/ (plugin.yml, paper-plugin.yml, bungee.yml, velocity-plugin.json, fabric.mod.json, quilt.mod.json, META-INF/mods.toml, neoforge.mods.toml) : dépendances obligatoires manquantes ou désactivées, optionnelles absentes (info), version de Minecraft, d'API ou de dépendance incompatible, doublons, jars d'une autre plateforme (plugin Velocity sur Paper, mod Forge sur Fabric…) ou du mauvais dossier, mods côté client, fichiers désactivés (.disabled), jars illisibles. Constats triés CRITIQUE / IMPORTANT / INFO avec recommandation. Lecture À LA DEMANDE (fin d'archive et descripteurs, jamais le jar entier), plafonnée (400 jars) et signalée. Lecture seule. `details` ajoute l'inventaire (id, version, dépendances).", obj(&[("server_id", prop_int("ID du serveur")), ("details", prop_bool("Ajouter l'inventaire détaillé (défaut false)"))], &["server_id"])),
+        tool("world_info", "Résumé d'un monde Minecraft Java lu dans level.dat (et, depuis 26.1, dans data/minecraft/*.dat) : nom, GRAINE, version (nom + DataVersion), mode de jeu, difficulté, hardcore, point d'apparition, jour et heure, dernière partie, météo, bordure, règles de jeu, datapacks activés et désactivés, et TAILLE de chaque dimension (fichiers de région de l'overworld, du Nether et de l'End, dossier de la dimension) plus les autres dimensions. Monde actif (`level-name` de server.properties) par défaut. Lecture seule.", obj(&[("server_id", prop_int("ID du serveur")), ("world", prop_str("Dossier du monde (défaut : level-name)"))], &["server_id"])),
+        tool("audit_server", "AUDIT de configuration et de sécurité (Minecraft Java, ou Bedrock en partie ; autre jeu : « non géré ») : constats triés CRITIQUE / IMPORTANT / INFO, chacun avec sa recommandation. server.properties (online-mode=false hors proxy correctement configuré — Velocity avec secret ou BungeeCord avec BungeeGuard, d'après spigot.yml et paper-global.yml —, RCON et force de son mot de passe, liste blanche, enable-query, view/simulation-distance face à la RAM), nombre d'opérateurs (ops.json), -Xmx face à la RAM du conteneur, mises à jour disponibles (vérification sans effet de bord ; propositions d'une autre plateforme écartées), version de Java face à Minecraft. Ne renvoie JAMAIS de secret (mot de passe RCON qualifié : vide, faible ou correct). Lecture seule.", obj(&[("server_id", prop_int("ID du serveur")), ("force_updates", prop_bool("Refaire la vérification des mises à jour au lieu du résultat gardé 15 min (défaut false)"))], &["server_id"])),
     ])
 }
 
@@ -1592,6 +1633,19 @@ mod tests {
         // Filtre de type : la clé d'un autre type devient inconnue.
         let err = resolve_update_keys(&current, Some(ContentKind::Mods), &keys).unwrap_err();
         assert!(err.contains("LP.jar") && !err.contains("sodium.jar"));
+    }
+
+    #[test]
+    fn content_world_and_audit_tools_are_exclusive_reads() {
+        // Lectures (autorisées en lecture seule), gardées face au MCP officiel, Minecraft seulement.
+        for t in ["check_plugin_deps", "world_info", "audit_server"] {
+            assert!(!is_write_tool(t) && READ_TOOLS.contains(&t), "{t} doit être en lecture");
+            assert!(LOCAL_KEEP_TOOLS.contains(&t), "{t} : exclusif, gardé face au MCP officiel");
+            assert!(tool_for_game(t, "minecraft") && !tool_for_game(t, "satisfactory"), "{t} : Minecraft");
+            assert!(cache_ttl(t).is_some(), "{t} : lit beaucoup de fichiers, cache court");
+            let schema = &tool_list().as_array().unwrap().iter().find(|x| x["name"] == t).unwrap()["inputSchema"];
+            assert_eq!(schema["required"], json!(["server_id"]), "{t}");
+        }
     }
 
     #[test]

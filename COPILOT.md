@@ -137,7 +137,8 @@ Ce ne sont plus « 6 » outils : il y a **21 `READ_TOOLS`** (source unique `mcp.
 console, métriques, statut, SFTP (`list_files`/`read_file`/`read_gz`/archives/`search_files`),
 `read_startup`, mods/plugins installés et leurs mises à jour (`check_updates`), backups/snapshots,
 marketplace (`market_search`/`list_mod_versions`), `analyze_performance`, `parse_spark_report`, `diagnose_startup`,
-`inspect_region`. Il croise ces sources, puis livre un **rapport structuré** via `report_diagnosis` :
+`inspect_region`, et le contenu, le monde et l'audit (`check_plugin_deps`, `world_info`,
+`audit_server`, gardés aussi face au MCP officiel). Il croise ces sources, puis livre un **rapport structuré** via `report_diagnosis` :
 résumé · cause probable justifiée · correctif détaillé · **0 à 3 actions** proposées, chacune classée
 `safe` / `caution` / `danger`.
 

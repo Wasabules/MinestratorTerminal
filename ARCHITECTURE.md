@@ -165,6 +165,35 @@ Regroupés par domaine (liste réelle des fichiers).
 - **`nbt`** — décodage NBT (`fastnbt`) `.dat`/`level.dat`/playerdata/`.schem` → arbre typé `NbtNode` + SNBT.
 - **`mca`** — validation/réparation des régions Anvil `.mca` (table de localisation, chunks corrompus).
 - **`world`** — outils monde de plus haut niveau (`inspect_region`, coordonnées de région, réparation).
+  **`world_info`** (MCP, lecture) : résumé d'un monde lu dans `level.dat` et, depuis 26.1, dans
+  `data/minecraft/{world_gen_settings,game_rules,weather,world_border,world_clocks}.dat` (Paper :
+  sous `dimensions/minecraft/overworld/data/`) ; graine (`WorldGenSettings.seed` ou `RandomSeed`),
+  version, mode, difficulté, apparition, jour/heure, règles, datapacks ; taille de chaque dimension
+  (régions par SFTP aux trois emplacements possibles — `dimensions/minecraft/<dim>`, `DIM-1`/`DIM1`,
+  `<monde>_nether`/`<monde>_the_end` —, dossiers par l'endpoint d'espace disque). Extraction pure, testée
+  sur un `level.dat` 26.1 réel et sur les formats anciens.
+
+Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`, `audit_server`) :
+- **`jar_meta`** — lecture **à la demande** des `.jar` : `ZipProbe` (pur) dit quelle tranche lire (fin
+  d'archive, répertoire central zip/zip64, descripteurs seulement — jamais le jar entier, contrairement à
+  `archive`) ; descripteurs `plugin.yml`, `paper-plugin.yml`, `bungee.yml`, `velocity-plugin.json`,
+  `fabric.mod.json`, `quilt.mod.json`, `mods.toml`, `neoforge.mods.toml`, `mcmod.info` ; jars imbriqués ;
+  contraintes de version (prédicats Fabric/Quilt, intervalles Maven de Forge). Plafonds : répertoire
+  central 4 Mio, descripteur 512 Kio.
+- **`plugin_deps`** — `check_plugin_deps` : liste `plugins/` et `mods/` (SFTP), lit les jars en
+  parallèle (6 à la fois, 400 jars et 192 Mio lus au plus, session morte rejouée une fois), puis règles
+  pures : dépendances obligatoires manquantes ou désactivées, optionnelles absentes, versions de
+  Minecraft/API/dépendance, doublons, autre plateforme, mauvais dossier, mods client, Folia, jars
+  illisibles. Plateforme d'après `/minecraft_version`, déduite du contenu si l'hébergeur ne la nomme pas.
+- **`server_audit`** — `audit_server` : règles pures sur des données déjà lues (`server.properties`
+  via l'API, `ops.json`, `spigot.yml`/`paper-global.yml` pour le proxy, `-Xmx` face à la RAM du
+  conteneur, Java d'après l'image face à Minecraft, mises à jour sans effet de bord d'`updates`).
+  Contrôles choisis selon l'édition (`games.rs` : Java, Bedrock, autre jeu non géré). Aucun secret en
+  sortie (mot de passe RCON qualifié vide/faible/correct). Porte aussi `server_capabilities`.
+- **`findings`** — constats triés par gravité (critique, important, info) avec recommandation ; rendu
+  texte borné, commun à `plugin_deps` et `server_audit`.
+- **`yaml_lite`** — sous-ensemble YAML tolérant (blocs, listes et mappings en ligne, guillemets, `|`/`>`)
+  pour les descripteurs Bukkit et les réglages de serveur, sans dépendance.
 
 ### 3.3 Surveillance, historique & persistance
 - **`supervisor`** — monitoring de fond : connexions **monitor** légères (stats/status + repérage
@@ -598,7 +627,7 @@ menu Afficher/Quitter + clic gauche = réafficher. Notifications natives pour al
 pas `aws-lc-rs`, qui exige CMake/NASM) **/ `russh-sftp` 3** ; **`rusqlite` 0.43 *bundled*** +
 `directories` ; **`chrono`** (`clock` : heure locale du planificateur d'automatisations, déjà
 présent via `russh-sftp`) ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip` 9 (deflate **pur Rust**) ;
-**`fastnbt`** ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 4** par OS
+**`fastnbt`** ; `toml` 1 (lecture des `mods.toml`, déjà présent via Tauri) ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 4** par OS
 (`windows-native` / `apple-native` / `zbus-secret-service`), **`android-native-keyring-store`** +
 `keyring-core` sur Android (Keystore). **`ts-rs` 12** *optionnel* (feature `ts`,
 génération des bindings TypeScript uniquement).

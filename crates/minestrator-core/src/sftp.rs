@@ -755,6 +755,40 @@ pub async fn read_range(conn: &SftpConn, path: &str, offset: u64, len: usize) ->
     Ok(buf)
 }
 
+/// Fichier distant ouvert pour des lectures **à la demande** (positionnement puis tranche), sans
+/// le télécharger : lecture du répertoire central d'un `.jar` (`plugin_deps.rs`).
+pub struct RemoteFile(russh_sftp::client::fs::File);
+
+pub async fn open_read(conn: &SftpConn, path: &str) -> Result<RemoteFile> {
+    conn.sftp.open(path).await.map(RemoteFile).map_err(sftp_err)
+}
+
+impl RemoteFile {
+    /// Lit `len` octets à partir de `offset` (moins en fin de fichier).
+    pub async fn read_at(&mut self, offset: u64, len: usize) -> Result<Vec<u8>> {
+        use tokio::io::AsyncSeekExt;
+        self.0
+            .seek(std::io::SeekFrom::Start(offset))
+            .await
+            .map_err(|e| Error::Unexpected(format!("positionnement SFTP: {e}")))?;
+        let mut buf = vec![0u8; len];
+        let mut read = 0usize;
+        while read < len {
+            let n = self
+                .0
+                .read(&mut buf[read..])
+                .await
+                .map_err(|e| Error::Unexpected(format!("lecture SFTP: {e}")))?;
+            if n == 0 {
+                break;
+            }
+            read += n;
+        }
+        buf.truncate(read);
+        Ok(buf)
+    }
+}
+
 pub async fn remove(conn: &SftpConn, path: &str, is_dir: bool) -> Result<()> {
     if is_dir {
         conn.sftp.remove_dir(path).await.map_err(sftp_err)

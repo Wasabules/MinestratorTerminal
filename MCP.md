@@ -174,6 +174,18 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 | `diagnose_startup` | | `server_id` | **Docteur démarrage** : en un appel, rassemble commande de démarrage + fin de `logs/latest.log` + dernier crash-report, et **pré-scanne** les pannes connues (EULA, port occupé, OOM, version Java, dépendance/mixin de mod, monde corrompu). |
 | `inspect_region` | | `server_id`, `path` | Inspecte un fichier de région `.mca` et repère les chunks **structurellement corrompus** (pointeurs/longueurs invalides). Lecture seule. |
 
+#### Contenu, monde et audit
+
+Absents du MCP officiel : gardés par le Copilote quand l'officiel gère le reste (`LOCAL_KEEP_TOOLS`),
+réservés à Minecraft côté Copilote. Lecture seule ; constats triés **critique / important / info**,
+chacun avec sa recommandation ; sorties anonymisées comme les autres lectures.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `check_plugin_deps` | | `server_id`, `details?` | **Dépendances** des plugins et mods (Minecraft Java) d'après le descripteur de chaque `.jar` de `plugins/` et `mods/` (`plugin.yml`, `paper-plugin.yml`, `bungee.yml`, `velocity-plugin.json`, `fabric.mod.json`, `quilt.mod.json`, `META-INF/mods.toml`, `META-INF/neoforge.mods.toml`, `mcmod.info`) : dépendance obligatoire manquante ou désactivée, optionnelle absente (info), version de Minecraft, d'`api-version` ou de dépendance incompatible avec le serveur (`GET /server/{id}/minecraft_version`), doublons, jar d'une autre plateforme (plugin Velocity sur Paper, mod Forge sur Fabric…) ou du mauvais dossier, mod côté client, Folia, fichiers `.disabled`, jars illisibles. Plateforme de l'hébergeur, ou **déduite du contenu** (`explicit_jar`, dit dans la sortie). Lecture **à la demande** : fin d'archive, répertoire central et descripteurs, jamais le jar entier ; plafonds affichés (400 jars, répertoire central 4 Mio, descripteur 512 Kio, 192 Mio lus au total). `details` ajoute l'inventaire (id, version, plateforme, dépendances). |
+| `world_info` | | `server_id`, `world?` | **Monde** (Minecraft Java) lu dans `level.dat` et, depuis 26.1, dans `data/minecraft/*.dat` : nom, **graine** (`WorldGenSettings.seed` ou `RandomSeed`), version (nom + DataVersion), mode, difficulté, hardcore, apparition, jour et heure, dernière partie, météo, bordure, règles de jeu, datapacks activés/désactivés, **taille de chaque dimension** (fichiers de région de l'overworld, du Nether et de l'End par SFTP, dossier de la dimension et total du monde par l'endpoint d'espace disque) et autres dimensions. Monde actif (`level-name`) par défaut. |
+| `audit_server` | | `server_id`, `force_updates?` | **Audit de configuration et de sécurité** : `online-mode=false` (sauf derrière Velocity avec secret ou BungeeCord avec BungeeGuard, d'après `spigot.yml`/`paper-global.yml` ; atténué par un plugin d'authentification), RCON et force de son mot de passe (**qualifiée** vide/faible/correct, jamais affichée), liste blanche, `enable-query`, distances de vue/simulation face à la RAM, nombre d'opérateurs (`ops.json`), `-Xmx` face à la RAM du conteneur, mises à jour disponibles (vérification sans effet de bord, propositions d'une autre plateforme écartées), Java face à Minecraft. Contrôles selon l'édition (Bedrock : authentification et liste blanche) ; autre jeu : « non géré ». Liste aussi les contrôles sans remarque et ceux non vérifiés. |
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -203,6 +215,8 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 - **Sauvegardes / filet** : `list_backups`, `list_snapshots`, `create_snapshot`
 - **Diagnostic de panne** : `diagnose_startup` (crash-loop), `inspect_region` (maps corrompues),
   `read_console` (+ `server_metrics` pour corréler)
+- **Contenu, monde et audit** : `check_plugin_deps` (dépendances des jars), `world_info` (`level.dat`,
+  dimensions), `audit_server` (configuration et sécurité)
 
 ## 6. Contrôle & sécurité (réglages)
 

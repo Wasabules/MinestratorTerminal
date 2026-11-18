@@ -47,6 +47,13 @@ pub fn to_tree(bytes: &[u8]) -> Result<NbtNode, String> {
     Ok(build(None, &value, &mut budget))
 }
 
+/// Décode un fichier NBT (compressé ou brut) en valeur `fastnbt` brute, pour en LIRE des champs
+/// (`level.dat` et les `.dat` du monde, voir `world::world_info`).
+pub(crate) fn parse(bytes: &[u8]) -> Result<fastnbt::Value, String> {
+    let data = decompress(bytes)?;
+    fastnbt::from_bytes(&data).map_err(|e| format!("NBT illisible : {e}"))
+}
+
 /// Décompresse selon l'en-tête : gzip (`1f 8b`), zlib (`78 …`) ou brut (TAG_Compound `0a`).
 fn decompress(bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = Vec::new();
