@@ -1,0 +1,126 @@
+name: Surveillance de l'API
+
+# Chaque jour, vérifie que l'API MineStrator n'a pas changé sous les pieds de l'app :
+# - « Contrat » : avec une vraie clé et uniquement des lectures, les réponses ont toujours la forme
+#   dont l'app dépend (exemple `api_contract` du core : vrais modèles + champs bruts indispensables).
+# - « Documentation » : le résumé structurel de l'OpenAPI publique est identique à celui versionné
+#   dans `docs/api/openapi-resume.txt`.
+# Un écart ouvre (ou complète) une issue étiquetée ; le retour à la normale la ferme.
+#
+# Prérequis du contrat : le secret `MINESTRATOR_API_KEY` (clé d'un compte ayant au moins un serveur
+# actif). Sans lui, seule la documentation est surveillée.
+
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: api-watch
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  contrat:
+    name: Contrat des réponses
+    runs-on: ubuntu-22.04
+    env:
+      HAS_KEY: ${{ secrets.MINESTRATOR_API_KEY != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Clé absente
+        if: env.HAS_KEY != 'true'
+        run: echo "::warning::Secret MINESTRATOR_API_KEY absent — contrat de l'API non vérifié."
+
+      - name: Install Rust (stable)
+        if: env.HAS_KEY == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        if: env.HAS_KEY == 'true'
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: '. -> target'
+          shared-key: api-watch
+
+      - name: Vérifier le contrat
+        id: contrat
+        if: env.HAS_KEY == 'true'
+        env:
+          MINESTRATOR_API_KEY: ${{ secrets.MINESTRATOR_API_KEY }}
+          API_CONTRACT_REPORT: ${{ runner.temp }}/contrat.md
+        run: |
+          cargo run --locked -q -p minestrator-core --example api_contract
+          cat "$API_CONTRACT_REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Signaler l'écart
+        if: failure() && steps.contrat.outcome == 'failure'
+        run: |
+          report="${{ runner.temp }}/contrat.md"
+          [ -s "$report" ] || echo "Le contrôle n'a pas pu produire de rapport : voir le journal." > "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n[Exécution](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
+          bash .github/scripts/alerte-issue.sh ouvrir surveillance-api \
+            "L'API MineStrator ne respecte plus le contrat attendu par l'app" "$report"
+
+      - name: Clore l'alerte
+        if: success() && steps.contrat.outcome == 'success'
+        run: |
+          bash .github/scripts/alerte-issue.sh fermer surveillance-api \
+            "Contrat de nouveau respecté ($(date -u +%F))."
+
+  documentation:
+    name: Documentation OpenAPI
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: PyYAML
+        run: python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --user pyyaml
+
+      - name: Comparer au résumé versionné
+        id: doc
+        run: |
+          python3 scripts/api-watch/openapi_resume.py > "$RUNNER_TEMP/resume.txt"
+          if diff -u docs/api/openapi-resume.txt "$RUNNER_TEMP/resume.txt" > "$RUNNER_TEMP/diff.txt"; then
+            echo "Documentation inchangée." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "## La documentation OpenAPI de MineStrator a changé"
+              echo
+              echo "Lignes retirées (\`-\`) et ajoutées (\`+\`) dans la structure des endpoints. Vérifier"
+              echo "l'impact sur l'app, puis régénérer la référence :"
+              echo "\`python3 scripts/api-watch/openapi_resume.py > docs/api/openapi-resume.txt\`."
+              echo
+              echo '```diff'
+              head -n 300 "$RUNNER_TEMP/diff.txt"
+              echo '```'
+            } > "$RUNNER_TEMP/doc.md"
+            cat "$RUNNER_TEMP/doc.md" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Signaler le changement
+        if: failure() && steps.doc.outcome == 'failure'
+        run: |
+          report="$RUNNER_TEMP/doc.md"
+          [ -s "$report" ] || echo "Le résumé n'a pas pu être produit : voir le journal." > "$report"
+          printf '\n[Exécution](%s/%s/actions/runs/%s)\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> "$report"
+          bash .github/scripts/alerte-issue.sh ouvrir surveillance-api-doc \
+            "La documentation de l'API MineStrator a changé" "$report"
+
+      - name: Clore l'alerte
+        if: success()
+        run: |
+          bash .github/scripts/alerte-issue.sh fermer surveillance-api-doc \
+            "Référence à jour ($(date -u +%F))."

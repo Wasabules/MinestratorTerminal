@@ -1,0 +1,1498 @@
+# Résumé structurel de openapi-public-fr.yaml (version 1.0.0)
+# Généré par scripts/api-watch/openapi_resume.py — ne pas éditer à la main.
+GET /mybox/{id_mybox}
+GET /mybox/{id_mybox} :: paramètre path.id_mybox : integer (requis)
+GET /mybox/{id_mybox} :: réponse 200
+GET /mybox/{id_mybox} :: réponse 200 api : object
+GET /mybox/{id_mybox} :: réponse 200 api.code : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data : object
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox : object
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.cpu_remaining : number
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.deletion_days : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.hashsupport : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.id : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.is_expired : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.is_free : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.is_pro : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.is_suspended : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.is_trial : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.name : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.owner : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.ram_remaining : number
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.subscription : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.tend : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.tend_days : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.mybox.tstart : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer : object
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.cpu : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.dbnb : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.dbsize : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.disk : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.disk_total : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.id : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.name : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.pods : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.price : number
+GET /mybox/{id_mybox} :: réponse 200 api.data.offer.ram : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers : array
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[] : object
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].country : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].country_iso : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].cpu : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].disabled : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].egg : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].egg_icon : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].egg_name : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].id : integer
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].ip : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].is_expired : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].is_suspended : integer enum[0,1]
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].location : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].name : string
+GET /mybox/{id_mybox} :: réponse 200 api.data.servers[].ram : integer
+GET /mybox/{id_mybox} :: réponse 200 api.description : string
+GET /mybox/{id_mybox} :: réponse 200 api.endpoint : string
+GET /mybox/{id_mybox} :: réponse 400
+GET /mybox/{id_mybox} :: réponse 400 api : object
+GET /mybox/{id_mybox} :: réponse 400 api.code : integer
+GET /mybox/{id_mybox} :: réponse 400 api.data : object
+GET /mybox/{id_mybox} :: réponse 400 api.description : string
+GET /mybox/{id_mybox} :: réponse 400 api.endpoint : string
+GET /mybox/{id_mybox} :: réponse 400 api.error : string
+GET /mybox/{id_mybox} :: réponse 401
+GET /mybox/{id_mybox} :: réponse 401 api : object
+GET /mybox/{id_mybox} :: réponse 401 api.code : integer
+GET /mybox/{id_mybox} :: réponse 401 api.data : object
+GET /mybox/{id_mybox} :: réponse 401 api.description : string
+GET /mybox/{id_mybox} :: réponse 401 api.endpoint : string
+GET /mybox/{id_mybox} :: réponse 401 api.error : string
+GET /mybox/{id_mybox} :: réponse 403
+GET /mybox/{id_mybox} :: réponse 403 api : object
+GET /mybox/{id_mybox} :: réponse 403 api.code : integer
+GET /mybox/{id_mybox} :: réponse 403 api.data : object
+GET /mybox/{id_mybox} :: réponse 403 api.description : string
+GET /mybox/{id_mybox} :: réponse 403 api.endpoint : string
+GET /mybox/{id_mybox} :: réponse 403 api.error : string
+GET /mybox/{id_mybox} :: réponse 404
+GET /mybox/{id_mybox} :: réponse 404 api : object
+GET /mybox/{id_mybox} :: réponse 404 api.code : integer
+GET /mybox/{id_mybox} :: réponse 404 api.data : object
+GET /mybox/{id_mybox} :: réponse 404 api.description : string
+GET /mybox/{id_mybox} :: réponse 404 api.endpoint : string
+GET /mybox/{id_mybox} :: réponse 404 api.error : string
+GET /mybox/{id_mybox} :: réponse 429
+GET /mybox/{id_mybox} :: réponse 429 api : object
+GET /mybox/{id_mybox} :: réponse 429 api.code : integer
+GET /mybox/{id_mybox} :: réponse 429 api.data : object
+GET /mybox/{id_mybox} :: réponse 429 api.description : string
+GET /mybox/{id_mybox} :: réponse 429 api.endpoint : string
+GET /mybox/{id_mybox} :: réponse 429 api.error : string
+POST /mybox/{id_mybox}/server
+POST /mybox/{id_mybox}/server :: paramètre path.id_mybox : integer (requis)
+POST /mybox/{id_mybox}/server :: corps application/json cpu : integer
+POST /mybox/{id_mybox}/server :: corps application/json force_settings : integer
+POST /mybox/{id_mybox}/server :: corps application/json id_egg : integer
+POST /mybox/{id_mybox}/server :: corps application/json id_egg_experimental : integer
+POST /mybox/{id_mybox}/server :: corps application/json location : integer (requis)
+POST /mybox/{id_mybox}/server :: corps application/json name : string
+POST /mybox/{id_mybox}/server :: corps application/json ram : integer
+POST /mybox/{id_mybox}/server :: corps application/json required_fields : array
+POST /mybox/{id_mybox}/server :: corps application/json required_fields[] : object
+POST /mybox/{id_mybox}/server :: corps application/json required_fields[].key : string
+POST /mybox/{id_mybox}/server :: corps application/json required_fields[].value : string
+POST /mybox/{id_mybox}/server :: réponse 200
+POST /mybox/{id_mybox}/server :: réponse 200 api : object
+POST /mybox/{id_mybox}/server :: réponse 200 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 200 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 200 api.data.id_mybox : integer
+POST /mybox/{id_mybox}/server :: réponse 200 api.data.id_server : integer
+POST /mybox/{id_mybox}/server :: réponse 200 api.data.ip : string
+POST /mybox/{id_mybox}/server :: réponse 200 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 200 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 400
+POST /mybox/{id_mybox}/server :: réponse 400 api : object
+POST /mybox/{id_mybox}/server :: réponse 400 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 400 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 400 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 400 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 400 api.error : string
+POST /mybox/{id_mybox}/server :: réponse 401
+POST /mybox/{id_mybox}/server :: réponse 401 api : object
+POST /mybox/{id_mybox}/server :: réponse 401 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 401 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 401 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 401 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 401 api.error : string
+POST /mybox/{id_mybox}/server :: réponse 403
+POST /mybox/{id_mybox}/server :: réponse 403 api : object
+POST /mybox/{id_mybox}/server :: réponse 403 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 403 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 403 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 403 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 403 api.error : string
+POST /mybox/{id_mybox}/server :: réponse 404
+POST /mybox/{id_mybox}/server :: réponse 404 api : object
+POST /mybox/{id_mybox}/server :: réponse 404 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 404 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 404 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 404 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 404 api.error : string
+POST /mybox/{id_mybox}/server :: réponse 429
+POST /mybox/{id_mybox}/server :: réponse 429 api : object
+POST /mybox/{id_mybox}/server :: réponse 429 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 429 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 429 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 429 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 429 api.error : string
+POST /mybox/{id_mybox}/server :: réponse 500
+POST /mybox/{id_mybox}/server :: réponse 500 api : object
+POST /mybox/{id_mybox}/server :: réponse 500 api.code : integer
+POST /mybox/{id_mybox}/server :: réponse 500 api.data : object
+POST /mybox/{id_mybox}/server :: réponse 500 api.description : string
+POST /mybox/{id_mybox}/server :: réponse 500 api.endpoint : string
+POST /mybox/{id_mybox}/server :: réponse 500 api.error : string
+PATCH /mybox/{id_mybox}/server
+PATCH /mybox/{id_mybox}/server :: paramètre path.id_mybox : integer (requis)
+PATCH /mybox/{id_mybox}/server :: corps application/json cpu : integer (requis)
+PATCH /mybox/{id_mybox}/server :: corps application/json id_server : integer (requis)
+PATCH /mybox/{id_mybox}/server :: corps application/json ram : integer (requis)
+PATCH /mybox/{id_mybox}/server :: réponse 200
+PATCH /mybox/{id_mybox}/server :: réponse 200 api : object
+PATCH /mybox/{id_mybox}/server :: réponse 200 api.code : integer
+PATCH /mybox/{id_mybox}/server :: réponse 200 api.description : string
+PATCH /mybox/{id_mybox}/server :: réponse 200 api.endpoint : string
+PATCH /mybox/{id_mybox}/server :: réponse 400
+PATCH /mybox/{id_mybox}/server :: réponse 400 api : object
+PATCH /mybox/{id_mybox}/server :: réponse 400 api.code : integer
+PATCH /mybox/{id_mybox}/server :: réponse 400 api.data : object
+PATCH /mybox/{id_mybox}/server :: réponse 400 api.description : string
+PATCH /mybox/{id_mybox}/server :: réponse 400 api.endpoint : string
+PATCH /mybox/{id_mybox}/server :: réponse 400 api.error : string
+PATCH /mybox/{id_mybox}/server :: réponse 401
+PATCH /mybox/{id_mybox}/server :: réponse 401 api : object
+PATCH /mybox/{id_mybox}/server :: réponse 401 api.code : integer
+PATCH /mybox/{id_mybox}/server :: réponse 401 api.data : object
+PATCH /mybox/{id_mybox}/server :: réponse 401 api.description : string
+PATCH /mybox/{id_mybox}/server :: réponse 401 api.endpoint : string
+PATCH /mybox/{id_mybox}/server :: réponse 401 api.error : string
+PATCH /mybox/{id_mybox}/server :: réponse 403
+PATCH /mybox/{id_mybox}/server :: réponse 403 api : object
+PATCH /mybox/{id_mybox}/server :: réponse 403 api.code : integer
+PATCH /mybox/{id_mybox}/server :: réponse 403 api.data : object
+PATCH /mybox/{id_mybox}/server :: réponse 403 api.description : string
+PATCH /mybox/{id_mybox}/server :: réponse 403 api.endpoint : string
+PATCH /mybox/{id_mybox}/server :: réponse 403 api.error : string
+PATCH /mybox/{id_mybox}/server :: réponse 404
+PATCH /mybox/{id_mybox}/server :: réponse 404 api : object
+PATCH /mybox/{id_mybox}/server :: réponse 404 api.code : integer
+PATCH /mybox/{id_mybox}/server :: réponse 404 api.data : object
+PATCH /mybox/{id_mybox}/server :: réponse 404 api.description : string
+PATCH /mybox/{id_mybox}/server :: réponse 404 api.endpoint : string
+PATCH /mybox/{id_mybox}/server :: réponse 404 api.error : string
+PATCH /mybox/{id_mybox}/server :: réponse 429
+PATCH /mybox/{id_mybox}/server :: réponse 429 api : object
+PATCH /mybox/{id_mybox}/server :: réponse 429 api.code : integer
+PATCH /mybox/{id_mybox}/server :: réponse 429 api.data : object
+PATCH /mybox/{id_mybox}/server :: réponse 429 api.description : string
+PATCH /mybox/{id_mybox}/server :: réponse 429 api.endpoint : string
+PATCH /mybox/{id_mybox}/server :: réponse 429 api.error : string
+PATCH /mybox/{id_mybox}/server/disable
+PATCH /mybox/{id_mybox}/server/disable :: paramètre path.id_mybox : integer (requis)
+PATCH /mybox/{id_mybox}/server/disable :: corps application/json id_server : integer (requis)
+PATCH /mybox/{id_mybox}/server/disable :: réponse 200
+PATCH /mybox/{id_mybox}/server/disable :: réponse 200 api : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 200 api.code : integer
+PATCH /mybox/{id_mybox}/server/disable :: réponse 200 api.description : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 200 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400 api : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400 api.code : integer
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400 api.data : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400 api.description : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 400 api.error : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401 api : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401 api.code : integer
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401 api.data : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401 api.description : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 401 api.error : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403 api : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403 api.code : integer
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403 api.data : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403 api.description : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 403 api.error : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404 api : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404 api.code : integer
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404 api.data : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404 api.description : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 404 api.error : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429 api : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429 api.code : integer
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429 api.data : object
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429 api.description : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/disable :: réponse 429 api.error : string
+PATCH /mybox/{id_mybox}/server/enable
+PATCH /mybox/{id_mybox}/server/enable :: paramètre path.id_mybox : integer (requis)
+PATCH /mybox/{id_mybox}/server/enable :: corps application/json id_server : integer (requis)
+PATCH /mybox/{id_mybox}/server/enable :: réponse 200
+PATCH /mybox/{id_mybox}/server/enable :: réponse 200 api : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 200 api.code : integer
+PATCH /mybox/{id_mybox}/server/enable :: réponse 200 api.description : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 200 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400 api : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400 api.code : integer
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400 api.data : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400 api.description : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 400 api.error : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401 api : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401 api.code : integer
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401 api.data : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401 api.description : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 401 api.error : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403 api : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403 api.code : integer
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403 api.data : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403 api.description : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 403 api.error : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404 api : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404 api.code : integer
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404 api.data : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404 api.description : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 404 api.error : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429 api : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429 api.code : integer
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429 api.data : object
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429 api.description : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429 api.endpoint : string
+PATCH /mybox/{id_mybox}/server/enable :: réponse 429 api.error : string
+DELETE /mybox/{id_mybox}/server/{id_server}
+DELETE /mybox/{id_mybox}/server/{id_server} :: paramètre path.id_mybox : integer (requis)
+DELETE /mybox/{id_mybox}/server/{id_server} :: paramètre path.id_server : integer (requis)
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 200
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 200 api : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 200 api.code : integer
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 200 api.description : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 200 api.endpoint : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400 api : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400 api.code : integer
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400 api.data : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400 api.description : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400 api.endpoint : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 400 api.error : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401 api : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401 api.code : integer
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401 api.data : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401 api.description : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401 api.endpoint : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 401 api.error : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403 api : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403 api.code : integer
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403 api.data : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403 api.description : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403 api.endpoint : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 403 api.error : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404 api : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404 api.code : integer
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404 api.data : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404 api.description : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404 api.endpoint : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 404 api.error : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429 api : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429 api.code : integer
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429 api.data : object
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429 api.description : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429 api.endpoint : string
+DELETE /mybox/{id_mybox}/server/{id_server} :: réponse 429 api.error : string
+GET /server/catalog/eggs
+GET /server/catalog/eggs :: réponse 200
+GET /server/catalog/eggs :: réponse 200 api : object
+GET /server/catalog/eggs :: réponse 200 api.code : integer
+GET /server/catalog/eggs :: réponse 200 api.data : object
+GET /server/catalog/eggs :: réponse 200 api.data.eggs : array
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[] : object
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[].id : integer
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[].name : string
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[].required_fields : array
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[].required_fields[] : object
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[].required_fields[].key : string
+GET /server/catalog/eggs :: réponse 200 api.data.eggs[].required_fields[].label : string
+GET /server/catalog/eggs :: réponse 200 api.description : string
+GET /server/catalog/eggs :: réponse 200 api.endpoint : string
+GET /server/catalog/eggs :: réponse 401
+GET /server/catalog/eggs :: réponse 401 api : object
+GET /server/catalog/eggs :: réponse 401 api.code : integer
+GET /server/catalog/eggs :: réponse 401 api.data : object
+GET /server/catalog/eggs :: réponse 401 api.description : string
+GET /server/catalog/eggs :: réponse 401 api.endpoint : string
+GET /server/catalog/eggs :: réponse 401 api.error : string
+GET /server/catalog/eggs :: réponse 403
+GET /server/catalog/eggs :: réponse 403 api : object
+GET /server/catalog/eggs :: réponse 403 api.code : integer
+GET /server/catalog/eggs :: réponse 403 api.data : object
+GET /server/catalog/eggs :: réponse 403 api.description : string
+GET /server/catalog/eggs :: réponse 403 api.endpoint : string
+GET /server/catalog/eggs :: réponse 403 api.error : string
+GET /server/catalog/eggs :: réponse 429
+GET /server/catalog/eggs :: réponse 429 api : object
+GET /server/catalog/eggs :: réponse 429 api.code : integer
+GET /server/catalog/eggs :: réponse 429 api.data : object
+GET /server/catalog/eggs :: réponse 429 api.description : string
+GET /server/catalog/eggs :: réponse 429 api.endpoint : string
+GET /server/catalog/eggs :: réponse 429 api.error : string
+GET /server/catalog/locations
+GET /server/catalog/locations :: réponse 200
+GET /server/catalog/locations :: réponse 200 api : object
+GET /server/catalog/locations :: réponse 200 api.code : integer
+GET /server/catalog/locations :: réponse 200 api.data : object
+GET /server/catalog/locations :: réponse 200 api.data.locations : array
+GET /server/catalog/locations :: réponse 200 api.data.locations[] : object
+GET /server/catalog/locations :: réponse 200 api.data.locations[].city : string
+GET /server/catalog/locations :: réponse 200 api.data.locations[].country : string
+GET /server/catalog/locations :: réponse 200 api.data.locations[].country_iso : string
+GET /server/catalog/locations :: réponse 200 api.data.locations[].id : integer
+GET /server/catalog/locations :: réponse 200 api.description : string
+GET /server/catalog/locations :: réponse 200 api.endpoint : string
+GET /server/catalog/locations :: réponse 401
+GET /server/catalog/locations :: réponse 401 api : object
+GET /server/catalog/locations :: réponse 401 api.code : integer
+GET /server/catalog/locations :: réponse 401 api.data : object
+GET /server/catalog/locations :: réponse 401 api.description : string
+GET /server/catalog/locations :: réponse 401 api.endpoint : string
+GET /server/catalog/locations :: réponse 401 api.error : string
+GET /server/catalog/locations :: réponse 403
+GET /server/catalog/locations :: réponse 403 api : object
+GET /server/catalog/locations :: réponse 403 api.code : integer
+GET /server/catalog/locations :: réponse 403 api.data : object
+GET /server/catalog/locations :: réponse 403 api.description : string
+GET /server/catalog/locations :: réponse 403 api.endpoint : string
+GET /server/catalog/locations :: réponse 403 api.error : string
+GET /server/catalog/locations :: réponse 429
+GET /server/catalog/locations :: réponse 429 api : object
+GET /server/catalog/locations :: réponse 429 api.code : integer
+GET /server/catalog/locations :: réponse 429 api.data : object
+GET /server/catalog/locations :: réponse 429 api.description : string
+GET /server/catalog/locations :: réponse 429 api.endpoint : string
+GET /server/catalog/locations :: réponse 429 api.error : string
+GET /server/{id_server}
+GET /server/{id_server} :: paramètre path.id_server : integer (requis)
+GET /server/{id_server} :: réponse 200
+GET /server/{id_server} :: réponse 200 api : object
+GET /server/{id_server} :: réponse 200 api.code : integer
+GET /server/{id_server} :: réponse 200 api.data : object
+GET /server/{id_server} :: réponse 200 api.data.egg : object
+GET /server/{id_server} :: réponse 200 api.data.egg.icon : string
+GET /server/{id_server} :: réponse 200 api.data.egg.id : integer
+GET /server/{id_server} :: réponse 200 api.data.egg.name : string
+GET /server/{id_server} :: réponse 200 api.data.egg.type : integer
+GET /server/{id_server} :: réponse 200 api.data.egg.uuid : string
+GET /server/{id_server} :: réponse 200 api.data.history : array
+GET /server/{id_server} :: réponse 200 api.data.history[] : object
+GET /server/{id_server} :: réponse 200 api.data.history[].action : string
+GET /server/{id_server} :: réponse 200 api.data.history[].date : string(date-time)
+GET /server/{id_server} :: réponse 200 api.data.history[].ip : string|null
+GET /server/{id_server} :: réponse 200 api.data.history[].is_staff : boolean
+GET /server/{id_server} :: réponse 200 api.data.livemap : object
+GET /server/{id_server} :: réponse 200 api.data.livemap.enabled : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.livemap.end : string(date-time)
+GET /server/{id_server} :: réponse 200 api.data.livemap.generated : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.livemap.is_free : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.livemap.option : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.livemap.start : string(date-time)
+GET /server/{id_server} :: réponse 200 api.data.livemap.url : string
+GET /server/{id_server} :: réponse 200 api.data.mybox : object
+GET /server/{id_server} :: réponse 200 api.data.mybox.hashsupport : string
+GET /server/{id_server} :: réponse 200 api.data.mybox.name : string
+GET /server/{id_server} :: réponse 200 api.data.mybox.reduction : integer
+GET /server/{id_server} :: réponse 200 api.data.mybox.refund_requested_at : string(date-time)
+GET /server/{id_server} :: réponse 200 api.data.mybox.resources : object
+GET /server/{id_server} :: réponse 200 api.data.mybox.resources.cpu : integer
+GET /server/{id_server} :: réponse 200 api.data.mybox.resources.disk : integer
+GET /server/{id_server} :: réponse 200 api.data.mybox.resources.ram : integer
+GET /server/{id_server} :: réponse 200 api.data.mybox.to_review : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.offer : object
+GET /server/{id_server} :: réponse 200 api.data.offer.auto_shutdown_seconds : integer
+GET /server/{id_server} :: réponse 200 api.data.offer.cpu : integer
+GET /server/{id_server} :: réponse 200 api.data.offer.disk : integer
+GET /server/{id_server} :: réponse 200 api.data.offer.is_free : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.offer.is_pro : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.offer.is_trial : integer
+GET /server/{id_server} :: réponse 200 api.data.offer.name : string
+GET /server/{id_server} :: réponse 200 api.data.offer.ram : integer
+GET /server/{id_server} :: réponse 200 api.data.onboarding : object
+GET /server/{id_server} :: réponse 200 api.data.onboarding.eligible : boolean
+GET /server/{id_server} :: réponse 200 api.data.onboarding.status : string
+GET /server/{id_server} :: réponse 200 api.data.onboarding.user_disabled : boolean
+GET /server/{id_server} :: réponse 200 api.data.options : array
+GET /server/{id_server} :: réponse 200 api.data.options[] : object
+GET /server/{id_server} :: réponse 200 api.data.options[].name : string
+GET /server/{id_server} :: réponse 200 api.data.options[].price : string
+GET /server/{id_server} :: réponse 200 api.data.ports : array
+GET /server/{id_server} :: réponse 200 api.data.ports[] : object
+GET /server/{id_server} :: réponse 200 api.data.ports[].description : string
+GET /server/{id_server} :: réponse 200 api.data.ports[].ip : string
+GET /server/{id_server} :: réponse 200 api.data.ports[].port : integer
+GET /server/{id_server} :: réponse 200 api.data.server : object
+GET /server/{id_server} :: réponse 200 api.data.server.dedicated_ip : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.server.dns : string|null
+GET /server/{id_server} :: réponse 200 api.data.server.hashsupport : string
+GET /server/{id_server} :: réponse 200 api.data.server.hibernation : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.server.id : integer
+GET /server/{id_server} :: réponse 200 api.data.server.id_daemon : integer
+GET /server/{id_server} :: réponse 200 api.data.server.id_groupe : integer|null
+GET /server/{id_server} :: réponse 200 api.data.server.id_mybox : integer
+GET /server/{id_server} :: réponse 200 api.data.server.ip : string
+GET /server/{id_server} :: réponse 200 api.data.server.is_free : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.server.name : string
+GET /server/{id_server} :: réponse 200 api.data.server.offre : string
+GET /server/{id_server} :: réponse 200 api.data.server.ordre : integer
+GET /server/{id_server} :: réponse 200 api.data.server.owner : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.server.permissions : array
+GET /server/{id_server} :: réponse 200 api.data.server.permissions[] : string
+GET /server/{id_server} :: réponse 200 api.data.server.port : integer
+GET /server/{id_server} :: réponse 200 api.data.server.tend : string(date-time)
+GET /server/{id_server} :: réponse 200 api.data.server.tstart : string(date-time)
+GET /server/{id_server} :: réponse 200 api.data.server.uuid : string
+GET /server/{id_server} :: réponse 200 api.data.settings : object
+GET /server/{id_server} :: réponse 200 api.data.settings.id_java_version : integer|null
+GET /server/{id_server} :: réponse 200 api.data.settings.image : string
+GET /server/{id_server} :: réponse 200 api.data.settings.is_bedrock : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.settings.is_bungeecord : integer enum[0,1]
+GET /server/{id_server} :: réponse 200 api.data.settings.java_memory : integer
+GET /server/{id_server} :: réponse 200 api.data.settings.poweraction_message : object
+GET /server/{id_server} :: réponse 200 api.data.settings.poweraction_message.restart : string
+GET /server/{id_server} :: réponse 200 api.data.settings.poweraction_message.stop : string
+GET /server/{id_server} :: réponse 200 api.data.settings.startup : string
+GET /server/{id_server} :: réponse 200 api.data.settings.startup_file : string|null
+GET /server/{id_server} :: réponse 200 api.data.sftp : object
+GET /server/{id_server} :: réponse 200 api.data.sftp.host : string
+GET /server/{id_server} :: réponse 200 api.data.sftp.password : string
+GET /server/{id_server} :: réponse 200 api.data.sftp.port : integer
+GET /server/{id_server} :: réponse 200 api.data.sftp.protocol : string
+GET /server/{id_server} :: réponse 200 api.data.sftp.user : string
+GET /server/{id_server} :: réponse 200 api.data.websocket : object
+GET /server/{id_server} :: réponse 200 api.data.websocket.token : string
+GET /server/{id_server} :: réponse 200 api.data.websocket.url : string
+GET /server/{id_server} :: réponse 200 api.description : string
+GET /server/{id_server} :: réponse 200 api.endpoint : string
+GET /server/{id_server} :: réponse 400
+GET /server/{id_server} :: réponse 400 api : object
+GET /server/{id_server} :: réponse 400 api.code : integer
+GET /server/{id_server} :: réponse 400 api.data : object
+GET /server/{id_server} :: réponse 400 api.description : string
+GET /server/{id_server} :: réponse 400 api.endpoint : string
+GET /server/{id_server} :: réponse 400 api.error : string
+GET /server/{id_server} :: réponse 401
+GET /server/{id_server} :: réponse 401 api : object
+GET /server/{id_server} :: réponse 401 api.code : integer
+GET /server/{id_server} :: réponse 401 api.data : object
+GET /server/{id_server} :: réponse 401 api.description : string
+GET /server/{id_server} :: réponse 401 api.endpoint : string
+GET /server/{id_server} :: réponse 401 api.error : string
+GET /server/{id_server} :: réponse 429
+GET /server/{id_server} :: réponse 429 api : object
+GET /server/{id_server} :: réponse 429 api.code : integer
+GET /server/{id_server} :: réponse 429 api.data : object
+GET /server/{id_server} :: réponse 429 api.description : string
+GET /server/{id_server} :: réponse 429 api.endpoint : string
+GET /server/{id_server} :: réponse 429 api.error : string
+PUT /server/{id_server}/backup
+PUT /server/{id_server}/backup :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/backup :: corps application/json id_backup : integer (requis)
+PUT /server/{id_server}/backup :: réponse 200
+PUT /server/{id_server}/backup :: réponse 200 api : object
+PUT /server/{id_server}/backup :: réponse 200 api.code : integer
+PUT /server/{id_server}/backup :: réponse 200 api.description : string
+PUT /server/{id_server}/backup :: réponse 200 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 400
+PUT /server/{id_server}/backup :: réponse 400 api : object
+PUT /server/{id_server}/backup :: réponse 400 api.code : integer
+PUT /server/{id_server}/backup :: réponse 400 api.data : object
+PUT /server/{id_server}/backup :: réponse 400 api.description : string
+PUT /server/{id_server}/backup :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 400 api.error : string
+PUT /server/{id_server}/backup :: réponse 401
+PUT /server/{id_server}/backup :: réponse 401 api : object
+PUT /server/{id_server}/backup :: réponse 401 api.code : integer
+PUT /server/{id_server}/backup :: réponse 401 api.data : object
+PUT /server/{id_server}/backup :: réponse 401 api.description : string
+PUT /server/{id_server}/backup :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 401 api.error : string
+PUT /server/{id_server}/backup :: réponse 403
+PUT /server/{id_server}/backup :: réponse 403 api : object
+PUT /server/{id_server}/backup :: réponse 403 api.code : integer
+PUT /server/{id_server}/backup :: réponse 403 api.data : object
+PUT /server/{id_server}/backup :: réponse 403 api.description : string
+PUT /server/{id_server}/backup :: réponse 403 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 403 api.error : string
+PUT /server/{id_server}/backup :: réponse 404
+PUT /server/{id_server}/backup :: réponse 404 api : object
+PUT /server/{id_server}/backup :: réponse 404 api.code : integer
+PUT /server/{id_server}/backup :: réponse 404 api.data : object
+PUT /server/{id_server}/backup :: réponse 404 api.description : string
+PUT /server/{id_server}/backup :: réponse 404 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 404 api.error : string
+PUT /server/{id_server}/backup :: réponse 409
+PUT /server/{id_server}/backup :: réponse 409 api : object
+PUT /server/{id_server}/backup :: réponse 409 api.code : integer
+PUT /server/{id_server}/backup :: réponse 409 api.data : object
+PUT /server/{id_server}/backup :: réponse 409 api.description : string
+PUT /server/{id_server}/backup :: réponse 409 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 409 api.error : string
+PUT /server/{id_server}/backup :: réponse 429
+PUT /server/{id_server}/backup :: réponse 429 api : object
+PUT /server/{id_server}/backup :: réponse 429 api.code : integer
+PUT /server/{id_server}/backup :: réponse 429 api.data : object
+PUT /server/{id_server}/backup :: réponse 429 api.description : string
+PUT /server/{id_server}/backup :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 429 api.error : string
+PUT /server/{id_server}/backup :: réponse 503
+PUT /server/{id_server}/backup :: réponse 503 api : object
+PUT /server/{id_server}/backup :: réponse 503 api.code : integer
+PUT /server/{id_server}/backup :: réponse 503 api.data : object
+PUT /server/{id_server}/backup :: réponse 503 api.description : string
+PUT /server/{id_server}/backup :: réponse 503 api.endpoint : string
+PUT /server/{id_server}/backup :: réponse 503 api.error : string
+GET /server/{id_server}/backups
+GET /server/{id_server}/backups :: paramètre path.id_server : integer (requis)
+GET /server/{id_server}/backups :: réponse 200
+GET /server/{id_server}/backups :: réponse 200 api : object
+GET /server/{id_server}/backups :: réponse 200 api.code : integer
+GET /server/{id_server}/backups :: réponse 200 api.data : object
+GET /server/{id_server}/backups :: réponse 200 api.data.backups : array
+GET /server/{id_server}/backups :: réponse 200 api.data.backups[] : object
+GET /server/{id_server}/backups :: réponse 200 api.data.backups[].date : string(date-time)
+GET /server/{id_server}/backups :: réponse 200 api.data.backups[].id : integer
+GET /server/{id_server}/backups :: réponse 200 api.data.backups[].size : integer
+GET /server/{id_server}/backups :: réponse 200 api.description : string
+GET /server/{id_server}/backups :: réponse 200 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 400
+GET /server/{id_server}/backups :: réponse 400 api : object
+GET /server/{id_server}/backups :: réponse 400 api.code : integer
+GET /server/{id_server}/backups :: réponse 400 api.data : object
+GET /server/{id_server}/backups :: réponse 400 api.description : string
+GET /server/{id_server}/backups :: réponse 400 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 400 api.error : string
+GET /server/{id_server}/backups :: réponse 401
+GET /server/{id_server}/backups :: réponse 401 api : object
+GET /server/{id_server}/backups :: réponse 401 api.code : integer
+GET /server/{id_server}/backups :: réponse 401 api.data : object
+GET /server/{id_server}/backups :: réponse 401 api.description : string
+GET /server/{id_server}/backups :: réponse 401 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 401 api.error : string
+GET /server/{id_server}/backups :: réponse 403
+GET /server/{id_server}/backups :: réponse 403 api : object
+GET /server/{id_server}/backups :: réponse 403 api.code : integer
+GET /server/{id_server}/backups :: réponse 403 api.data : object
+GET /server/{id_server}/backups :: réponse 403 api.description : string
+GET /server/{id_server}/backups :: réponse 403 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 403 api.error : string
+GET /server/{id_server}/backups :: réponse 404
+GET /server/{id_server}/backups :: réponse 404 api : object
+GET /server/{id_server}/backups :: réponse 404 api.code : integer
+GET /server/{id_server}/backups :: réponse 404 api.data : object
+GET /server/{id_server}/backups :: réponse 404 api.description : string
+GET /server/{id_server}/backups :: réponse 404 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 404 api.error : string
+GET /server/{id_server}/backups :: réponse 429
+GET /server/{id_server}/backups :: réponse 429 api : object
+GET /server/{id_server}/backups :: réponse 429 api.code : integer
+GET /server/{id_server}/backups :: réponse 429 api.data : object
+GET /server/{id_server}/backups :: réponse 429 api.description : string
+GET /server/{id_server}/backups :: réponse 429 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 429 api.error : string
+GET /server/{id_server}/backups :: réponse 503
+GET /server/{id_server}/backups :: réponse 503 api : object
+GET /server/{id_server}/backups :: réponse 503 api.code : integer
+GET /server/{id_server}/backups :: réponse 503 api.data : object
+GET /server/{id_server}/backups :: réponse 503 api.description : string
+GET /server/{id_server}/backups :: réponse 503 api.endpoint : string
+GET /server/{id_server}/backups :: réponse 503 api.error : string
+PUT /server/{id_server}/command
+PUT /server/{id_server}/command :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command :: corps application/json command : string (requis)
+PUT /server/{id_server}/command :: réponse 200
+PUT /server/{id_server}/command :: réponse 200 api : object
+PUT /server/{id_server}/command :: réponse 200 api.code : integer
+PUT /server/{id_server}/command :: réponse 200 api.description : string
+PUT /server/{id_server}/command :: réponse 200 api.endpoint : string
+PUT /server/{id_server}/command :: réponse 400
+PUT /server/{id_server}/command :: réponse 400 api : object
+PUT /server/{id_server}/command :: réponse 400 api.code : integer
+PUT /server/{id_server}/command :: réponse 400 api.data : object
+PUT /server/{id_server}/command :: réponse 400 api.description : string
+PUT /server/{id_server}/command :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command :: réponse 400 api.error : string
+PUT /server/{id_server}/command :: réponse 401
+PUT /server/{id_server}/command :: réponse 401 api : object
+PUT /server/{id_server}/command :: réponse 401 api.code : integer
+PUT /server/{id_server}/command :: réponse 401 api.data : object
+PUT /server/{id_server}/command :: réponse 401 api.description : string
+PUT /server/{id_server}/command :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command :: réponse 401 api.error : string
+PUT /server/{id_server}/command :: réponse 429
+PUT /server/{id_server}/command :: réponse 429 api : object
+PUT /server/{id_server}/command :: réponse 429 api.code : integer
+PUT /server/{id_server}/command :: réponse 429 api.data : object
+PUT /server/{id_server}/command :: réponse 429 api.description : string
+PUT /server/{id_server}/command :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/ban
+PUT /server/{id_server}/command/minecraft/ban :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/ban :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/ban :: réponse 200
+PUT /server/{id_server}/command/minecraft/ban :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/ban :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/kick
+PUT /server/{id_server}/command/minecraft/kick :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/kick :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/kick :: réponse 200
+PUT /server/{id_server}/command/minecraft/kick :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/kick :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/op/add
+PUT /server/{id_server}/command/minecraft/op/add :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/op/add :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 200
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/op/add :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/op/remove
+PUT /server/{id_server}/command/minecraft/op/remove :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/op/remove :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 200
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/op/remove :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/unban
+PUT /server/{id_server}/command/minecraft/unban :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/unban :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/unban :: réponse 200
+PUT /server/{id_server}/command/minecraft/unban :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/unban :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/whitelist/add
+PUT /server/{id_server}/command/minecraft/whitelist/add :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/whitelist/add :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 200
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/whitelist/add :: réponse 429 api.error : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: corps application/json player : string (requis)
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 200
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 200 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 200 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400 api.data : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400 api.description : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 400 api.error : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401 api.data : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401 api.description : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 401 api.error : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429 api : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429 api.code : integer
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429 api.data : object
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429 api.description : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/command/minecraft/whitelist/remove :: réponse 429 api.error : string
+GET /server/{id_server}/console/logs
+GET /server/{id_server}/console/logs :: paramètre path.id_server : integer (requis)
+GET /server/{id_server}/console/logs :: réponse 200
+GET /server/{id_server}/console/logs :: réponse 200 api : object
+GET /server/{id_server}/console/logs :: réponse 200 api.code : integer
+GET /server/{id_server}/console/logs :: réponse 200 api.data : object
+GET /server/{id_server}/console/logs :: réponse 200 api.data.logs : array
+GET /server/{id_server}/console/logs :: réponse 200 api.data.logs[] : string
+GET /server/{id_server}/console/logs :: réponse 200 api.description : string
+GET /server/{id_server}/console/logs :: réponse 200 api.endpoint : string
+GET /server/{id_server}/console/logs :: réponse 400
+GET /server/{id_server}/console/logs :: réponse 400 api : object
+GET /server/{id_server}/console/logs :: réponse 400 api.code : integer
+GET /server/{id_server}/console/logs :: réponse 400 api.data : object
+GET /server/{id_server}/console/logs :: réponse 400 api.description : string
+GET /server/{id_server}/console/logs :: réponse 400 api.endpoint : string
+GET /server/{id_server}/console/logs :: réponse 400 api.error : string
+GET /server/{id_server}/console/logs :: réponse 401
+GET /server/{id_server}/console/logs :: réponse 401 api : object
+GET /server/{id_server}/console/logs :: réponse 401 api.code : integer
+GET /server/{id_server}/console/logs :: réponse 401 api.data : object
+GET /server/{id_server}/console/logs :: réponse 401 api.description : string
+GET /server/{id_server}/console/logs :: réponse 401 api.endpoint : string
+GET /server/{id_server}/console/logs :: réponse 401 api.error : string
+GET /server/{id_server}/console/logs :: réponse 403
+GET /server/{id_server}/console/logs :: réponse 403 api : object
+GET /server/{id_server}/console/logs :: réponse 403 api.code : integer
+GET /server/{id_server}/console/logs :: réponse 403 api.data : object
+GET /server/{id_server}/console/logs :: réponse 403 api.description : string
+GET /server/{id_server}/console/logs :: réponse 403 api.endpoint : string
+GET /server/{id_server}/console/logs :: réponse 403 api.error : string
+GET /server/{id_server}/console/logs :: réponse 404
+GET /server/{id_server}/console/logs :: réponse 404 api : object
+GET /server/{id_server}/console/logs :: réponse 404 api.code : integer
+GET /server/{id_server}/console/logs :: réponse 404 api.data : object
+GET /server/{id_server}/console/logs :: réponse 404 api.description : string
+GET /server/{id_server}/console/logs :: réponse 404 api.endpoint : string
+GET /server/{id_server}/console/logs :: réponse 404 api.error : string
+GET /server/{id_server}/console/logs :: réponse 429
+GET /server/{id_server}/console/logs :: réponse 429 api : object
+GET /server/{id_server}/console/logs :: réponse 429 api.code : integer
+GET /server/{id_server}/console/logs :: réponse 429 api.data : object
+GET /server/{id_server}/console/logs :: réponse 429 api.description : string
+GET /server/{id_server}/console/logs :: réponse 429 api.endpoint : string
+GET /server/{id_server}/console/logs :: réponse 429 api.error : string
+PATCH /server/{id_server}/icon
+PATCH /server/{id_server}/icon :: paramètre path.id_server : integer (requis)
+PATCH /server/{id_server}/icon :: corps application/json file : string (requis)
+PATCH /server/{id_server}/icon :: réponse 200
+PATCH /server/{id_server}/icon :: réponse 200 api : object
+PATCH /server/{id_server}/icon :: réponse 200 api.code : integer
+PATCH /server/{id_server}/icon :: réponse 200 api.description : string
+PATCH /server/{id_server}/icon :: réponse 200 api.endpoint : string
+PATCH /server/{id_server}/icon :: réponse 400
+PATCH /server/{id_server}/icon :: réponse 400 api : object
+PATCH /server/{id_server}/icon :: réponse 400 api.code : integer
+PATCH /server/{id_server}/icon :: réponse 400 api.data : object
+PATCH /server/{id_server}/icon :: réponse 400 api.description : string
+PATCH /server/{id_server}/icon :: réponse 400 api.endpoint : string
+PATCH /server/{id_server}/icon :: réponse 400 api.error : string
+PATCH /server/{id_server}/icon :: réponse 401
+PATCH /server/{id_server}/icon :: réponse 401 api : object
+PATCH /server/{id_server}/icon :: réponse 401 api.code : integer
+PATCH /server/{id_server}/icon :: réponse 401 api.data : object
+PATCH /server/{id_server}/icon :: réponse 401 api.description : string
+PATCH /server/{id_server}/icon :: réponse 401 api.endpoint : string
+PATCH /server/{id_server}/icon :: réponse 401 api.error : string
+PATCH /server/{id_server}/icon :: réponse 429
+PATCH /server/{id_server}/icon :: réponse 429 api : object
+PATCH /server/{id_server}/icon :: réponse 429 api.code : integer
+PATCH /server/{id_server}/icon :: réponse 429 api.data : object
+PATCH /server/{id_server}/icon :: réponse 429 api.description : string
+PATCH /server/{id_server}/icon :: réponse 429 api.endpoint : string
+PATCH /server/{id_server}/icon :: réponse 429 api.error : string
+GET /server/{id_server}/live
+GET /server/{id_server}/live :: paramètre path.id_server : integer (requis)
+GET /server/{id_server}/live :: réponse 200
+GET /server/{id_server}/live :: réponse 200 api : object
+GET /server/{id_server}/live :: réponse 200 api.code : integer
+GET /server/{id_server}/live :: réponse 200 api.data : object
+GET /server/{id_server}/live :: réponse 200 api.data.state : string enum[online,starting,stopping,offline]
+GET /server/{id_server}/live :: réponse 200 api.data.stats : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu.current : number
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu.dedicated : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu.flexcore : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu.is_bursting : boolean
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu.limit : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.cpu.percent : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.disk : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.disk.current : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.disk.limit : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.disk.percent : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.hostname : string
+GET /server/{id_server}/live :: réponse 200 api.data.stats.memory : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.memory.current : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.memory.limit : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.memory.percent : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.motd : string
+GET /server/{id_server}/live :: réponse 200 api.data.stats.network : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.network.rx_bytes : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.network.tx_bytes : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.players : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.players.current : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.players.limit : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.players.list : array
+GET /server/{id_server}/live :: réponse 200 api.data.stats.players.list[] : string
+GET /server/{id_server}/live :: réponse 200 api.data.stats.state : string enum[online,starting,stopping,offline]
+GET /server/{id_server}/live :: réponse 200 api.data.stats.uptime : object
+GET /server/{id_server}/live :: réponse 200 api.data.stats.uptime.days : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.uptime.hours : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.uptime.minutes : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.uptime.total_seconds : integer
+GET /server/{id_server}/live :: réponse 200 api.data.stats.version : string
+GET /server/{id_server}/live :: réponse 200 api.data.status : string|null
+GET /server/{id_server}/live :: réponse 200 api.description : string
+GET /server/{id_server}/live :: réponse 200 api.endpoint : string
+GET /server/{id_server}/live :: réponse 400
+GET /server/{id_server}/live :: réponse 400 api : object
+GET /server/{id_server}/live :: réponse 400 api.code : integer
+GET /server/{id_server}/live :: réponse 400 api.data : object
+GET /server/{id_server}/live :: réponse 400 api.description : string
+GET /server/{id_server}/live :: réponse 400 api.endpoint : string
+GET /server/{id_server}/live :: réponse 400 api.error : string
+GET /server/{id_server}/live :: réponse 401
+GET /server/{id_server}/live :: réponse 401 api : object
+GET /server/{id_server}/live :: réponse 401 api.code : integer
+GET /server/{id_server}/live :: réponse 401 api.data : object
+GET /server/{id_server}/live :: réponse 401 api.description : string
+GET /server/{id_server}/live :: réponse 401 api.endpoint : string
+GET /server/{id_server}/live :: réponse 401 api.error : string
+GET /server/{id_server}/live :: réponse 429
+GET /server/{id_server}/live :: réponse 429 api : object
+GET /server/{id_server}/live :: réponse 429 api.code : integer
+GET /server/{id_server}/live :: réponse 429 api.data : object
+GET /server/{id_server}/live :: réponse 429 api.description : string
+GET /server/{id_server}/live :: réponse 429 api.endpoint : string
+GET /server/{id_server}/live :: réponse 429 api.error : string
+GET /server/{id_server}/live/light
+GET /server/{id_server}/live/light :: paramètre path.id_server : integer (requis)
+GET /server/{id_server}/live/light :: réponse 200
+GET /server/{id_server}/live/light :: réponse 200 api : object
+GET /server/{id_server}/live/light :: réponse 200 api.code : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data : object
+GET /server/{id_server}/live/light :: réponse 200 api.data.cpu : object
+GET /server/{id_server}/live/light :: réponse 200 api.data.cpu.dedicated : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.cpu.flexcore : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.cpu.limit : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.disk : object
+GET /server/{id_server}/live/light :: réponse 200 api.data.disk.limit : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.hostname : string
+GET /server/{id_server}/live/light :: réponse 200 api.data.memory : object
+GET /server/{id_server}/live/light :: réponse 200 api.data.memory.limit : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.motd : string
+GET /server/{id_server}/live/light :: réponse 200 api.data.players : object
+GET /server/{id_server}/live/light :: réponse 200 api.data.players.current : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.players.limit : integer
+GET /server/{id_server}/live/light :: réponse 200 api.data.players.list : array
+GET /server/{id_server}/live/light :: réponse 200 api.data.players.list[] : string
+GET /server/{id_server}/live/light :: réponse 200 api.data.status : string|null
+GET /server/{id_server}/live/light :: réponse 200 api.data.version : string
+GET /server/{id_server}/live/light :: réponse 200 api.description : string
+GET /server/{id_server}/live/light :: réponse 200 api.endpoint : string
+GET /server/{id_server}/live/light :: réponse 400
+GET /server/{id_server}/live/light :: réponse 400 api : object
+GET /server/{id_server}/live/light :: réponse 400 api.code : integer
+GET /server/{id_server}/live/light :: réponse 400 api.data : object
+GET /server/{id_server}/live/light :: réponse 400 api.description : string
+GET /server/{id_server}/live/light :: réponse 400 api.endpoint : string
+GET /server/{id_server}/live/light :: réponse 400 api.error : string
+GET /server/{id_server}/live/light :: réponse 401
+GET /server/{id_server}/live/light :: réponse 401 api : object
+GET /server/{id_server}/live/light :: réponse 401 api.code : integer
+GET /server/{id_server}/live/light :: réponse 401 api.data : object
+GET /server/{id_server}/live/light :: réponse 401 api.description : string
+GET /server/{id_server}/live/light :: réponse 401 api.endpoint : string
+GET /server/{id_server}/live/light :: réponse 401 api.error : string
+GET /server/{id_server}/live/light :: réponse 429
+GET /server/{id_server}/live/light :: réponse 429 api : object
+GET /server/{id_server}/live/light :: réponse 429 api.code : integer
+GET /server/{id_server}/live/light :: réponse 429 api.data : object
+GET /server/{id_server}/live/light :: réponse 429 api.description : string
+GET /server/{id_server}/live/light :: réponse 429 api.endpoint : string
+GET /server/{id_server}/live/light :: réponse 429 api.error : string
+PATCH /server/{id_server}/name
+PATCH /server/{id_server}/name :: paramètre path.id_server : integer (requis)
+PATCH /server/{id_server}/name :: corps application/json name : string (requis)
+PATCH /server/{id_server}/name :: réponse 200
+PATCH /server/{id_server}/name :: réponse 200 api : object
+PATCH /server/{id_server}/name :: réponse 200 api.code : integer
+PATCH /server/{id_server}/name :: réponse 200 api.description : string
+PATCH /server/{id_server}/name :: réponse 200 api.endpoint : string
+PATCH /server/{id_server}/name :: réponse 400
+PATCH /server/{id_server}/name :: réponse 400 api : object
+PATCH /server/{id_server}/name :: réponse 400 api.code : integer
+PATCH /server/{id_server}/name :: réponse 400 api.data : object
+PATCH /server/{id_server}/name :: réponse 400 api.description : string
+PATCH /server/{id_server}/name :: réponse 400 api.endpoint : string
+PATCH /server/{id_server}/name :: réponse 400 api.error : string
+PATCH /server/{id_server}/name :: réponse 401
+PATCH /server/{id_server}/name :: réponse 401 api : object
+PATCH /server/{id_server}/name :: réponse 401 api.code : integer
+PATCH /server/{id_server}/name :: réponse 401 api.data : object
+PATCH /server/{id_server}/name :: réponse 401 api.description : string
+PATCH /server/{id_server}/name :: réponse 401 api.endpoint : string
+PATCH /server/{id_server}/name :: réponse 401 api.error : string
+PATCH /server/{id_server}/name :: réponse 429
+PATCH /server/{id_server}/name :: réponse 429 api : object
+PATCH /server/{id_server}/name :: réponse 429 api.code : integer
+PATCH /server/{id_server}/name :: réponse 429 api.data : object
+PATCH /server/{id_server}/name :: réponse 429 api.description : string
+PATCH /server/{id_server}/name :: réponse 429 api.endpoint : string
+PATCH /server/{id_server}/name :: réponse 429 api.error : string
+PUT /server/{id_server}/poweraction
+PUT /server/{id_server}/poweraction :: paramètre path.id_server : integer (requis)
+PUT /server/{id_server}/poweraction :: corps application/json poweraction : string enum[start,restart,restart10,stop,stop10,kill] (requis)
+PUT /server/{id_server}/poweraction :: réponse 200
+PUT /server/{id_server}/poweraction :: réponse 200 api : object
+PUT /server/{id_server}/poweraction :: réponse 200 api.code : integer
+PUT /server/{id_server}/poweraction :: réponse 200 api.description : string
+PUT /server/{id_server}/poweraction :: réponse 200 api.endpoint : string
+PUT /server/{id_server}/poweraction :: réponse 400
+PUT /server/{id_server}/poweraction :: réponse 400 api : object
+PUT /server/{id_server}/poweraction :: réponse 400 api.code : integer
+PUT /server/{id_server}/poweraction :: réponse 400 api.data : object
+PUT /server/{id_server}/poweraction :: réponse 400 api.description : string
+PUT /server/{id_server}/poweraction :: réponse 400 api.endpoint : string
+PUT /server/{id_server}/poweraction :: réponse 400 api.error : string
+PUT /server/{id_server}/poweraction :: réponse 401
+PUT /server/{id_server}/poweraction :: réponse 401 api : object
+PUT /server/{id_server}/poweraction :: réponse 401 api.code : integer
+PUT /server/{id_server}/poweraction :: réponse 401 api.data : object
+PUT /server/{id_server}/poweraction :: réponse 401 api.description : string
+PUT /server/{id_server}/poweraction :: réponse 401 api.endpoint : string
+PUT /server/{id_server}/poweraction :: réponse 401 api.error : string
+PUT /server/{id_server}/poweraction :: réponse 429
+PUT /server/{id_server}/poweraction :: réponse 429 api : object
+PUT /server/{id_server}/poweraction :: réponse 429 api.code : integer
+PUT /server/{id_server}/poweraction :: réponse 429 api.data : object
+PUT /server/{id_server}/poweraction :: réponse 429 api.description : string
+PUT /server/{id_server}/poweraction :: réponse 429 api.endpoint : string
+PUT /server/{id_server}/poweraction :: réponse 429 api.error : string
+PATCH /server/{id_server}/poweraction/messages
+PATCH /server/{id_server}/poweraction/messages :: paramètre path.id_server : integer (requis)
+PATCH /server/{id_server}/poweraction/messages :: corps application/json restart : string (requis)
+PATCH /server/{id_server}/poweraction/messages :: corps application/json stop : string (requis)
+PATCH /server/{id_server}/poweraction/messages :: réponse 200
+PATCH /server/{id_server}/poweraction/messages :: réponse 200 api : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 200 api.code : integer
+PATCH /server/{id_server}/poweraction/messages :: réponse 200 api.description : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 200 api.endpoint : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 400
+PATCH /server/{id_server}/poweraction/messages :: réponse 400 api : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 400 api.code : integer
+PATCH /server/{id_server}/poweraction/messages :: réponse 400 api.data : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 400 api.description : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 400 api.endpoint : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 400 api.error : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 401
+PATCH /server/{id_server}/poweraction/messages :: réponse 401 api : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 401 api.code : integer
+PATCH /server/{id_server}/poweraction/messages :: réponse 401 api.data : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 401 api.description : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 401 api.endpoint : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 401 api.error : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 429
+PATCH /server/{id_server}/poweraction/messages :: réponse 429 api : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 429 api.code : integer
+PATCH /server/{id_server}/poweraction/messages :: réponse 429 api.data : object
+PATCH /server/{id_server}/poweraction/messages :: réponse 429 api.description : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 429 api.endpoint : string
+PATCH /server/{id_server}/poweraction/messages :: réponse 429 api.error : string
+GET /server/{id_server}/properties
+GET /server/{id_server}/properties :: paramètre path.id_server : integer (requis)
+GET /server/{id_server}/properties :: réponse 200
+GET /server/{id_server}/properties :: réponse 200 api : object
+GET /server/{id_server}/properties :: réponse 200 api.code : integer
+GET /server/{id_server}/properties :: réponse 200 api.data : object
+GET /server/{id_server}/properties :: réponse 200 api.data.properties : object
+GET /server/{id_server}/properties :: réponse 200 api.data.properties_type : string
+GET /server/{id_server}/properties :: réponse 200 api.description : string
+GET /server/{id_server}/properties :: réponse 200 api.endpoint : string
+GET /server/{id_server}/properties :: réponse 400
+GET /server/{id_server}/properties :: réponse 400 api : object
+GET /server/{id_server}/properties :: réponse 400 api.code : integer
+GET /server/{id_server}/properties :: réponse 400 api.data : object
+GET /server/{id_server}/properties :: réponse 400 api.description : string
+GET /server/{id_server}/properties :: réponse 400 api.endpoint : string
+GET /server/{id_server}/properties :: réponse 400 api.error : string
+GET /server/{id_server}/properties :: réponse 401
+GET /server/{id_server}/properties :: réponse 401 api : object
+GET /server/{id_server}/properties :: réponse 401 api.code : integer
+GET /server/{id_server}/properties :: réponse 401 api.data : object
+GET /server/{id_server}/properties :: réponse 401 api.description : string
+GET /server/{id_server}/properties :: réponse 401 api.endpoint : string
+GET /server/{id_server}/properties :: réponse 401 api.error : string
+GET /server/{id_server}/properties :: réponse 429
+GET /server/{id_server}/properties :: réponse 429 api : object
+GET /server/{id_server}/properties :: réponse 429 api.code : integer
+GET /server/{id_server}/properties :: réponse 429 api.data : object
+GET /server/{id_server}/properties :: réponse 429 api.description : string
+GET /server/{id_server}/properties :: réponse 429 api.endpoint : string
+GET /server/{id_server}/properties :: réponse 429 api.error : string
+PATCH /server/{id_server}/properties
+PATCH /server/{id_server}/properties :: paramètre path.id_server : integer (requis)
+PATCH /server/{id_server}/properties :: corps application/json property : string (requis)
+PATCH /server/{id_server}/properties :: corps application/json value : string
+PATCH /server/{id_server}/properties :: réponse 200
+PATCH /server/{id_server}/properties :: réponse 200 api : object
+PATCH /server/{id_server}/properties :: réponse 200 api.code : integer
+PATCH /server/{id_server}/properties :: réponse 200 api.description : string
+PATCH /server/{id_server}/properties :: réponse 200 api.endpoint : string
+PATCH /server/{id_server}/properties :: réponse 400
+PATCH /server/{id_server}/properties :: réponse 400 api : object
+PATCH /server/{id_server}/properties :: réponse 400 api.code : integer
+PATCH /server/{id_server}/properties :: réponse 400 api.data : object
+PATCH /server/{id_server}/properties :: réponse 400 api.description : string
+PATCH /server/{id_server}/properties :: réponse 400 api.endpoint : string
+PATCH /server/{id_server}/properties :: réponse 400 api.error : string
+PATCH /server/{id_server}/properties :: réponse 401
+PATCH /server/{id_server}/properties :: réponse 401 api : object
+PATCH /server/{id_server}/properties :: réponse 401 api.code : integer
+PATCH /server/{id_server}/properties :: réponse 401 api.data : object
+PATCH /server/{id_server}/properties :: réponse 401 api.description : string
+PATCH /server/{id_server}/properties :: réponse 401 api.endpoint : string
+PATCH /server/{id_server}/properties :: réponse 401 api.error : string
+PATCH /server/{id_server}/properties :: réponse 429
+PATCH /server/{id_server}/properties :: réponse 429 api : object
+PATCH /server/{id_server}/properties :: réponse 429 api.code : integer
+PATCH /server/{id_server}/properties :: réponse 429 api.data : object
+PATCH /server/{id_server}/properties :: réponse 429 api.description : string
+PATCH /server/{id_server}/properties :: réponse 429 api.endpoint : string
+PATCH /server/{id_server}/properties :: réponse 429 api.error : string
+GET /user
+GET /user :: réponse 200
+GET /user :: réponse 200 api : object
+GET /user :: réponse 200 api.code : integer
+GET /user :: réponse 200 api.data : object
+GET /user :: réponse 200 api.data.user : object
+GET /user :: réponse 200 api.data.user.datas : object
+GET /user :: réponse 200 api.data.user.datas.id : integer
+GET /user :: réponse 200 api.data.user.datas.lang : string enum[fr,en]
+GET /user :: réponse 200 api.data.user.datas.mail : string
+GET /user :: réponse 200 api.data.user.datas.mail_validated : integer enum[0,1]
+GET /user :: réponse 200 api.data.user.datas.money : number
+GET /user :: réponse 200 api.data.user.datas.pseudo : string
+GET /user :: réponse 200 api.data.user.datas.register_date : string
+GET /user :: réponse 200 api.data.user.linked_account : object
+GET /user :: réponse 200 api.data.user.linked_account.discord : object
+GET /user :: réponse 200 api.data.user.linked_account.discord.id : string
+GET /user :: réponse 200 api.data.user.linked_account.discord.name : string
+GET /user :: réponse 200 api.data.user.linked_account.minecraft : object
+GET /user :: réponse 200 api.data.user.linked_account.minecraft.name : string
+GET /user :: réponse 200 api.data.user.linked_account.minecraft.uuid : string
+GET /user :: réponse 200 api.description : string
+GET /user :: réponse 200 api.endpoint : string
+GET /user :: réponse 401
+GET /user :: réponse 401 api : object
+GET /user :: réponse 401 api.code : integer
+GET /user :: réponse 401 api.data : object
+GET /user :: réponse 401 api.description : string
+GET /user :: réponse 401 api.endpoint : string
+GET /user :: réponse 401 api.error : string
+GET /user :: réponse 403
+GET /user :: réponse 403 api : object
+GET /user :: réponse 403 api.code : integer
+GET /user :: réponse 403 api.data : object
+GET /user :: réponse 403 api.description : string
+GET /user :: réponse 403 api.endpoint : string
+GET /user :: réponse 403 api.error : string
+GET /user :: réponse 429
+GET /user :: réponse 429 api : object
+GET /user :: réponse 429 api.code : integer
+GET /user :: réponse 429 api.data : object
+GET /user :: réponse 429 api.description : string
+GET /user :: réponse 429 api.endpoint : string
+GET /user :: réponse 429 api.error : string
+GET /user/{id_user}/servers
+GET /user/{id_user}/servers :: paramètre path.id_user : integer (requis)
+GET /user/{id_user}/servers :: réponse 200
+GET /user/{id_user}/servers :: réponse 200 api : object
+GET /user/{id_user}/servers :: réponse 200 api.code : integer
+GET /user/{id_user}/servers :: réponse 200 api.data : object
+GET /user/{id_user}/servers :: réponse 200 api.data.servers : array
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[] : object
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].dns : string|null
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].egg_icon : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].egg_name : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].egg_uuid : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].hashsupport : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].hibernation : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].id : integer
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].id_egg : integer
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].id_mybox : integer
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].ip : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].is_bedrock : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].is_disabled : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].is_expired : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].is_free : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].is_suspended : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].name : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].owner : integer enum[0,1]
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].port : integer
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].tend : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers[].tstart : string
+GET /user/{id_user}/servers :: réponse 200 api.data.servers_groups : object
+GET /user/{id_user}/servers :: réponse 200 api.description : string
+GET /user/{id_user}/servers :: réponse 200 api.endpoint : string
+GET /user/{id_user}/servers :: réponse 400
+GET /user/{id_user}/servers :: réponse 400 api : object
+GET /user/{id_user}/servers :: réponse 400 api.code : integer
+GET /user/{id_user}/servers :: réponse 400 api.data : object
+GET /user/{id_user}/servers :: réponse 400 api.description : string
+GET /user/{id_user}/servers :: réponse 400 api.endpoint : string
+GET /user/{id_user}/servers :: réponse 400 api.error : string
+GET /user/{id_user}/servers :: réponse 401
+GET /user/{id_user}/servers :: réponse 401 api : object
+GET /user/{id_user}/servers :: réponse 401 api.code : integer
+GET /user/{id_user}/servers :: réponse 401 api.data : object
+GET /user/{id_user}/servers :: réponse 401 api.description : string
+GET /user/{id_user}/servers :: réponse 401 api.endpoint : string
+GET /user/{id_user}/servers :: réponse 401 api.error : string
+GET /user/{id_user}/servers :: réponse 403
+GET /user/{id_user}/servers :: réponse 403 api : object
+GET /user/{id_user}/servers :: réponse 403 api.code : integer
+GET /user/{id_user}/servers :: réponse 403 api.data : object
+GET /user/{id_user}/servers :: réponse 403 api.description : string
+GET /user/{id_user}/servers :: réponse 403 api.endpoint : string
+GET /user/{id_user}/servers :: réponse 403 api.error : string
+GET /user/{id_user}/servers :: réponse 429
+GET /user/{id_user}/servers :: réponse 429 api : object
+GET /user/{id_user}/servers :: réponse 429 api.code : integer
+GET /user/{id_user}/servers :: réponse 429 api.data : object
+GET /user/{id_user}/servers :: réponse 429 api.description : string
+GET /user/{id_user}/servers :: réponse 429 api.endpoint : string
+GET /user/{id_user}/servers :: réponse 429 api.error : string
+POST /user/{id_user}/snapshot
+POST /user/{id_user}/snapshot :: paramètre path.id_user : integer (requis)
+POST /user/{id_user}/snapshot :: corps application/json id_server : integer (requis)
+POST /user/{id_user}/snapshot :: corps application/json name : string (requis)
+POST /user/{id_user}/snapshot :: réponse 200
+POST /user/{id_user}/snapshot :: réponse 200 api : object
+POST /user/{id_user}/snapshot :: réponse 200 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 200 api.data : object
+POST /user/{id_user}/snapshot :: réponse 200 api.data.job_id : integer
+POST /user/{id_user}/snapshot :: réponse 200 api.description : string
+POST /user/{id_user}/snapshot :: réponse 200 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 400
+POST /user/{id_user}/snapshot :: réponse 400 api : object
+POST /user/{id_user}/snapshot :: réponse 400 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 400 api.data : object
+POST /user/{id_user}/snapshot :: réponse 400 api.description : string
+POST /user/{id_user}/snapshot :: réponse 400 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 400 api.error : string
+POST /user/{id_user}/snapshot :: réponse 401
+POST /user/{id_user}/snapshot :: réponse 401 api : object
+POST /user/{id_user}/snapshot :: réponse 401 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 401 api.data : object
+POST /user/{id_user}/snapshot :: réponse 401 api.description : string
+POST /user/{id_user}/snapshot :: réponse 401 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 401 api.error : string
+POST /user/{id_user}/snapshot :: réponse 402
+POST /user/{id_user}/snapshot :: réponse 402 api : object
+POST /user/{id_user}/snapshot :: réponse 402 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 402 api.data : object
+POST /user/{id_user}/snapshot :: réponse 402 api.description : string
+POST /user/{id_user}/snapshot :: réponse 402 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 402 api.error : string
+POST /user/{id_user}/snapshot :: réponse 403
+POST /user/{id_user}/snapshot :: réponse 403 api : object
+POST /user/{id_user}/snapshot :: réponse 403 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 403 api.data : object
+POST /user/{id_user}/snapshot :: réponse 403 api.description : string
+POST /user/{id_user}/snapshot :: réponse 403 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 403 api.error : string
+POST /user/{id_user}/snapshot :: réponse 404
+POST /user/{id_user}/snapshot :: réponse 404 api : object
+POST /user/{id_user}/snapshot :: réponse 404 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 404 api.data : object
+POST /user/{id_user}/snapshot :: réponse 404 api.description : string
+POST /user/{id_user}/snapshot :: réponse 404 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 404 api.error : string
+POST /user/{id_user}/snapshot :: réponse 409
+POST /user/{id_user}/snapshot :: réponse 409 api : object
+POST /user/{id_user}/snapshot :: réponse 409 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 409 api.data : object
+POST /user/{id_user}/snapshot :: réponse 409 api.description : string
+POST /user/{id_user}/snapshot :: réponse 409 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 409 api.error : string
+POST /user/{id_user}/snapshot :: réponse 429
+POST /user/{id_user}/snapshot :: réponse 429 api : object
+POST /user/{id_user}/snapshot :: réponse 429 api.code : integer
+POST /user/{id_user}/snapshot :: réponse 429 api.data : object
+POST /user/{id_user}/snapshot :: réponse 429 api.description : string
+POST /user/{id_user}/snapshot :: réponse 429 api.endpoint : string
+POST /user/{id_user}/snapshot :: réponse 429 api.error : string
+PUT /user/{id_user}/snapshot
+PUT /user/{id_user}/snapshot :: paramètre path.id_user : integer (requis)
+PUT /user/{id_user}/snapshot :: corps application/json id_server : integer (requis)
+PUT /user/{id_user}/snapshot :: corps application/json id_snapshot : integer (requis)
+PUT /user/{id_user}/snapshot :: réponse 200
+PUT /user/{id_user}/snapshot :: réponse 200 api : object
+PUT /user/{id_user}/snapshot :: réponse 200 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 200 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 200 api.data.job_id : integer
+PUT /user/{id_user}/snapshot :: réponse 200 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 200 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 400
+PUT /user/{id_user}/snapshot :: réponse 400 api : object
+PUT /user/{id_user}/snapshot :: réponse 400 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 400 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 400 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 400 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 400 api.error : string
+PUT /user/{id_user}/snapshot :: réponse 401
+PUT /user/{id_user}/snapshot :: réponse 401 api : object
+PUT /user/{id_user}/snapshot :: réponse 401 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 401 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 401 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 401 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 401 api.error : string
+PUT /user/{id_user}/snapshot :: réponse 402
+PUT /user/{id_user}/snapshot :: réponse 402 api : object
+PUT /user/{id_user}/snapshot :: réponse 402 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 402 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 402 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 402 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 402 api.error : string
+PUT /user/{id_user}/snapshot :: réponse 403
+PUT /user/{id_user}/snapshot :: réponse 403 api : object
+PUT /user/{id_user}/snapshot :: réponse 403 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 403 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 403 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 403 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 403 api.error : string
+PUT /user/{id_user}/snapshot :: réponse 404
+PUT /user/{id_user}/snapshot :: réponse 404 api : object
+PUT /user/{id_user}/snapshot :: réponse 404 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 404 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 404 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 404 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 404 api.error : string
+PUT /user/{id_user}/snapshot :: réponse 409
+PUT /user/{id_user}/snapshot :: réponse 409 api : object
+PUT /user/{id_user}/snapshot :: réponse 409 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 409 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 409 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 409 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 409 api.error : string
+PUT /user/{id_user}/snapshot :: réponse 429
+PUT /user/{id_user}/snapshot :: réponse 429 api : object
+PUT /user/{id_user}/snapshot :: réponse 429 api.code : integer
+PUT /user/{id_user}/snapshot :: réponse 429 api.data : object
+PUT /user/{id_user}/snapshot :: réponse 429 api.description : string
+PUT /user/{id_user}/snapshot :: réponse 429 api.endpoint : string
+PUT /user/{id_user}/snapshot :: réponse 429 api.error : string
+DELETE /user/{id_user}/snapshot/{id_snapshot}
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: paramètre path.id_user : integer (requis)
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: paramètre path.id_snapshot : integer (requis)
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200 api : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200 api.code : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200 api.data : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200 api.data.job_id : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200 api.description : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 200 api.endpoint : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400 api : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400 api.code : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400 api.data : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400 api.description : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400 api.endpoint : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 400 api.error : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401 api : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401 api.code : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401 api.data : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401 api.description : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401 api.endpoint : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 401 api.error : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403 api : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403 api.code : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403 api.data : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403 api.description : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403 api.endpoint : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 403 api.error : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404 api : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404 api.code : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404 api.data : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404 api.description : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404 api.endpoint : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 404 api.error : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429 api : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429 api.code : integer
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429 api.data : object
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429 api.description : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429 api.endpoint : string
+DELETE /user/{id_user}/snapshot/{id_snapshot} :: réponse 429 api.error : string
+GET /user/{id_user}/snapshots
+GET /user/{id_user}/snapshots :: paramètre path.id_user : integer (requis)
+GET /user/{id_user}/snapshots :: réponse 200
+GET /user/{id_user}/snapshots :: réponse 200 api : object
+GET /user/{id_user}/snapshots :: réponse 200 api.code : integer
+GET /user/{id_user}/snapshots :: réponse 200 api.data : object
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots : array
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[] : object
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].date : string(date-time)
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].id : integer|string
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].is_legacy : boolean
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].is_v2_job : boolean
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].job_id : integer
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].name : string
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].progress : integer
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].size : integer
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].status : integer enum[0,1,2]
+GET /user/{id_user}/snapshots :: réponse 200 api.data.snapshots[].type : string
+GET /user/{id_user}/snapshots :: réponse 200 api.description : string
+GET /user/{id_user}/snapshots :: réponse 200 api.endpoint : string
+GET /user/{id_user}/snapshots :: réponse 400
+GET /user/{id_user}/snapshots :: réponse 400 api : object
+GET /user/{id_user}/snapshots :: réponse 400 api.code : integer
+GET /user/{id_user}/snapshots :: réponse 400 api.data : object
+GET /user/{id_user}/snapshots :: réponse 400 api.description : string
+GET /user/{id_user}/snapshots :: réponse 400 api.endpoint : string
+GET /user/{id_user}/snapshots :: réponse 400 api.error : string
+GET /user/{id_user}/snapshots :: réponse 401
+GET /user/{id_user}/snapshots :: réponse 401 api : object
+GET /user/{id_user}/snapshots :: réponse 401 api.code : integer
+GET /user/{id_user}/snapshots :: réponse 401 api.data : object
+GET /user/{id_user}/snapshots :: réponse 401 api.description : string
+GET /user/{id_user}/snapshots :: réponse 401 api.endpoint : string
+GET /user/{id_user}/snapshots :: réponse 401 api.error : string
+GET /user/{id_user}/snapshots :: réponse 403
+GET /user/{id_user}/snapshots :: réponse 403 api : object
+GET /user/{id_user}/snapshots :: réponse 403 api.code : integer
+GET /user/{id_user}/snapshots :: réponse 403 api.data : object
+GET /user/{id_user}/snapshots :: réponse 403 api.description : string
+GET /user/{id_user}/snapshots :: réponse 403 api.endpoint : string
+GET /user/{id_user}/snapshots :: réponse 403 api.error : string
+GET /user/{id_user}/snapshots :: réponse 429
+GET /user/{id_user}/snapshots :: réponse 429 api : object
+GET /user/{id_user}/snapshots :: réponse 429 api.code : integer
+GET /user/{id_user}/snapshots :: réponse 429 api.data : object
+GET /user/{id_user}/snapshots :: réponse 429 api.description : string
+GET /user/{id_user}/snapshots :: réponse 429 api.endpoint : string
+GET /user/{id_user}/snapshots :: réponse 429 api.error : string
