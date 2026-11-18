@@ -3,7 +3,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, LiveLight, LivePlayers, MetricSample, ServerDetails,
+    ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem, LiveLight,
+    LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
     ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
 };
 use std::sync::Arc;
@@ -92,6 +93,87 @@ pub fn metrics_history(
     since_secs: i64,
 ) -> Result<Vec<MetricSample>, Error> {
     core.metrics(server_id, since_secs)
+}
+
+// --- Paramètres du serveur (`server.properties`, via l'API : ni SFTP ni mot de passe) -------
+
+/// Réglages du serveur. Réservé aux jeux dont `GameCapabilities.properties` est vrai (Minecraft).
+#[tauri::command]
+pub async fn server_properties(core: State<'_, Arc<Core>>, id: i64) -> Result<ServerProperties, Error> {
+    core.server_properties(id).await
+}
+
+/// Modifie UN réglage existant ; pris en compte au prochain démarrage du serveur.
+#[tauri::command]
+pub async fn set_server_property(
+    core: State<'_, Arc<Core>>,
+    id: i64,
+    property: String,
+    value: String,
+) -> Result<(), Error> {
+    core.set_server_property(id, &property, &value).await
+}
+
+// --- Marketplace Minecraft (Modrinth / CurseForge / SpigotMC, via l'API MineStrator) --------
+// Catalogue et installation passent par l'API de l'hébergeur : pas de SFTP, donc pas de mot de
+// passe SFTP requis (contrairement aux marketplaces des autres jeux, non exposées sur mobile).
+
+#[tauri::command]
+pub async fn market_minecraft_versions(core: State<'_, Arc<Core>>) -> Result<Vec<String>, Error> {
+    core.market_minecraft_versions().await
+}
+
+#[tauri::command]
+pub async fn market_list(
+    core: State<'_, Arc<Core>>,
+    kind: String,
+    source: String,
+    page: i64,
+    query: String,
+    loader: String,
+    game_version: String,
+) -> Result<MarketPage, Error> {
+    core.market_list(&kind, &source, page, &query, &loader, &game_version).await
+}
+
+#[tauri::command]
+pub async fn market_versions(
+    core: State<'_, Arc<Core>>,
+    source: String,
+    slug_or_id: String,
+    loader: String,
+    game_version: String,
+) -> Result<Vec<MarketVersion>, Error> {
+    core.market_versions(&source, &slug_or_id, &loader, &game_version).await
+}
+
+#[tauri::command]
+pub async fn install_mod(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    source: String,
+    kind: String,
+    slug: String,
+    version_id: String,
+    loader: String,
+) -> Result<(), Error> {
+    core.install_mod(server_id, &source, &kind, &slug, &version_id, &loader).await
+}
+
+#[tauri::command]
+pub async fn installed_mods(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<Vec<InstalledItem>, Error> {
+    core.installed_mods(server_id).await
+}
+
+#[tauri::command]
+pub async fn installed_plugins(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<Vec<InstalledItem>, Error> {
+    core.installed_plugins(server_id).await
 }
 
 // --- Console / power / joueurs -------------------------------------------

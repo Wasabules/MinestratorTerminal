@@ -14,23 +14,31 @@ import {
   fakeMail,
   fakeRef,
   fakeText,
+  fakeProperty,
 } from "./fake.svelte";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { t } from "./i18n";
 import type {
   ActivityPage,
+  AlertEntry,
   AppError,
   ArchiveEntry,
   Backup,
   ConsoleStats,
   Egg,
+  InstalledItem,
   LiveLight,
   LivePlayers,
+  MarketKind,
+  MarketPage,
+  MarketSource,
+  MarketVersion,
   MetricSample,
   PlayerAction,
   PowerAction,
   ServerDetails,
+  ServerProperties,
   ServersOverview,
   SftpEntry,
   SftpHostKey,
@@ -105,10 +113,69 @@ export const api = {
     demo(invoke<UserNotification[]>("user_notifications"), (list) =>
       list.map((n) => ({ ...n, message: fakeText(n.message) })),
     ),
+  /** Historique local (SQLite du core) des échantillons du superviseur, depuis `sinceSecs`. */
   metricsHistory: (serverId: number, sinceSecs: number) =>
     invoke<MetricSample[]>("metrics_history", { serverId, sinceSecs }),
   /** Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère. */
   sampleStats: (serverId: number) => invoke<ConsoleStats | null>("sample_stats", { serverId }),
+
+  // --- Paramètres du serveur (`server.properties`, via l'API) ---
+  /** Réglages du serveur ; ceux qui l'identifient sont substitués en mode démo. */
+  serverProperties: (id: number) =>
+    demo(invoke<ServerProperties>("server_properties", { id }), (p) => ({
+      ...p,
+      properties: Object.fromEntries(
+        Object.entries(p.properties).map(([k, v]) => [k, fakeProperty(k, v)]),
+      ),
+    })),
+  /** Modifie UN réglage ; effet au prochain démarrage du serveur. */
+  setServerProperty: (id: number, property: string, value: string) =>
+    invoke<void>("set_server_property", { id, property, value }),
+
+  // --- Centre d'alertes (journal local des alertes du superviseur) ---
+  /**
+   * Alertes consignées, les plus récentes d'abord. Le message cite le serveur ou la MyBox
+   * concernée : en mode démo, le nom est substitué partout où il apparaît.
+   */
+  alertsList: () =>
+    demo(invoke<AlertEntry[]>("alerts_list"), (list) =>
+      list.map((a) => {
+        const name = a.kind === "expiry" ? fakeBox(a.server_name) : fakeServer(a.server_name);
+        const message = a.server_name
+          ? fakeText(a.message).replaceAll(a.server_name, name)
+          : fakeText(a.message);
+        return { ...a, server_name: name, message };
+      }),
+    ),
+  alertsMarkRead: () => invoke<void>("alerts_mark_read"),
+  alertsClear: () => invoke<void>("alerts_clear"),
+
+  // --- Marketplace Minecraft (mods & plugins, via l'API : pas de SFTP) ---
+  marketMinecraftVersions: () => invoke<string[]>("market_minecraft_versions"),
+  /** Catalogue paginé (18 par page). `kind` = mods|plugins, `source` = modrinth|curseforge|spigot. */
+  marketList: (
+    kind: MarketKind,
+    source: MarketSource,
+    page: number,
+    query: string,
+    loader: string,
+    gameVersion: string,
+  ) => invoke<MarketPage>("market_list", { kind, source, page, query, loader, gameVersion }),
+  /** Versions d'un projet (slug Modrinth ou identifiant numérique CurseForge/SpigotMC). */
+  marketVersions: (source: MarketSource, slugOrId: string, loader: string, gameVersion: string) =>
+    invoke<MarketVersion[]>("market_versions", { source, slugOrId, loader, gameVersion }),
+  /** Installe un projet sur le serveur (sources `modrinth` et `spigot` uniquement). */
+  installMod: (
+    serverId: number,
+    source: MarketSource,
+    kind: "mod" | "plugin",
+    slug: string,
+    versionId: string,
+    loader: string,
+  ) => invoke<void>("install_mod", { serverId, source, kind, slug, versionId, loader }),
+  installedMods: (serverId: number) => invoke<InstalledItem[]>("installed_mods", { serverId }),
+  installedPlugins: (serverId: number) =>
+    invoke<InstalledItem[]>("installed_plugins", { serverId }),
 
   // --- Console / power / joueurs ---
   consoleLogs: (id: number) => invoke<string[]>("console_logs", { id }),

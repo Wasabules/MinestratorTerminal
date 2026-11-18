@@ -2,6 +2,7 @@
 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
+  Alert,
   ConsoleConnection,
   ConsoleOutput,
   ConsoleStats,
@@ -24,4 +25,13 @@ export const consoleEvents = {
 export const sftpEvents = {
   progress: (cb: (p: SftpProgress) => void): Promise<UnlistenFn> =>
     listen<SftpProgress>("sftp://progress", (e) => cb(e.payload)),
+};
+
+/**
+ * Alertes du superviseur (crash, seuils, échéance MyBox). Le pont Rust les consigne dans le
+ * journal local AVANT d'émettre l'event : le recevoir suffit pour relire `api.alertsList()`.
+ */
+export const alertEvents = {
+  new: (cb: (a: Alert) => void): Promise<UnlistenFn> =>
+    listen<Alert>("alert://new", (e) => cb(e.payload)),
 };
