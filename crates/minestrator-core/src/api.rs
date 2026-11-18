@@ -455,6 +455,28 @@ impl ApiClient {
         .await
     }
 
+    // --- Joueurs déjà venus (non documenté, panel web ; décodage dans `players.rs`) ---------
+
+    /// Une page de la liste des joueurs déjà venus (`limit` ≤ 200, triée par dernière venue).
+    pub async fn players_offline(&self, token: &str, id: i64, limit: i64, offset: i64) -> Result<Value> {
+        self.get_query(
+            token,
+            &format!("/server/{id}/players/offline"),
+            &[("limit", limit.to_string()), ("offset", offset.to_string())],
+        )
+        .await
+    }
+
+    /// Fiche d'un joueur (`uuid` déjà validé par l'appelant).
+    pub async fn player_profile(&self, token: &str, id: i64, uuid: &str) -> Result<Value> {
+        self.get(token, &format!("/server/{id}/players/{uuid}/profile")).await
+    }
+
+    /// Inventaire d'un joueur, lu dans son fichier `playerdata` (`uuid` déjà validé).
+    pub async fn player_inventory(&self, token: &str, id: i64, uuid: &str) -> Result<Value> {
+        self.get(token, &format!("/server/{id}/players/{uuid}/inventory")).await
+    }
+
     /// Lit la configuration de démarrage (commande Java) depuis `/server/{id}` (`settings`).
     pub async fn get_startup(&self, token: &str, id: i64) -> Result<Startup> {
         let raw: StartupData = self.get(token, &format!("/server/{id}")).await?;

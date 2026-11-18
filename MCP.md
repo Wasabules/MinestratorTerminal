@@ -47,13 +47,13 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (43)
+## 5. Capacités — catalogue d'outils (44)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **28 outils de lecture**
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **29 outils de lecture**
 > + **15 modifiants**.
 
 #### Découverte & état
@@ -62,6 +62,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 |---|---|---|---|
 | `list_servers` | | — | Serveurs (id, nom, statut, adresse, MyBox). **Point d'entrée** pour les `server_id`. |
 | `server_status` | | `server_id` | État temps réel (`GET /server/{id}/live`) : consommation instantanée — CPU en centièmes de cœur dont **FlexCore** (`is_bursting`), RAM/disque en Mo —, réseau cumulé, uptime, joueurs, version, MOTD. Repli sur un échantillon WebSocket si l'endpoint échoue. |
+| `list_players` | | `server_id`, `sort?`, `active_days?`, `search?`, `limit?` | Joueurs Minecraft Java **déjà venus** (`GET /server/{id}/players/offline`, non documenté) : statistiques (joueurs uniques, connectés, actifs 24 h / 7 j / 30 j, temps de jeu total) puis liste triée (`play_time` par défaut, `last_seen`, `name`) avec temps de jeu **cumulé** en heures, dernière venue, op/whitelist/banni. `active_days=7` + `sort=play_time` répond à « qui a le plus joué cette semaine » (le temps reste cumulé : l'API n'a pas de détail par période). Pseudos remplacés par un alias stable (`joueur-xxxxxx`) si l'anonymisation IA est active ; UUID jamais envoyés. |
 | `list_schedules` | | `server_id` | Tâches planifiées **du panel MineStrator** (`GET /server/{id}/schedules`, non documenté) : nom, cron, active, seulement si en ligne, prochaine/dernière exécution, actions ordonnées (commande ou alimentation, délai). Exécutées par l'hébergeur, même PC éteint — distinctes des automatisations de l'app. Commandes anonymisées. |
 | `mybox_info` | | `mybox_id` | Détail d'une MyBox (`GET /mybox/{id}`) : échéance, **renouvellement automatique**, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées. |
 | `server_metrics` | | `server_id`, `since_secs?` | **Historique** CPU/RAM/disque + **résumé** (moyennes/max) sur la fenêtre (défaut 1 h, max 14 j). |
@@ -145,11 +146,11 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 ### Couverture par domaine
 
-- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
+- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`, `list_players`
 - **Consommation & optimisation** : `server_metrics` (historique + résumé), `server_status` (live),
   `analyze_performance` (Spark : TPS/MSPT/GC/points chauds), `parse_spark_report`
 - **Contrôle** : `power_action`, `send_command`
-- **Modération** : `player_action`
+- **Modération & joueurs** : `player_action`, `list_players` (joueurs déjà venus, temps de jeu, activité)
 - **Fichiers / config** : `list_files`, `read_file`, `write_file`, `edit_file` (patch find/replace,
   sûr avec secrets), `create_dir`, `delete_path`, `rename_path` (lister, lire, écrire, éditer, créer
   un dossier, supprimer, renommer/déplacer)
@@ -231,8 +232,11 @@ Build du binaire autonome : `cargo build -p minestrator-mcp --release`
 
 - Les **snapshots/backups** se **listent** (`list_snapshots`, `list_backups`) et un snapshot se
   **crée** (`create_snapshot`), mais la **restauration** n'est pas exposée à l'agent (voir §6).
-- Pas d'endpoint de **listing** des bans/ops côté API — on les lit néanmoins via `read_file`
-  (`banned-players.json` / `ops.json`) ; la modération (`player_action`) reste disponible.
+- Pas d'endpoint **documenté** de listing des bans/ops — `list_players` donne les drapeaux
+  op/whitelist/banni de chaque joueur déjà venu (endpoint non documenté), et `read_file` lit
+  `banned-players.json` / `ops.json` ; la modération (`player_action`) reste disponible.
+- Le temps de jeu de `list_players` est **cumulé** depuis la première venue : l'API n'en donne pas
+  le détail par période.
 - Stats **live** : `GET /server/{id}/live` (un appel) ; la connexion WebSocket éphémère ne sert plus que de
   repli. Les blocs de consommation sont absents d'un serveur éteint.
 - L'historique de `server_metrics` n'existe que si l'app desktop (superviseur) a tourné.

@@ -39,6 +39,7 @@ pub mod panel_schedules;
 mod paste;
 mod perf;
 mod persist;
+mod players;
 mod redact;
 mod secrets;
 pub mod service;
@@ -74,6 +75,10 @@ pub use ficsit::{
 };
 pub use games::GameCapabilities;
 pub use panel_schedules::{PanelCron, PanelSchedule, PanelScheduleInput, PanelTask, PanelTaskInput};
+pub use players::{
+    InventoryItem, ItemEnchantment, KnownPlayer, PlayerDistance, PlayerFilter, PlayerFlags, PlayerInventory,
+    PlayerProfile, PlayerSort, PlayerStats, PlayersPage, PlayersQuery,
+};
 pub use util::data_dir;
 /// Base de l'API MineStrator (outillage : contrôle de contrat `examples/api_contract.rs`).
 pub use config::API_BASE_URL;
@@ -141,6 +146,8 @@ pub struct Core {
     transfer_cancels: Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
     /// Cache TTL des lectures d'API stables/semi-stables (voir [`cache`]). Purgé après toute écriture.
     cache: cache::TtlCache,
+    /// Listes des joueurs déjà venus, par serveur, gardées une minute (voir [`players`]).
+    players: players::RosterCache,
     /// Token API mémorisé → évite une lecture BLOQUANTE du trousseau OS (DPAPI/Keychain/D-Bus) à
     /// CHAQUE appel async. Invalidé au (re)login / logout.
     token_cache: Mutex<Option<String>>,
@@ -190,6 +197,7 @@ impl Core {
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
+            players: players::RosterCache::default(),
             token_cache: Mutex::new(None),
             user_id_cache: Mutex::new(None),
             events,
@@ -658,7 +666,53 @@ impl Core {
     }
 
     pub async fn player_action(&self, id: i64, action: &str, player: &str) -> Result<()> {
-        self.api.player_action(&self.token()?, id, action, player).await
+        let out = self.api.player_action(&self.token()?, id, action, player).await;
+        // Drapeaux op/whitelist/ban changés : la liste des joueurs en cache est périmée.
+        self.players.invalidate(id);
+        out
+    }
+
+    // --- Joueurs déjà venus (Minecraft Java, `playerdata/` lu par l'hébergeur) -------------
+
+    /// Joueurs déjà venus sur le serveur, avec recherche, filtre, tri, pagination et statistiques
+    /// (voir [`players`]). La liste complète est relue au plus une fois par minute, sauf
+    /// `refresh`.
+    pub async fn known_players(&self, id: i64, query: PlayersQuery, refresh: bool) -> Result<PlayersPage> {
+        let roster = self.player_roster(id, refresh).await?;
+        Ok(players::query_roster(&roster, &query, now_secs()))
+    }
+
+    /// Liste complète des joueurs déjà venus (cache d'une minute, sauf `refresh`).
+    pub(crate) async fn player_roster(&self, id: i64, refresh: bool) -> Result<Arc<players::Roster>> {
+        if !refresh {
+            if let Some(roster) = self.players.get(id) {
+                return Ok(roster);
+            }
+        }
+        let token = self.token()?;
+        let api = &self.api;
+        let roster = players::fetch_roster(|offset| {
+            let token = token.clone();
+            async move { api.players_offline(&token, id, players::API_PAGE_MAX, offset).await }
+        })
+        .await?;
+        let roster = Arc::new(roster);
+        self.players.put(id, roster.clone());
+        Ok(roster)
+    }
+
+    /// Fiche d'un joueur : temps de jeu, sessions, dates de venue, état, combats, distances.
+    pub async fn player_profile(&self, id: i64, uuid: &str) -> Result<PlayerProfile> {
+        let uuid = players::validate_uuid(uuid)?;
+        let data = self.api.player_profile(&self.token()?, id, &uuid).await?;
+        Ok(players::parse_profile(&data, &uuid))
+    }
+
+    /// Inventaire d'un joueur (lecture seule), tel qu'enregistré à sa dernière sauvegarde.
+    pub async fn player_inventory(&self, id: i64, uuid: &str) -> Result<PlayerInventory> {
+        let uuid = players::validate_uuid(uuid)?;
+        let data = self.api.player_inventory(&self.token()?, id, &uuid).await?;
+        Ok(players::parse_inventory(&data))
     }
 
     /// Configuration de démarrage (commande Java + contexte).

@@ -570,6 +570,7 @@ impl Core {
         *self.token_cache.lock().unwrap() = token;
         *self.user_id_cache.lock().unwrap() = current.as_ref().map(|a| a.id);
         self.cache.clear();
+        self.players.clear();
         self.console.disconnect_all();
         self.sftp.clear();
         // Conversations de l'assistant : leurs agents persistants portent un MCP lancé avec l'ancienne clé.

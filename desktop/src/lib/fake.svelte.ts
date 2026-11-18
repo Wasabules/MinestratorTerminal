@@ -81,6 +81,25 @@ export function fakeBox(v: string): string {
   return pick(BOXES, v);
 }
 
+/**
+ * UUID réels des UUID de joueurs substitués : la fiche d'un joueur est demandée avec l'UUID
+ * affiché, que `realUuid` ramène à la vraie valeur avant l'appel (rien de faux n'est envoyé).
+ */
+const realUuids = new Map<string, string>();
+
+/** UUID de joueur : même forme (8-4-4-4-12), contenu dérivé de la valeur réelle. */
+export function fakeUuid(v: string): string {
+  const hex = [0, 1, 2, 3].map((i) => hash(`${i}:${v.toLowerCase()}`).toString(16).padStart(8, '0')).join('');
+  const out = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+  realUuids.set(out, v);
+  return out;
+}
+
+/** UUID réel d'un UUID substitué par `fakeUuid` (la valeur reçue si elle n'en est pas un). */
+export function realUuid(v: string): string {
+  return realUuids.get(v) ?? v;
+}
+
 /** Adresse IP dans la plage de documentation RFC 5737 : jamais routable, jamais réelle. */
 export function fakeIp(v: string): string {
   return `203.0.113.${(hash(v) % 254) + 1}`;

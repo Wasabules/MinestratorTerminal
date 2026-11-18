@@ -160,6 +160,12 @@ export type GameCapabilities = {
    */
   players: boolean,
   /**
+   * Joueurs déjà venus (liste, temps de jeu, fiche, inventaire), lus par l'hébergeur dans le
+   * dossier `playerdata/` du monde : Minecraft **Java** seulement (Bedrock range ses joueurs
+   * dans la base du monde, que l'hébergeur ne lit pas).
+   */
+  player_data: boolean,
+  /**
    * Marketplace de mods : `"minecraft"` (Modrinth/CF/Spigot via MineStrator) | `"ficsit"` | `"none"`.
    */
   mods: string,
@@ -506,6 +512,255 @@ export type MetricSample = {
   mem_limit: number,
   disk: number,
   state: string,
+};
+
+// --- Joueurs déjà venus, fiche et inventaire (players.rs) ---
+
+/**
+ * Statut de modération d'un joueur (lu par l'hébergeur dans `ops.json`, `whitelist.json` et
+ * `banned-players.json`).
+ */
+export type PlayerFlags = {
+  op: boolean,
+  whitelisted: boolean,
+  banned: boolean,
+};
+
+/**
+ * Joueur déjà venu sur le serveur.
+ */
+export type KnownPlayer = {
+  uuid: string,
+  /**
+   * Pseudo résolu par l'hébergeur ; `null` s'il n'a pas pu l'être.
+   */
+  name: string | null,
+  /**
+   * Connecté au moment de la lecture (si le serveur sait le dire, cf. `online_known`).
+   */
+  online: boolean,
+  /**
+   * Temps de jeu **cumulé** depuis la première venue, en secondes.
+   */
+  play_time_secs: number | null,
+  /**
+   * Dernière venue (secondes Unix) : dernière sauvegarde du fichier du joueur.
+   */
+  last_seen: number | null,
+  flags: PlayerFlags,
+};
+
+/**
+ * Tri de la liste des joueurs.
+ */
+export type PlayerSort = "last_seen" | "play_time" | "name";
+
+/**
+ * Filtre de la liste des joueurs.
+ */
+export type PlayerFilter = "all" | "online" | "op" | "whitelisted" | "banned";
+
+/**
+ * Requête de l'UI sur la liste des joueurs.
+ */
+export type PlayersQuery = {
+  /**
+   * Sous-chaîne du pseudo (insensible à la casse) ou début d'UUID ; vide : tous.
+   */
+  search: string,
+  sort: PlayerSort,
+  filter: PlayerFilter,
+  offset: number,
+  /**
+   * Taille de page (1 à 200).
+   */
+  limit: number,
+};
+
+/**
+ * Petites statistiques sur l'ensemble des joueurs déjà venus (indépendantes de la recherche).
+ */
+export type PlayerStats = {
+  /**
+   * Joueurs uniques.
+   */
+  total: number,
+  online: number,
+  /**
+   * Venus dans les dernières 24 h, 7 jours, 30 jours.
+   */
+  active_24h: number,
+  active_7d: number,
+  active_30d: number,
+  /**
+   * Temps de jeu cumulé de tous les joueurs, en secondes.
+   */
+  total_play_time_secs: number,
+  op: number,
+  whitelisted: number,
+  banned: number,
+  /**
+   * Les joueurs au plus grand temps de jeu cumulé (5 au plus).
+   */
+  top_play_time: Array<KnownPlayer>,
+};
+
+/**
+ * Page de la liste des joueurs, avec les statistiques de l'ensemble.
+ */
+export type PlayersPage = {
+  /**
+   * Joueurs correspondant à la recherche et au filtre.
+   */
+  total: number,
+  offset: number,
+  players: Array<KnownPlayer>,
+  stats: PlayerStats,
+  /**
+   * Le dossier `playerdata` du monde a été trouvé (sinon : monde pas encore créé, ou introuvable).
+   */
+  playerdata_found: boolean,
+  /**
+   * D'autres mondes ont leur propre dossier `playerdata` (plugin multi-mondes) : seuls les
+   * joueurs du monde principal sont listés.
+   */
+  other_worlds: boolean,
+  /**
+   * Le serveur sait dire qui est connecté (sinon `online` vaut toujours `false`).
+   */
+  online_known: boolean,
+  /**
+   * Plus de joueurs que l'app n'en lit : seuls les plus récemment venus sont listés.
+   */
+  truncated: boolean,
+};
+
+/**
+ * Distance parcourue selon un mode de déplacement.
+ */
+export type PlayerDistance = {
+  /**
+   * Mode, parmi [`DISTANCE_KINDS`] (`walk`, `sprint`, `fly`…).
+   */
+  kind: string,
+  /**
+   * En blocs (mètres).
+   */
+  blocks: number,
+};
+
+/**
+ * Fiche d'un joueur. Tout est facultatif : l'hébergeur ne renvoie que ce que les fichiers du
+ * joueur contiennent (une statistique jamais incrémentée est absente).
+ */
+export type PlayerProfile = {
+  uuid: string,
+  name: string | null,
+  flags: PlayerFlags,
+  /**
+   * Première venue, dernière connexion, dernière venue (secondes Unix).
+   */
+  first_played: number | null,
+  last_login: number | null,
+  last_seen: number | null,
+  /**
+   * Temps de jeu cumulé, en secondes.
+   */
+  play_time_secs: number | null,
+  sessions: number | null,
+  deaths: number | null,
+  mob_kills: number | null,
+  player_kills: number | null,
+  /**
+   * `survival` | `creative` | `adventure` | `spectator`.
+   */
+  game_mode: string | null,
+  /**
+   * Points de vie (2 par cœur) ; `max_health` absent = 20.
+   */
+  health: number | null,
+  max_health: number | null,
+  /**
+   * Faim, de 0 à 20.
+   */
+  food_level: number | null,
+  xp_level: number | null,
+  /**
+   * Distances parcourues, de la plus grande à la plus petite (nulles exclues).
+   */
+  distances: Array<PlayerDistance>,
+};
+
+/**
+ * Enchantement d'un objet.
+ */
+export type ItemEnchantment = {
+  /**
+   * Identifiant sans l'espace de noms `minecraft:` (`sharpness`).
+   */
+  id: string,
+  /**
+   * Nom lisible (`Sharpness`).
+   */
+  name: string,
+  level: number,
+};
+
+/**
+ * Objet d'un emplacement d'inventaire.
+ */
+export type InventoryItem = {
+  /**
+   * Identifiant, sans `minecraft:` pour les objets vanilla (`diamond_sword`, `create:wrench`).
+   */
+  id: string,
+  /**
+   * Nom personnalisé (renommé à l'enclume) ou, à défaut, nom tiré de l'identifiant.
+   */
+  name: string,
+  custom_name: boolean,
+  count: number,
+  enchantments: Array<ItemEnchantment>,
+  /**
+   * Usure restante, de 0 (cassé) à 1 ; `null` si l'objet n'est pas abîmé ou pas usable.
+   */
+  durability: number | null,
+  /**
+   * Icône (objets vanilla seulement).
+   */
+  icon_url: string | null,
+};
+
+/**
+ * Inventaire d'un joueur, lu dans son fichier `playerdata`.
+ */
+export type PlayerInventory = {
+  /**
+   * Barre d'action (9 emplacements).
+   */
+  hotbar: Array<InventoryItem | null>,
+  /**
+   * Sac (27 emplacements, trois rangées de neuf).
+   */
+  main: Array<InventoryItem | null>,
+  /**
+   * Casque, plastron, jambières, bottes.
+   */
+  armor: Array<InventoryItem | null>,
+  offhand: InventoryItem | null,
+  /**
+   * Le joueur est connecté : le fichier date de la dernière sauvegarde du monde, l'inventaire
+   * réel peut avoir changé depuis. `null` : l'hébergeur ne sait pas.
+   */
+  online: boolean | null,
+  /**
+   * Date de la sauvegarde lue (secondes Unix).
+   */
+  saved_at: number | null,
+  /**
+   * Version des données du jeu (`DataVersion`).
+   */
+  data_version: number | null,
 };
 
 // --- Sauvegardes (models.rs) ---

@@ -18,6 +18,7 @@ export const GENERIC_CAPS: GameCapabilities = {
   console_autocomplete: 'none',
   log_format: 'generic',
   players: false,
+  player_data: false,
   mods: 'none',
   backups: true,
   properties: false,

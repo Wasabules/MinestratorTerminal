@@ -50,7 +50,9 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
 - **Envoi multi-ligne** : colle une liste de commandes → chaque ligne est envoyée comme **commande séparée**, dans l'ordre (au lieu d'être aplatie en une seule).
 - **Export du log** en un clic droit vers un service de paste : **mclo.gs**, l'instance **MineStrator**, ou **pastes.dev** (contenu anonymisé avant envoi).
 - **Alimentation** : démarrer · redémarrer · arrêter · kill.
-- **Joueurs** : kick, ban/unban, op, whitelist — y compris sur des pseudos hors-ligne.
+- **Joueurs** : kick, ban/unban, op, whitelist — y compris sur des pseudos hors-ligne ; tous les
+  joueurs déjà venus (Minecraft Java) avec temps de jeu, dernière venue, statistiques, fiche et
+  inventaire en lecture.
 - **Vue d'ensemble** : statut d'exécution live, CPU/RAM/disque, **graphique d'historique** avec survol des valeurs. Pastille d'état d'exécution **sur chaque onglet**.
 
 ### 📁 SFTP natif intégré (russh) — un vrai gestionnaire de fichiers

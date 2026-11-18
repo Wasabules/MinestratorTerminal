@@ -219,6 +219,21 @@ Regroupés par domaine (liste réelle des fichiers).
   `power`, délai 0-900 s) et ordre ; toute saisie est validée avant envoi (cron borné, commande
   sur une ligne). Desktop : section de la vue Automatisations ; mobile : vue « Tâches » (lecture et
   activation) ; MCP : `list_schedules`.
+- **`players`** — joueurs **déjà venus** d'un serveur Minecraft Java (capacité `player_data` de
+  `games.rs`), lus par l'hébergeur dans `playerdata/` : `GET /server/{id}/players/offline`
+  (non documenté ; pages de 200 au plus, **toujours triées par dernière sauvegarde**, `play_time`
+  en ticks, `mtime` en secondes Unix), `…/players/{uuid}/profile` et `…/players/{uuid}/inventory`.
+  Pour trier par temps de jeu, toute la liste est lue (pages en parallèle, plafond 5 000 joueurs,
+  doublons éliminés), gardée **une minute** par serveur (`RosterCache`, purgé par `player_action`
+  et au changement de compte) ; recherche, filtres, tri, pagination et statistiques (actifs 24 h /
+  7 j / 30 j, temps de jeu cumulé, classement) sont de la logique pure testée. L'inventaire est
+  décodé en emplacements lisibles (barre d'action, sac, armure, main secondaire ; nom
+  personnalisé, enchantements, usure, icône du CDN de MineStrator), anciens formats compris.
+  L'UUID est validé avant d'entrer dans un chemin d'URL. L'édition d'inventaire du panel n'est
+  **pas** reprise (écriture d'un fichier joueur, non testable sans risque). Desktop : vue Joueurs
+  (statistiques, liste, fiche en panneau latéral avec la grille d'inventaire) ; mobile : liste et
+  fiche en lecture ; MCP : `list_players` (pseudos remplacés par un alias stable,
+  `redact::pseudonym`, si l'anonymisation IA est active).
 - **`secrets`** — stockage sécurisé natif : clés API (compte actif `api-key`, comptes inactifs
   `api-key-<id>`), clés LLM par fournisseur (`llm-key-<slug>`),
   secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`), URL des destinations
@@ -335,7 +350,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Auth & comptes** | `validate_and_store_key` (connexion : la clé devient celle du compte actif), `has_stored_key`, `get_user` (profil + mise en cohérence de la liste des comptes), `logout` (retire le compte actif, renvoie celui qui prend la relève), `accounts_list`, `account_add`, `account_switch`, `account_remove` |
 | **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
-| **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
+| **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove), `known_players` (joueurs déjà venus : recherche, filtre, tri, page, statistiques), `player_profile`, `player_inventory` (lecture seule) |
 | **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |
 | **Backups / snapshots** | `list_backups`, `restore_backup`, `list_snapshots`, `create_snapshot`, `restore_snapshot`, `delete_snapshot` |
 | **Marketplace** | `market_minecraft_versions`, `market_list`, `market_versions`, `install_mod`, `installed_mods`, `installed_plugins` |

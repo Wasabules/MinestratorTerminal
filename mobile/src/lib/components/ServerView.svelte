@@ -155,7 +155,11 @@
               onFocusChange={(f) => (navHidden = f)}
             />
           {:else if tab.id === "players"}
-            <PlayersView serverId={server.id} active={current === "players"} />
+            <PlayersView
+              serverId={server.id}
+              active={current === "players"}
+              playerData={caps?.player_data ?? false}
+            />
           {:else if tab.id === "files"}
             <SftpView serverId={server.id} active={current === "files"} />
           {:else if tab.id === "backups"}

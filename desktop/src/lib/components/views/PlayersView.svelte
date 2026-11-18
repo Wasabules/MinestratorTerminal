@@ -2,12 +2,17 @@
   import { onMount, onDestroy } from 'svelte';
   import { api, humanizeError } from '#lib/ipc.ts';
   import { t } from '#lib/i18n/index.ts';
-  import type { LiveLight, PlayerAction } from '#lib/types.ts';
+  import type { KnownPlayer, LiveLight, PlayerAction } from '#lib/types.ts';
   import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
+  import { serverCaps } from '#lib/games/capabilities.svelte.ts';
   import PlayerActionsMenu from '../PlayerActionsMenu.svelte';
+  import KnownPlayers from '../players/KnownPlayers.svelte';
+  import PlayerSheet from '../players/PlayerSheet.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
+  /** Joueurs déjà venus, fiche et inventaire : Minecraft Java seulement (`GameCapabilities`). */
+  const playerData = $derived(serverCaps(serverId)?.player_data ?? false);
 
   let live = $state<LiveLight | null>(null);
   let loading = $state(true);
@@ -16,6 +21,10 @@
   let flash = $state<string | null>(null);
   let flashErr = $state(false);
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Joueur dont la fiche est ouverte. */
+  let sheet = $state<KnownPlayer | null>(null);
+  let known = $state<KnownPlayers | undefined>();
 
   const players = $derived(live?.players?.list ?? []);
   const count = $derived(live?.players?.current ?? players.length);
@@ -40,8 +49,21 @@
     'whitelist_remove',
   ];
 
+  /** Actions d'un joueur déjà venu, selon son état : on ne propose que ce qui changerait quelque chose. */
+  function actionsFor(p: KnownPlayer): PlayerAction[] {
+    const out: PlayerAction[] = [];
+    if (p.online) out.push('kick');
+    out.push(p.flags.banned ? 'unban' : 'ban');
+    out.push(p.flags.op ? 'op_remove' : 'op_add');
+    out.push(p.flags.whitelisted ? 'whitelist_remove' : 'whitelist_add');
+    return out;
+  }
+
   onMount(load);
-  onDestroy(() => clearTimeout(flashTimer));
+  onDestroy(() => {
+    clearTimeout(flashTimer);
+    clearTimeout(reloadTimer);
+  });
 
   async function load() {
     loading = true;
@@ -55,12 +77,50 @@
     }
   }
 
-  async function act(player: string, action: PlayerAction) {
+  function refreshAll() {
+    void load();
+    known?.refresh();
+  }
+
+  async function act(player: string, action: PlayerAction): Promise<boolean> {
     const name = player.trim();
-    if (!name) return;
+    if (!name) return false;
     try {
       await api.playerAction(serverId, action, name);
       showFlash(t('players.done'), false);
+      // Drapeaux relus par l'hébergeur dans ops.json & co. : on lui laisse le temps de les écrire.
+      if (playerData) {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => known?.refresh(), 1500);
+      }
+      return true;
+    } catch (e) {
+      showFlash(humanizeError(e), true);
+      return false;
+    }
+  }
+
+  /** Action sur un joueur déjà venu (liste ou fiche). */
+  async function actOn(p: KnownPlayer, action: PlayerAction) {
+    if (!p.name) return;
+    const ok = await act(p.name, action);
+    // La fiche ouverte montre les drapeaux d'avant l'action : on la ferme plutôt que de mentir.
+    if (ok && sheet?.uuid === p.uuid) sheet = null;
+  }
+
+  /** Fiche d'un joueur connecté : retrouvé par son pseudo parmi les joueurs déjà venus. */
+  async function openByName(name: string) {
+    try {
+      const res = await api.knownPlayers(serverId, {
+        search: name,
+        sort: 'name',
+        filter: 'all',
+        offset: 0,
+        limit: 20,
+      });
+      const found = res.players.find((p) => p.name?.toLowerCase() === name.toLowerCase());
+      if (found) sheet = found;
+      else showFlash(t('players.dataErrors.NOT_FOUND'), true);
     } catch (e) {
       showFlash(humanizeError(e), true);
     }
@@ -82,7 +142,7 @@
         <p class="dim">{t('players.connected')} · {count}{limit ? ` / ${limit}` : ''}</p>
       {/if}
     </div>
-    <button class="btn btn--ghost" onclick={load} disabled={loading}>
+    <button class="btn btn--ghost" onclick={refreshAll} disabled={loading}>
       {#if loading}<span class="spinner"></span>{/if} {t('common.refresh')}
     </button>
   </header>
@@ -123,13 +183,32 @@
           <div class="row">
             <span class="avatar" aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
             <span class="name">{name}</span>
+            {#if playerData}
+              <button class="link" onclick={() => openByName(name)}>{t('players.details')}</button>
+            {/if}
             <PlayerActionsMenu actions={connectedActions} onPick={(a) => act(name, a)} />
           </div>
         {/each}
       </div>
     {/if}
   </section>
+
+  {#if playerData}
+    <KnownPlayers bind:this={known} {serverId} {actionsFor} onAct={actOn} onOpen={(p) => (sheet = p)} />
+  {/if}
 </div>
+
+{#if sheet}
+  {#key sheet.uuid}
+    <PlayerSheet
+      {serverId}
+      player={sheet}
+      actions={actionsFor(sheet)}
+      onAct={(a) => sheet && actOn(sheet, a)}
+      onClose={() => (sheet = null)}
+    />
+  {/key}
+{/if}
 
 {#if flash}
   <div class="toast" class:err={flashErr}>{flash}</div>
@@ -137,7 +216,7 @@
 
 <style>
   .players {
-    max-width: 760px;
+    max-width: 900px;
     margin: 0 auto;
     padding: 26px 24px 48px;
     display: flex;
@@ -237,6 +316,19 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .link {
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--brand-primary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 6px;
+  }
+  .link:hover {
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+  }
   .toast {
     position: absolute;
     bottom: 20px;
@@ -249,7 +341,7 @@
     font-size: 13px;
     box-shadow: var(--shadow);
     color: var(--brand-primary);
-    z-index: 5;
+    z-index: 90;
   }
   .toast.err {
     color: var(--state-danger);

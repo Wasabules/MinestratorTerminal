@@ -554,6 +554,84 @@
     "mods": []
    }
   },
+  "GET /server/{x}/players/{x}/inventory": {
+   "status": 200,
+   "data": {
+    "uuid": "str",
+    "data_version": "int",
+    "mtime": "int",
+    "sha256": "str",
+    "roundtrip_ok": "bool",
+    "format": {
+     "stack": "str",
+     "equipment": "str"
+    },
+    "inventory": {
+     "0": {
+      "id": "str",
+      "count": "int",
+      "components": {
+       "minecraft:custom_name": "obj",
+       "minecraft:custom_data": "obj"
+      }
+     }
+    },
+    "equipment": {
+     "head": {
+      "id": "str",
+      "count": "int"
+     }
+    },
+    "online": {
+     "is_online": "bool",
+     "players_online": "int",
+     "query_available": "bool",
+     "uuids_available": "bool"
+    }
+   }
+  },
+  "GET /server/{x}/players/{x}/profile": {
+   "status": 200,
+   "data": {
+    "uuid": "str",
+    "name": "str",
+    "data_version": "int",
+    "mtime": "int",
+    "flags": {
+     "op": "bool",
+     "whitelisted": "bool",
+     "banned": "bool"
+    },
+    "state": {
+     "game_mode": "int",
+     "health": "int",
+     "max_health": "null",
+     "food_level": "int",
+     "xp_level": "int",
+     "xp_progress": "int",
+     "xp_total": "int"
+    },
+    "stats": {
+     "play_time": "int",
+     "sessions": "int",
+     "deaths": "null",
+     "mob_kills": "null",
+     "player_kills": "null",
+     "distances": {
+      "walk_one_cm": "int",
+      "sprint_one_cm": "int",
+      "fall_one_cm": "int",
+      "fly_one_cm": "int"
+     }
+    },
+    "times": {
+     "first_played": "int",
+     "last_login": "int",
+     "last_played": "int",
+     "last_seen": "int"
+    }
+   }
+  },
   "GET /server/{x}/players/offline": {
    "status": 200,
    "data": {

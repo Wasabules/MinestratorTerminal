@@ -269,9 +269,35 @@ fn is_email_char(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '+' | '-' | '%')
 }
 
+/// Pseudonyme stable d'un joueur (`joueur-3fa2c1`) pour les données structurées envoyées à un
+/// agent IA quand l'anonymisation est active : le pseudo réel ne part pas, mais un même joueur
+/// garde le même alias d'un appel à l'autre (l'agent peut comparer, classer, suivre). `seed` :
+/// l'UUID du joueur, de préférence (casse et tirets ignorés).
+pub fn pseudonym(seed: &str) -> String {
+    // FNV-1a 32 bits, tronqué à 24 bits : collisions improbables sur quelques milliers de joueurs.
+    let mut h: u32 = 0x811c_9dc5;
+    for c in seed.chars().filter(|c| *c != '-').flat_map(char::to_lowercase) {
+        let mut buf = [0u8; 4];
+        for b in c.encode_utf8(&mut buf).bytes() {
+            h ^= u32::from(b);
+            h = h.wrapping_mul(0x0100_0193);
+        }
+    }
+    format!("joueur-{:06x}", h & 0x00ff_ffff)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::redact;
+    use super::{pseudonym, redact};
+
+    #[test]
+    fn pseudonyms_are_stable_and_hide_the_name() {
+        let a = pseudonym("0F9C1F9E-1111-4C4C-9B9B-000000000001");
+        assert_eq!(a, pseudonym("0f9c1f9e11114c4c9b9b000000000001"), "casse et tirets ignorés");
+        assert_ne!(a, pseudonym("0f9c1f9e-1111-4c4c-9b9b-000000000002"));
+        assert!(a.starts_with("joueur-") && a.len() == "joueur-".len() + 6, "{a}");
+        assert!(!a.contains("0f9c"));
+    }
 
     #[test]
     fn masks_login_password() {
