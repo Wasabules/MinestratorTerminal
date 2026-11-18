@@ -1,4 +1,9 @@
 <script lang="ts">
+  /**
+   * Barre du bas de la vue serveur, sur le chrome de l'app. L'élément actif prend l'accent du
+   * biome du serveur (pastille pleine derrière l'icône, libellé appuyé), à la manière de l'onglet
+   * actif de la barre d'onglets desktop.
+   */
   import Icon from "./Icon.svelte";
   interface Tab {
     id: string;
@@ -14,8 +19,13 @@
 
 <nav>
   {#each tabs as tab (tab.id)}
-    <button class:active={tab.id === active} onclick={() => onSelect(tab.id)} aria-label={tab.label}>
-      <Icon name={tab.icon} size={22} stroke={tab.id === active ? 2.4 : 2} />
+    <button
+      class:active={tab.id === active}
+      onclick={() => onSelect(tab.id)}
+      aria-label={tab.label}
+      aria-current={tab.id === active ? "page" : undefined}
+    >
+      <span class="pill"><Icon name={tab.icon} size={21} stroke={tab.id === active ? 2.4 : 2} /></span>
       <span class="lbl">{tab.label}</span>
     </button>
   {/each}
@@ -28,28 +38,57 @@
     right: 0;
     bottom: 0;
     display: flex;
-    background: var(--surface);
+    gap: 2px;
+    padding: 0 4px var(--safe-bottom);
+    background: var(--chrome);
     border-top: 1px solid var(--border);
-    padding-bottom: var(--safe-bottom);
     z-index: 10;
   }
   button {
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
     gap: 3px;
-    background: transparent;
-    border: none;
-    color: var(--text-dim);
     height: var(--nav-height);
-    padding: 6px 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-dim);
   }
-  button.active {
-    color: var(--brand-primary);
+  .pill {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 30px;
+    border-radius: 999px;
+    transition: background 0.15s ease, color 0.15s ease;
   }
   .lbl {
+    max-width: 100%;
+    padding: 0 1px;
     font-size: 11px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  button.active {
+    color: var(--text);
+  }
+  button.active .pill {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  button.active .lbl {
+    font-weight: 800;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pill {
+      transition: none;
+    }
   }
 </style>

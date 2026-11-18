@@ -377,11 +377,12 @@
     touch-action: pan-y;
   }
   .grid {
-    stroke: var(--border);
+    stroke: var(--border-strong);
     stroke-width: 1;
   }
   .axis {
     fill: var(--text-dim);
+    font-family: var(--font-mono);
     font-size: 10px;
     font-variant-numeric: tabular-nums;
   }
