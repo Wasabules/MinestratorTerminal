@@ -76,8 +76,8 @@ pub fn run() {
             });
 
             // Noms des serveurs pour la notification : une lecture au démarrage suffit, ils ne
-            // changent pas en cours de session — sauf changement de compte, qui la refait (et
-            // l'échec est sans gravité : repli sur l'id).
+            // changent pas en cours de session — sauf changement de compte ou renommage depuis
+            // l'app, qui la refont (et l'échec est sans gravité : repli sur l'id).
             load_server_names(app.handle().clone());
 
             // Superviseur : actif tant que l'app est au premier plan. Les alertes « app fermée »
@@ -106,6 +106,9 @@ pub fn run() {
             commands::server_activity,
             commands::user_notifications,
             commands::metrics_history,
+            commands::mybox_capacities,
+            commands::rename_server,
+            commands::rename_mybox,
             commands::server_properties,
             commands::set_server_property,
             commands::market_minecraft_versions,

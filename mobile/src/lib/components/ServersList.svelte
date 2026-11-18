@@ -6,7 +6,8 @@
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
   import GameIcon from "./GameIcon.svelte";
-  import type { MyBoxSummary, ServerListItem } from "../types";
+  import MyBoxResources from "./MyBoxResources.svelte";
+  import type { MyBoxCapacity, MyBoxSummary, ServerListItem } from "../types";
 
   let {
     onOpen,
@@ -26,19 +27,55 @@
   /** Joueurs en ligne par serveur — un seul appel groupé pour toute la liste. */
   let players = $state<Record<number, { current: number; limit: number }>>({});
 
-  async function load() {
-    loading = true;
-    error = null;
+  /**
+   * Ressources des MyBox : un seul appel pour toutes, fait à la première ouverture d'une carte
+   * « Ressources » (plusieurs requêtes par MyBox : inutile tant que personne ne les consulte).
+   */
+  let caps = $state<MyBoxCapacity[] | null>(null);
+  let capsLoading = $state(false);
+  let capsError = $state<string | null>(null);
+  /** Cartes « Ressources » dépliées, par identifiant de MyBox. */
+  let openRes = $state<Record<number, boolean>>({});
+
+  /** `silent` : rafraîchit sans repasser par l'état de chargement (après un renommage). */
+  async function load(silent = false) {
+    if (!silent) {
+      loading = true;
+      error = null;
+    }
     try {
       const overview = await api.listServers();
       myboxes = overview.myboxes;
       servers = overview.servers;
       void loadPlayers();
     } catch (err) {
-      error = humanizeError(err);
+      // En silencieux, la liste déjà affichée reste valable : on ne la remplace pas par l'erreur.
+      if (!silent) error = humanizeError(err);
     } finally {
       loading = false;
     }
+  }
+
+  async function loadCaps() {
+    capsLoading = true;
+    capsError = null;
+    try {
+      caps = await api.myboxCapacities();
+    } catch (err) {
+      capsError = humanizeError(err);
+    } finally {
+      capsLoading = false;
+    }
+  }
+
+  function toggleRes(boxId: number) {
+    openRes[boxId] = !openRes[boxId];
+    if (openRes[boxId] && caps === null && !capsLoading) void loadCaps();
+  }
+
+  /** Après un renommage : capacités et liste relues (noms des groupes et des serveurs). */
+  async function afterRename() {
+    await Promise.all([loadCaps(), load(true)]);
   }
 
   /** Best-effort : un compte de joueurs manquant ne doit pas dégrader la liste. */
@@ -135,7 +172,7 @@
     <p class="dim">…</p>
   {:else if error}
     <p class="err selectable">{error}</p>
-    <button class="ghost" onclick={load}><Icon name="refresh" size={16} /> {t("servers.refresh")}</button>
+    <button class="ghost" onclick={() => load()}><Icon name="refresh" size={16} /> {t("servers.refresh")}</button>
   {:else if servers.length === 0}
     <p class="dim">{t("servers.empty")}</p>
   {:else}
@@ -143,10 +180,40 @@
       <section class="group">
         {#if g.box}
           {@const badge = boxBadge(g.box)}
+          {@const boxId = g.box.id}
           <div class="ghead">
             <span class="gname">{g.box.name}</span>
             <span class="goffer dim">{g.box.offer}</span>
             {#if badge}<span class="gbadge {badge.cls}">{badge.text}</span>{/if}
+          </div>
+          <!-- Ressources de la MyBox : carte repliable, chargée à la première ouverture. -->
+          <div class="res" class:open={openRes[boxId]}>
+            <button
+              class="restoggle"
+              aria-expanded={!!openRes[boxId]}
+              onclick={() => toggleRes(boxId)}
+            >
+              <Icon name="sliders" size={15} />
+              <span class="rlabel">{t("mybox.resources")}</span>
+              <span class="chev"><Icon name="chevronDown" size={16} /></span>
+            </button>
+            {#if openRes[boxId]}
+              {@const cap = caps?.find((c) => c.id === boxId)}
+              <div class="resbody">
+                {#if cap}
+                  <MyBoxResources {cap} onChanged={afterRename} />
+                {:else if capsLoading}
+                  <p class="dim small">{t("mybox.loading")}</p>
+                {:else if capsError}
+                  <p class="err small selectable">{capsError}</p>
+                  <button class="ghost" onclick={() => loadCaps()}>
+                    <Icon name="refresh" size={16} /> {t("mybox.retry")}
+                  </button>
+                {:else}
+                  <p class="dim small">{t("mybox.unavailable")}</p>
+                {/if}
+              </div>
+            {/if}
           </div>
         {:else}
           <div class="ghead"><span class="gname">Autres</span></div>
@@ -280,6 +347,50 @@
   .gbadge.danger {
     color: var(--state-danger);
     border-color: var(--state-danger);
+  }
+  .res {
+    margin-bottom: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .restoggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 14px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 14px;
+    text-align: left;
+  }
+  .rlabel {
+    flex: 1;
+  }
+  .chev {
+    display: inline-flex;
+    transition: transform 0.18s;
+  }
+  .res.open .chev {
+    transform: rotate(180deg);
+  }
+  .resbody {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+  .resbody .ghost {
+    align-self: flex-start;
+  }
+  .small {
+    margin: 0;
+    font-size: 13px;
   }
   ul {
     list-style: none;

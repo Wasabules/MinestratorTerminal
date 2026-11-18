@@ -5,8 +5,9 @@
 use minestrator_core::{
     PanelSchedule, PanelScheduleInput,
     Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
-    LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
-    ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
+    LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, MyBoxCapacity, ServerDetails,
+    ServerProperties, ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification,
+    UserProfile,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -127,6 +128,39 @@ pub fn metrics_history(
     since_secs: i64,
 ) -> Result<Vec<MetricSample>, Error> {
     core.metrics(server_id, since_secs)
+}
+
+// --- MyBox : ressources (lecture) et renommage ------------------------------------------------
+
+/// Capacité de toutes les MyBox du compte : CPU (cœurs) et RAM (Go) alloués et libres, disque
+/// partagé, emplacements de serveurs et serveurs avec ce qui leur est alloué.
+#[tauri::command]
+pub async fn mybox_capacities(core: State<'_, Arc<Core>>) -> Result<Vec<MyBoxCapacity>, Error> {
+    core.mybox_capacities().await
+}
+
+/// Renomme un serveur (1 à 50 caractères, validé par le core). Les noms affichés par la
+/// notification persistante de surveillance sont relus dans la foulée.
+#[tauri::command]
+pub async fn rename_server(
+    app: tauri::AppHandle,
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    name: String,
+) -> Result<(), Error> {
+    core.rename_server(server_id, &name).await?;
+    crate::load_server_names(app);
+    Ok(())
+}
+
+/// Renomme une MyBox (1 à 50 caractères, validé par le core).
+#[tauri::command]
+pub async fn rename_mybox(
+    core: State<'_, Arc<Core>>,
+    mybox_id: i64,
+    name: String,
+) -> Result<(), Error> {
+    core.rename_mybox(mybox_id, &name).await
 }
 
 // --- Paramètres du serveur (`server.properties`, via l'API : ni SFTP ni mot de passe) -------
