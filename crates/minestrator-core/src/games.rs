@@ -49,6 +49,19 @@ impl GameCapabilities {
     }
 }
 
+/// Dossier des journaux d'un jeu (chemin SFTP), point de départ des outils de journaux
+/// (`server_logs` : `search_logs`, `error_digest`), qui acceptent un autre dossier. Minecraft :
+/// `logs/` (`latest.log` + archives `AAAA-MM-JJ-N.log.gz`) ; Satisfactory : journaux Unreal
+/// (`FactoryGame.log` + `FactoryGame-backup-AAAA.MM.JJ-HH.MM.SS.log`) ; Factorio :
+/// `factorio-current.log` et `factorio-previous.log` à la racine ; ailleurs, `logs/`.
+pub fn log_dir(family: &str) -> &'static str {
+    match family {
+        "satisfactory" => "/FactoryGame/Saved/Logs",
+        "factorio" => "/",
+        _ => "/logs",
+    }
+}
+
 /// Commande de diffusion d'un jeu (voir [`GameCapabilities::broadcast`]). Prudence : on n'en
 /// déclare que pour les jeux dont la console l'accepte à coup sûr — une commande inconnue serait
 /// au mieux ignorée, au pire interprétée autrement.
@@ -287,5 +300,13 @@ mod tests {
         assert!(bedrock.is_minecraft_bedrock() && !bedrock.is_minecraft_java());
         let other = capabilities_for("Satisfactory", false);
         assert!(!other.is_minecraft_java() && !other.is_minecraft_bedrock());
+    }
+
+    #[test]
+    fn log_dirs_per_family() {
+        assert_eq!(log_dir(&capabilities_for("Paper 1.21", false).family), "/logs");
+        assert_eq!(log_dir(&capabilities_for("Satisfactory", false).family), "/FactoryGame/Saved/Logs");
+        assert_eq!(log_dir(&capabilities_for_egg(Some(EGG_FACTORIO), "", false).family), "/");
+        assert_eq!(log_dir("generic"), "/logs");
     }
 }

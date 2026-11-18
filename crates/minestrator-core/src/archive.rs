@@ -70,6 +70,20 @@ pub fn gunzip(bytes: &[u8]) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
+/// Décompresse un `.gz` seul en s'arrêtant à `max` octets (garde-fou anti *gzip-bomb*, pour les
+/// lectures en série des journaux de `server_logs`) : renvoie le début du contenu et `true` si la
+/// sortie a été tronquée.
+pub fn gunzip_capped(bytes: &[u8], max: u64) -> Result<(Vec<u8>, bool), String> {
+    let mut buf = Vec::new();
+    GzDecoder::new(bytes)
+        .take(max.saturating_add(1))
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("décompression gzip : {e}"))?;
+    let truncated = buf.len() as u64 > max;
+    buf.truncate(max as usize);
+    Ok((buf, truncated))
+}
+
 /// Un nom d'entrée est-il SÛR à extraire vers un dossier cible ? (anti *zip-slip* : refuse les chemins
 /// absolus, un composant `..`, ou une lettre de lecteur Windows.)
 pub fn safe_entry(name: &str) -> bool {
@@ -267,6 +281,18 @@ mod tests {
         enc.write_all(b"log content").unwrap();
         let bytes = enc.finish().unwrap();
         assert_eq!(gunzip(&bytes).unwrap(), b"log content");
+    }
+
+    #[test]
+    fn gzip_capped_stops_at_the_limit() {
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        enc.write_all(&[b'a'; 10_000]).unwrap();
+        let bytes = enc.finish().unwrap();
+        let (all, cut) = gunzip_capped(&bytes, 10_000).unwrap();
+        assert_eq!((all.len(), cut), (10_000, false), "pile au plafond : rien de coupé");
+        let (head, cut) = gunzip_capped(&bytes, 100).unwrap();
+        assert_eq!((head.len(), cut), (100, true));
+        assert!(gunzip_capped(b"pas du gzip", 100).is_err());
     }
 
     #[test]

@@ -64,6 +64,9 @@ mod jar_meta;
 mod plugin_deps;
 mod server_audit;
 mod yaml_lite;
+// Journaux et historique : outils MCP `search_logs`, `error_digest`, `uptime_report`, `list_incidents`.
+mod incidents;
+mod server_logs;
 
 pub use accounts::{Account, AccountSwitch};
 pub use archive::ArchiveEntry;

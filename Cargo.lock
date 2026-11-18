@@ -2874,6 +2874,7 @@ dependencies = [
  "keyring-core",
  "libc",
  "prost",
+ "regex",
  "reqwest",
  "rusqlite",
  "russh",

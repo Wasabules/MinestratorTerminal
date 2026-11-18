@@ -423,13 +423,20 @@ pub(crate) fn scope_violation(server_id: i64, args: &Value) -> Option<String> {
     }
 }
 
-/// Outils LOCAUX de lecture qui couvrent tout le compte quand on ne leur donne pas de liste
-/// (`find_player`) : pour le Copilote, bornés au serveur de la session.
+/// Outils LOCAUX de lecture qui couvrent tout le compte quand on ne leur donne pas de serveur
+/// (`find_player` sans liste, `list_incidents` sans `server_id`) : pour le Copilote, bornés au
+/// serveur de la session.
 pub(crate) fn bound_local_args(server_id: i64, name: &str, args: Value) -> Value {
+    let key = match name {
+        "find_player" => "server_ids",
+        "list_incidents" => "server_id",
+        _ => return args,
+    };
     match args {
-        Value::Object(mut m) if name == "find_player" => {
-            if m.get("server_ids").is_none_or(Value::is_null) {
-                m.insert("server_ids".into(), json!([server_id]));
+        Value::Object(mut m) => {
+            if m.get(key).is_none_or(Value::is_null) {
+                let v = if key == "server_ids" { json!([server_id]) } else { json!(server_id) };
+                m.insert(key.into(), v);
             }
             Value::Object(m)
         }
@@ -1484,5 +1491,6 @@ mod tests {
         assert_eq!(bound_local_args(5, "find_player", json!({ "query": "Al" }))["server_ids"], json!([5]));
         assert_eq!(bound_local_args(5, "find_player", json!({ "server_ids": null }))["server_ids"], json!([5]));
         assert_eq!(bound_local_args(5, "list_players", json!({ "server_id": 5 })), json!({ "server_id": 5 }));
+        assert_eq!(bound_local_args(5, "list_incidents", json!({ "limit": 3 }))["server_id"], json!(5));
     }
 }

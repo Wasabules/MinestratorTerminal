@@ -155,6 +155,11 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "check_plugin_deps",
     "world_info",
     "audit_server",
+    // Journaux et historique (server_logs.rs, incidents.rs, uptime.rs) : lectures SFTP et locales.
+    "search_logs",
+    "error_digest",
+    "uptime_report",
+    "list_incidents",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -332,6 +337,12 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "check_plugin_deps",
     "world_info",
     "audit_server",
+    // Journaux et historique : journaux archivés (SFTP), historique local (disponibilité,
+    // incidents, diagnostics) — rien de tel dans l'officiel.
+    "search_logs",
+    "error_digest",
+    "uptime_report",
+    "list_incidents",
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -546,6 +557,10 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // Contenu, monde et audit : lisent des dizaines de fichiers (jars, .dat, réglages).
         "check_plugin_deps" => 60,
         "world_info" | "audit_server" => 30,
+        // Journaux et historique : téléchargent des journaux / relisent l'historique local ;
+        // un instant suffit (un appel répété à l'identique ne retélécharge rien).
+        "search_logs" | "error_digest" => 15,
+        "uptime_report" | "list_incidents" => 10,
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1340,6 +1355,29 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             let force = args.get("force_updates").and_then(Value::as_bool).unwrap_or(false);
             core.audit_server(id, force).await.map_err(es)
         }
+        // --- Journaux et historique (server_logs.rs, incidents.rs, uptime.rs) --------------
+        // Anonymisation (secrets, IP, e-mails, alias des pseudos) appliquée dans les modules.
+        "search_logs" => {
+            let id = req_i64(&args, "server_id")?;
+            let opts = crate::server_logs::SearchOptions::from_args(&args)?;
+            core.search_logs(id, opts).await.map_err(es)
+        }
+
+        "error_digest" => {
+            let id = req_i64(&args, "server_id")?;
+            let opts = crate::server_logs::DigestOptions::from_args(&args)?;
+            json_pretty(&core.error_digest(id, opts).await.map_err(es)?)
+        }
+
+        "uptime_report" => {
+            let id = req_i64(&args, "server_id")?;
+            core.uptime_tool_report(id).await.map_err(es)
+        }
+
+        "list_incidents" => core
+            .incident_report(crate::incidents::IncidentQuery::from_args(&args))
+            .await
+            .map_err(es),
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1503,6 +1541,11 @@ fn build_tool_list() -> Value {
         tool("check_plugin_deps", "Contrôle les DÉPENDANCES des plugins et mods d'un serveur Minecraft Java en lisant le descripteur embarqué dans chaque .jar de plugins/ et mods/ (plugin.yml, paper-plugin.yml, bungee.yml, velocity-plugin.json, fabric.mod.json, quilt.mod.json, META-INF/mods.toml, neoforge.mods.toml) : dépendances obligatoires manquantes ou désactivées, optionnelles absentes (info), version de Minecraft, d'API ou de dépendance incompatible, doublons, jars d'une autre plateforme (plugin Velocity sur Paper, mod Forge sur Fabric…) ou du mauvais dossier, mods côté client, fichiers désactivés (.disabled), jars illisibles. Constats triés CRITIQUE / IMPORTANT / INFO avec recommandation. Lecture À LA DEMANDE (fin d'archive et descripteurs, jamais le jar entier), plafonnée (400 jars) et signalée. Lecture seule. `details` ajoute l'inventaire (id, version, dépendances).", obj(&[("server_id", prop_int("ID du serveur")), ("details", prop_bool("Ajouter l'inventaire détaillé (défaut false)"))], &["server_id"])),
         tool("world_info", "Résumé d'un monde Minecraft Java lu dans level.dat (et, depuis 26.1, dans data/minecraft/*.dat) : nom, GRAINE, version (nom + DataVersion), mode de jeu, difficulté, hardcore, point d'apparition, jour et heure, dernière partie, météo, bordure, règles de jeu, datapacks activés et désactivés, et TAILLE de chaque dimension (fichiers de région de l'overworld, du Nether et de l'End, dossier de la dimension) plus les autres dimensions. Monde actif (`level-name` de server.properties) par défaut. Lecture seule.", obj(&[("server_id", prop_int("ID du serveur")), ("world", prop_str("Dossier du monde (défaut : level-name)"))], &["server_id"])),
         tool("audit_server", "AUDIT de configuration et de sécurité (Minecraft Java, ou Bedrock en partie ; autre jeu : « non géré ») : constats triés CRITIQUE / IMPORTANT / INFO, chacun avec sa recommandation. server.properties (online-mode=false hors proxy correctement configuré — Velocity avec secret ou BungeeCord avec BungeeGuard, d'après spigot.yml et paper-global.yml —, RCON et force de son mot de passe, liste blanche, enable-query, view/simulation-distance face à la RAM), nombre d'opérateurs (ops.json), -Xmx face à la RAM du conteneur, mises à jour disponibles (vérification sans effet de bord ; propositions d'une autre plateforme écartées), version de Java face à Minecraft. Ne renvoie JAMAIS de secret (mot de passe RCON qualifié : vide, faible ou correct). Lecture seule.", obj(&[("server_id", prop_int("ID du serveur")), ("force_updates", prop_bool("Refaire la vérification des mises à jour au lieu du résultat gardé 15 min (défaut false)"))], &["server_id"])),
+        // --- Journaux et historique ---
+        tool("search_logs", "Recherche dans les JOURNAUX du serveur via SFTP : `logs/latest.log` ET les journaux archivés (`AAAA-MM-JJ-N.log.gz`, décompressés à la volée) — bien au-delà des 100 lignes de read_console. Texte (défaut) ou expression régulière (`regex`), casse ignorée sauf `case_sensitive`, lignes de `context`, période `since`/`until` (AAAA-MM-JJ, AAAA-MM-JJ HH:MM ou relatif 12h / 7d ; heure du serveur, jour déduit du nom des fichiers et de l'horodatage [HH:MM:SS] des lignes). Résultats groupés par fichier avec numéros de ligne ; `order` = newest (défaut) ou oldest pour la PREMIÈRE apparition d'une erreur. « Quand X a-t-il été banni ? » : query=\"Banned X\". Plafonds (fichiers lus, octets téléchargés, résultats) signalés en fin de sortie. `dir` : dossier des journaux d'un jeu qui les range ailleurs (défaut selon le jeu). Pseudos remplacés par leur alias (joueur-xxxxxx, accepté dans `query`) si l'anonymisation IA est active.", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Texte (ou expression régulière si `regex`) à chercher")), ("regex", prop_bool("`query` est une expression régulière (défaut false)")), ("case_sensitive", prop_bool("Respecter la casse (défaut false)")), ("context", prop_int("Lignes de contexte avant et après chaque résultat (0 à 5, défaut 0)")), ("since", prop_str("Début : AAAA-MM-JJ, AAAA-MM-JJ HH:MM ou relatif (12h, 7d)")), ("until", prop_str("Fin : même format (défaut : maintenant)")), ("order", prop_str("newest (défaut, plus récent d'abord) | oldest (plus ancien d'abord)")), ("dir", prop_str("Dossier des journaux (défaut : /logs pour Minecraft, selon le jeu sinon)")), ("include_debug", prop_bool("Inclure debug.log / debug-N.log.gz de Forge/Fabric, très verbeux (défaut false)")), ("max_results", prop_int("Résultats affichés (défaut 50, max 200)")), ("max_files", prop_int("Fichiers lus au plus (défaut 20, max 60)"))], &["server_id", "query"])),
+        tool("error_digest", "RÉSUMÉ DES ERREURS d'un serveur : regroupe erreurs et avertissements des journaux (fenêtre `since_hours`, défaut 24 h ; latest.log + archives) ou de la console récente par SIGNATURE (classe d'exception de la cause première + premières frames utiles, sans nombres, adresses ni horodatages). Par groupe : niveau (FATAL, SEVERE, ERROR, WARN), nombre, première et dernière occurrence, plugin ou mod probable (`probable_source.evidence` : event, enable, load, task, mod, jar, prefix, logger, package — du plus au moins sûr), exemple tronqué. Trié par gravité puis fréquence. À appeler avant search_logs pour savoir ce qui plante.", obj(&[("server_id", prop_int("ID du serveur")), ("source", prop_str("auto (défaut : journaux, sinon console) | logs | console")), ("since_hours", prop_int("Fenêtre en heures (défaut 24, max 720)")), ("include_warnings", prop_bool("Inclure les avertissements WARN (défaut true)")), ("limit", prop_int("Groupes renvoyés (défaut 15, max 50)")), ("dir", prop_str("Dossier des journaux (défaut selon le jeu)")), ("max_files", prop_int("Fichiers lus au plus (défaut 8, max 30)"))], &["server_id"])),
+        tool("uptime_report", "DISPONIBILITÉ d'un serveur sur 24 h, 7 j et 30 j (% du temps SURVEILLÉ) et liste des coupures (début, fin, durée, cause : crash, stop ou inconnue), d'après la surveillance de l'app et du service d'arrière-plan, complétée par les statistiques de l'hébergeur là où rien ne surveillait (`host_share_pct` : part déduite de l'hébergeur, qui ne prouve jamais une coupure). Même calcul que la carte Disponibilité de l'app ; `warning` si aucune surveillance locale n'existe.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
+        tool("list_incidents", "HISTORIQUE DES INCIDENTS détectés par la surveillance : crash (arrêt inattendu), surcharge (cpu, ram, disk), échéance de MyBox (expiry), redémarrage automatique, tâche planifiée — avec les DIAGNOSTICS du Copilote rattachés (résumé, cause, correctif, actions proposées), du plus récent au plus ancien. Un serveur (`server_id`) ou tous ceux du compte. Sources : journal local de l'app, service d'arrière-plan, crashs du suivi de disponibilité ; `coverage` dit ce qui a été consulté (un journal vide n'est pas « aucun incident »).", obj(&[("server_id", prop_int("ID du serveur (optionnel : tous les serveurs du compte)")), ("limit", prop_int("Incidents renvoyés (défaut 20, max 100)")), ("since_days", prop_int("Période en jours (défaut 30, max 32)")), ("kind", prop_str("Filtre : crash | cpu | ram | disk | expiry | auto_restart | task | diagnosis"))], &[])),
     ])
 }
 
@@ -2057,5 +2100,24 @@ mod tests {
         // validée à part (server_ids OU all_running=true).
         assert_eq!(schema("broadcast_command")["required"], json!(["command"]));
         assert_eq!(schema("broadcast_command")["properties"]["server_ids"]["items"]["type"], "integer");
+    }
+
+    #[test]
+    fn log_and_history_tools_are_exclusive_reads() {
+        // Journaux et historique : lectures, exposées, universelles, gardées face au MCP officiel.
+        let tools = tool_list().as_array().unwrap();
+        for t in ["search_logs", "error_digest", "uptime_report", "list_incidents"] {
+            assert!(!is_write_tool(t) && READ_TOOLS.contains(&t), "{t} doit être en lecture");
+            assert!(!WRITE_TOOLS.contains(&t) && !INFRA_TOOLS.contains(&t));
+            assert!(LOCAL_KEEP_TOOLS.contains(&t), "{t} : exclusif, gardé face au MCP officiel");
+            assert!(tool_for_game(t, "minecraft") && tool_for_game(t, "satisfactory") && tool_for_game(t, "generic"));
+            assert!(cache_ttl(t).is_some());
+            assert!(tools.iter().any(|x| x["name"] == t), "{t} absent du catalogue");
+        }
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap()["inputSchema"].clone();
+        assert_eq!(schema("search_logs")["required"], json!(["server_id", "query"]));
+        assert_eq!(schema("error_digest")["required"], json!(["server_id"]));
+        assert_eq!(schema("uptime_report")["required"], json!(["server_id"]));
+        assert_eq!(schema("list_incidents")["required"], json!([]));
     }
 }

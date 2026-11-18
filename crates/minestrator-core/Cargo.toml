@@ -68,6 +68,10 @@ semver = "1"
 # Outil MCP `diff_files` (`fleet.rs`) : diff unifié ligne à ligne de deux fichiers texte. Licence
 # Apache-2.0 (compatible GPL-3.0) ; sans dépendance transitive avec les features par défaut.
 similar = "3"
+# Recherche dans les journaux des serveurs (`server_logs`, outil MCP `search_logs`) : motif fourni
+# par l'agent, exécuté en temps linéaire (pas de retour arrière exponentiel). Déjà dans l'arbre
+# du desktop via Tauri.
+regex = "1"
 
 # Génération des types TypeScript des frontends (`desktop/src/lib/bindings`, `mobile/src/lib/bindings`)
 # depuis les structures sérialisées. Optionnelle : jamais compilée dans les binaires livrés, seulement

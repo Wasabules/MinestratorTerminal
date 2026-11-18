@@ -27,7 +27,7 @@ use crate::Core;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
@@ -783,11 +783,14 @@ pub(crate) struct ServiceLink {
     wake: Notify,
     /// Sérialise les tours (tâche de fond et commandes) : une alerte n'est relayée qu'une fois.
     tick: tokio::sync::Mutex<()>,
+    /// Hors de l'app : dernière décision prise à la demande (voir `Core::probe_service_mode`).
+    probed_at: AtomicI64,
 }
 
 impl ServiceLink {
     pub(crate) fn new(dir: &Path) -> Self {
         Self {
+            probed_at: AtomicI64::new(0),
             service_mode: AtomicBool::new(false),
             started: AtomicBool::new(false),
             cursor: PersistedConfig::load(dir, "service_link.json"),
@@ -1208,7 +1211,70 @@ impl Core {
         self.service_link.wake.notify_one();
         Ok(())
     }
+
+    // --- Journaux et historique : lectures hors de l'app ---------------------------------
+
+    /// Le service d'arrière-plan supervise-t-il le compte courant ? Dans l'app : la décision du
+    /// lien. Hors de l'app (MCP headless, `--mcp`), le lien ne tourne pas : décision prise à la
+    /// demande, au plus une fois par [`PROBE_EVERY_S`], pour que les lectures d'historique
+    /// (disponibilité, incidents) incluent ce qu'a vu le service. Aucun autre effet : ni veille
+    /// d'un superviseur, ni relais d'alertes, ni curseur, ni envoi de réglages.
+    pub(crate) async fn probe_service_mode(&self) -> bool {
+        if self.service_link.started.load(Ordering::SeqCst) {
+            return self.service_link.is_service_mode();
+        }
+        let now = now_secs();
+        let last = self.service_link.probed_at.load(Ordering::SeqCst);
+        if last > 0 && now - last < PROBE_EVERY_S {
+            return self.service_link.is_service_mode();
+        }
+        let status = match request(&default_endpoint(), &Request::Status, QUICK_TIMEOUT).await {
+            Ok(Response::Status(s)) => Some(s),
+            _ => None,
+        };
+        let account = match (&status, self.has_key()) {
+            (Some(_), Ok(true)) => match self.user_id().await {
+                Ok(id) => Some(id),
+                // Hors-ligne : on ne tranche pas, la décision précédente est gardée.
+                Err(_) => return self.service_link.is_service_mode(),
+            },
+            _ => None,
+        };
+        let service = decide(account, status.as_ref(), now) == Supervision::Service;
+        self.service_link.service_mode.store(service, Ordering::SeqCst);
+        self.service_link.probed_at.store(now, Ordering::SeqCst);
+        service
+    }
+
+    /// Dernières alertes (au plus [`SERVICE_ALERT_PAGE`]) consignées par le service depuis
+    /// `since_ts`, s'il supervise le compte courant ; `None` sinon (absent, injoignable, autre
+    /// compte). Lecture seule : le curseur de relais de l'app n'est pas touché.
+    pub(crate) async fn service_alert_log(&self, since_ts: i64) -> Option<Vec<Alert>> {
+        if !self.probe_service_mode().await {
+            return None;
+        }
+        let endpoint = default_endpoint();
+        // Le service rend les alertes par identifiant croissant : on part des plus récentes.
+        let head = Request::Alerts { after_id: None, since_ts: Some(since_ts), limit: Some(0) };
+        let Ok(Response::Alerts { last_id, .. }) = call(&endpoint, &head, QUICK_TIMEOUT).await else {
+            return None;
+        };
+        let req = Request::Alerts {
+            after_id: Some((last_id - i64::from(SERVICE_ALERT_PAGE)).max(0)),
+            since_ts: Some(since_ts),
+            limit: Some(SERVICE_ALERT_PAGE),
+        };
+        match call(&endpoint, &req, HISTORY_TIMEOUT).await {
+            Ok(Response::Alerts { items, .. }) => Some(items.into_iter().map(|a| a.alert).collect()),
+            _ => None,
+        }
+    }
 }
+
+/// Hors de l'app, intervalle minimal entre deux décisions « le service supervise-t-il ? ».
+const PROBE_EVERY_S: i64 = 60;
+/// Alertes du service relues au plus par `list_incidents` (le service plafonne à 1 000).
+const SERVICE_ALERT_PAGE: u32 = 1000;
 
 async fn wait_reachable(endpoint: &str, total: Duration) -> Result<()> {
     let deadline = tokio::time::Instant::now() + total;

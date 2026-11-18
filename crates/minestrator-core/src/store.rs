@@ -10,13 +10,16 @@
 //! - les **observations d'état** des serveurs (table `uptime`), base du suivi de disponibilité
 //!   (voir [`crate::uptime`]) ;
 //! - le **journal des automatisations** (table `automation_runs`) : exécutions des tâches
-//!   planifiées et redémarrages automatiques (voir [`crate::automation`]).
+//!   planifiées et redémarrages automatiques (voir [`crate::automation`]) ;
+//! - le **journal des incidents** (table `incident_log`) : alertes vues par l'app et diagnostics
+//!   du Copilote, tenu par l'app de bureau (voir [`crate::incidents`]).
 //!
-//! Les deux derniers sont gardés plus longtemps que les métriques (disponibilité sur 30 jours).
+//! Les trois derniers sont gardés plus longtemps que les métriques (disponibilité sur 30 jours).
 
 use crate::automation::AutomationRun;
 use crate::error::{Error, Result};
 use crate::events::Alert;
+use crate::incidents::IncidentEntry;
 use crate::uptime::StateRow;
 use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
@@ -133,6 +136,21 @@ impl MetricsStore {
                 tracing::warn!("migration du journal d'alertes : {e}");
             }
         }
+        // Journaux et historique : journal local des incidents (alertes vues par l'app et
+        // diagnostics du Copilote), relu par l'outil MCP `list_incidents` (voir `incidents`).
+        let _ = conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS incident_log (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id   INTEGER NOT NULL,
+                server_name TEXT    NOT NULL,
+                kind        TEXT    NOT NULL,
+                severity    TEXT    NOT NULL,
+                ts          INTEGER NOT NULL,
+                message     TEXT    NOT NULL,
+                details     TEXT
+             );
+             CREATE INDEX IF NOT EXISTS idx_incident_log ON incident_log(server_id, ts);",
+        );
     }
 
     /// Consigne une alerte ; renvoie son identifiant (strictement croissant).
@@ -276,6 +294,8 @@ impl MetricsStore {
             rusqlite::params![older_than_ts],
         )
         .map_err(db_err)?;
+        conn.execute("DELETE FROM incident_log WHERE ts < ?1", rusqlite::params![older_than_ts])
+            .map_err(db_err)?;
         Ok(())
     }
 
@@ -400,6 +420,84 @@ impl MetricsStore {
             .query_map(rusqlite::params![server_id, since_ts], |r| r.get(0))
             .map_err(db_err)?;
         rows.collect::<std::result::Result<Vec<_>, _>>().map_err(db_err)
+    }
+
+    // --- Journaux et historique : journal local des incidents ----------------------------
+
+    /// Consigne un incident (alerte ou diagnostic du Copilote) ; renvoie son identifiant.
+    pub(crate) fn insert_incident(&self, e: &IncidentEntry) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO incident_log (server_id, server_name, kind, severity, ts, message, details)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![e.server_id, e.server_name, e.kind, e.severity, e.ts, e.message, e.details],
+        )
+        .map_err(db_err)?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Incidents consignés depuis `since_ts` (d'un serveur si `server_id`), des plus récents aux
+    /// plus anciens, au plus `limit`.
+    pub(crate) fn incidents(&self, server_id: Option<i64>, since_ts: i64, limit: u32) -> Result<Vec<IncidentEntry>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT server_id, server_name, kind, severity, ts, message, details FROM incident_log
+                 WHERE ts >= ?1 AND (?2 IS NULL OR server_id = ?2)
+                 ORDER BY ts DESC, id DESC LIMIT ?3",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(rusqlite::params![since_ts, server_id, limit], |r| {
+                Ok(IncidentEntry {
+                    server_id: r.get(0)?,
+                    server_name: r.get(1)?,
+                    kind: r.get(2)?,
+                    severity: r.get(3)?,
+                    ts: r.get(4)?,
+                    message: r.get(5)?,
+                    details: r.get(6)?,
+                })
+            })
+            .map_err(db_err)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(db_err)
+    }
+
+    /// Nombre d'entrées du journal des incidents et date de la plus ancienne : un journal vide
+    /// signale un dossier de données où l'app n'a jamais tourné depuis son introduction.
+    pub(crate) fn incident_log_extent(&self) -> Result<(i64, Option<i64>)> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*), MIN(ts) FROM incident_log", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(db_err)
+    }
+
+    /// Passages hors service classés `crash` par le superviseur (table `uptime`) depuis
+    /// `since_ts` : `(serveur, date)`, des plus récents aux plus anciens.
+    pub(crate) fn crash_transitions(&self, server_id: Option<i64>, since_ts: i64, limit: u32) -> Result<Vec<(i64, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT server_id, ts FROM uptime
+                 WHERE cause = 'crash' AND ts >= ?1 AND (?2 IS NULL OR server_id = ?2)
+                 ORDER BY ts DESC LIMIT ?3",
+            )
+            .map_err(db_err)?;
+        let rows = stmt
+            .query_map(rusqlite::params![since_ts, server_id, limit], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(db_err)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>().map_err(db_err)
+    }
+
+    /// Le suivi de disponibilité a-t-il des observations depuis `since_ts` (d'un serveur si
+    /// `server_id`) ? Faux : rien n'a surveillé depuis ce dossier de données.
+    pub(crate) fn has_state_rows(&self, server_id: Option<i64>, since_ts: i64) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM uptime WHERE ts >= ?1 AND (?2 IS NULL OR server_id = ?2))",
+            rusqlite::params![since_ts, server_id],
+            |r| r.get(0),
+        )
+        .map_err(db_err)
     }
 }
 
@@ -708,5 +806,44 @@ mod tests {
 
         store.prune_long(160).unwrap();
         assert_eq!(store.runs(7, None, 10).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn journal_des_incidents_et_crashs_du_suivi() {
+        let dir = TempDir::new();
+        let store = MetricsStore::open(&dir.0);
+        assert_eq!(store.incident_log_extent().unwrap(), (0, None));
+        let entry = |server_id: i64, kind: &str, ts: i64| IncidentEntry {
+            server_id,
+            server_name: format!("srv{server_id}"),
+            kind: kind.into(),
+            severity: "critical".into(),
+            ts,
+            message: "m".into(),
+            details: Some("d".into()),
+        };
+        store.insert_incident(&entry(1, "crash", 100)).unwrap();
+        store.insert_incident(&entry(1, "diagnosis", 130)).unwrap();
+        store.insert_incident(&entry(2, "cpu", 120)).unwrap();
+        let all = store.incidents(None, 0, 10).unwrap();
+        assert_eq!(all.iter().map(|e| e.ts).collect::<Vec<_>>(), vec![130, 120, 100]);
+        assert_eq!(all[2], entry(1, "crash", 100));
+        assert_eq!(store.incidents(Some(1), 0, 10).unwrap().len(), 2);
+        assert_eq!(store.incidents(None, 110, 10).unwrap().len(), 2);
+        assert_eq!(store.incidents(None, 0, 1).unwrap().len(), 1);
+        assert_eq!(store.incident_log_extent().unwrap(), (3, Some(100)));
+
+        assert!(!store.has_state_rows(None, 0).unwrap());
+        store.insert_state(1, 90, "running", None).unwrap();
+        store.insert_state(1, 140, "offline", Some("crash")).unwrap();
+        store.insert_state(1, 150, "offline", Some("stop")).unwrap();
+        store.insert_state(3, 200, "offline", Some("crash")).unwrap();
+        assert_eq!(store.crash_transitions(None, 0, 10).unwrap(), vec![(3, 200), (1, 140)]);
+        assert_eq!(store.crash_transitions(Some(1), 0, 10).unwrap(), vec![(1, 140)]);
+        assert!(store.crash_transitions(None, 201, 10).unwrap().is_empty());
+        assert!(store.has_state_rows(Some(3), 0).unwrap() && !store.has_state_rows(Some(9), 0).unwrap());
+
+        store.prune_long(110).unwrap();
+        assert_eq!(store.incident_log_extent().unwrap(), (2, Some(120)));
     }
 }
