@@ -150,6 +150,17 @@ Console live**. À étoffer ensuite :
   MineStrator, filtres source / loader / version, liste des installés, installation directe
   (Modrinth, SpigotMC) avec choix de version. Pas de SFTP en jeu. Les marketplaces des autres jeux
   (Thunderstore, Factorio, uMod, ficsit), qui passent par le SFTP, restent desktop.
+- ✅ **Charte « Biome »** (`DESIGN.md`) : mêmes tokens que le desktop (sombre et clair), Nunito et
+  JetBrains Mono embarquées (`@fontsource-variable`, aucune requête réseau). Chaque serveur a son
+  biome — le même par défaut que sur le desktop, tiré de son id (`src/lib/servers/`, copie du
+  module desktop) — qui dessine le paysage de sa carte d'accueil et de l'en-tête de sa vue, et
+  teinte la barre du bas et les sélections. Le choix du biome (bouton bloc de l'en-tête) est
+  mémorisé sur le téléphone : il **n'est pas synchronisé** avec le desktop. Console et éditeur
+  restent sombres (`.force-dark`).
+- ✅ **Mode anonyme** (`src/lib/anon/`, même masque que le desktop) : bouton œil de l'accueil et de
+  la vue serveur, ligne des Réglages. IP, adresses de connexion, hôte SFTP et e-mails masqués à
+  l'affichage, aussitôt, console et éditeur compris ; Copier et Partager transmettent la vraie
+  valeur. Distinct des données de démo (substitution par des valeurs fictives), cumulable.
 - **Éditeurs de config en formulaire** (`ops.json`, whitelist…), Copilote en chat.
 - **Natif** : verrou biométrique, widget de statut, pull-to-refresh, swipe-actions.
 - **Factorisation** : extraire `ipc.ts`/`events.ts`/i18n/tokens dans un package partagé avec le desktop.

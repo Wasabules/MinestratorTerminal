@@ -4,6 +4,7 @@
   import { t } from "../../i18n";
   import type { KnownPlayer, LiveLight, PlayerAction, PlayerSort, PlayersPage } from "../../types";
   import PlayerSheet from "../PlayerSheet.svelte";
+  import { avatarStyle } from "../../servers/colors.svelte";
 
   /** `playerData` : joueurs déjà venus, fiche et inventaire (Minecraft Java, `GameCapabilities`). */
   let { serverId, active, playerData = false }: { serverId: number; active: boolean; playerData?: boolean } =
@@ -150,6 +151,7 @@
       <ul>
         {#each live.players.list as name (name)}
           <li class="player">
+            <span class="avatar" style={avatarStyle(name)} aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
             <span class="pname selectable">{name}</span>
             <div class="acts">
               <button disabled={busy !== null} onclick={() => act(name, "kick")}>{t("action.kick")}</button>
@@ -275,7 +277,7 @@
   }
   h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-dim);
@@ -291,15 +293,29 @@
   .player {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 10px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 12px;
+    border-radius: var(--radius-lg);
+    padding: 8px 8px 8px 10px;
+  }
+  /* Initiale sur l'accent d'un biome tiré du pseudo (encre sombre, lisible dans les deux thèmes). */
+  .avatar {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    font-weight: 900;
+    font-size: 14px;
+  }
+  .player .pname {
+    flex: 1;
+    min-width: 0;
   }
   .pname {
-    font-weight: 600;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -314,27 +330,33 @@
     flex: none;
   }
   .acts button {
-    padding: 8px 10px;
+    padding: 0 11px;
     font-size: 13px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg);
-    color: var(--text);
-    min-height: 38px;
+    font-weight: 800;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-ink);
+  }
+  .acts button.danger {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
   input,
   select {
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     color: var(--text);
     padding: 12px;
+    min-height: 48px;
     font-size: 16px;
     outline: none;
   }
   input:focus,
   select:focus {
     border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .grid {
     display: grid;
@@ -344,11 +366,15 @@
   .grid button,
   .more {
     padding: 12px;
-    border: 1px solid var(--border);
+    border: none;
     border-radius: var(--radius);
-    background: var(--surface);
-    color: var(--text);
-    font-weight: 600;
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-ink);
+    font-weight: 800;
+  }
+  .grid button.danger {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
   .tiles {
     display: grid;
@@ -359,13 +385,19 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 10px;
+    padding: 12px;
+    min-width: 0;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
   }
   .tile b {
-    font-size: 17px;
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .tile span {
     font-size: 12px;
@@ -387,8 +419,8 @@
     text-align: left;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 10px 12px;
+    border-radius: var(--radius-lg);
+    padding: 10px 14px;
     color: var(--text);
     font: inherit;
   }
@@ -404,26 +436,24 @@
     font-size: 13px;
   }
   .kmeta .on {
-    color: var(--brand-primary);
+    color: var(--state-running-text);
+    font-weight: 800;
   }
   .tag {
     flex: none;
     font-size: 11px;
-    font-weight: 700;
-    padding: 1px 6px;
+    font-weight: 800;
+    padding: 1px 7px;
     border-radius: 999px;
-    border: 1px solid currentColor;
+    background: color-mix(in srgb, currentColor 14%, transparent);
   }
   .tag.op {
-    color: var(--brand-primary);
+    color: var(--state-hibernate);
   }
   .tag.wl {
     color: var(--state-pending);
   }
   .tag.ban {
-    color: var(--state-danger);
-  }
-  button.danger {
     color: var(--state-danger);
   }
   button:disabled {
@@ -440,7 +470,7 @@
   }
   .ok {
     margin: 0;
-    color: var(--brand-primary);
+    color: var(--state-running-text);
     font-size: 14px;
   }
   .dim {

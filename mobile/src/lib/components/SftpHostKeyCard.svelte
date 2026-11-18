@@ -8,6 +8,7 @@
   import { api, humanizeError } from "../ipc";
   import type { SftpHostKey } from "../types";
   import { t } from "../i18n";
+  import Masked from "./Masked.svelte";
 
   let {
     serverId,
@@ -50,7 +51,8 @@
   {#if info}
     <div class="field">
       <span class="label">{t("files.hostKey.host")}</span>
-      <span class="mono selectable">{info.host}</span>
+      <!-- Mode anonyme : hôte SFTP masqué à l'affichage (port gardé). -->
+      <span class="mono selectable"><Masked value={info.host} kind="address" /></span>
     </div>
     <div class="field">
       <span class="label">{t("files.hostKey.known")}</span>
@@ -73,8 +75,8 @@
     margin: 8px 12px;
     padding: 16px;
     background: var(--surface);
-    border: 1px solid var(--state-danger);
-    border-radius: var(--radius);
+    border: 1px solid color-mix(in srgb, var(--state-danger) 60%, var(--border));
+    border-radius: var(--radius-lg);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -82,6 +84,7 @@
   h3 {
     margin: 0;
     font-size: 17px;
+    font-weight: 900;
     color: var(--state-danger);
   }
   .intro {
@@ -100,10 +103,11 @@
   }
   .label {
     font-size: 12px;
+    font-weight: 800;
     color: var(--text-muted);
   }
   .mono {
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     overflow-wrap: anywhere;
   }
@@ -118,12 +122,12 @@
     color: var(--state-danger);
   }
   button.danger {
-    background: var(--state-danger);
-    color: #fff;
+    background: var(--danger-bg);
+    color: var(--danger-ink);
     border: none;
     border-radius: var(--radius);
     padding: 12px;
-    font-weight: 600;
+    font-weight: 800;
     font-size: 15px;
   }
   button.danger:disabled {
@@ -134,6 +138,7 @@
     border: none;
     color: var(--brand-primary);
     font-size: 15px;
+    font-weight: 800;
     padding: 8px;
   }
 </style>

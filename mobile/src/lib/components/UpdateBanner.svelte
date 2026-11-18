@@ -72,9 +72,11 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: calc(var(--safe-top) + 8px) 12px 8px;
-    background: var(--brand-gradient);
-    color: #fff;
+    padding: calc(var(--safe-top) + 8px) 8px 8px 16px;
+    background: var(--elevated);
+    border-bottom: 1px solid var(--border);
+    box-shadow: var(--shadow);
+    color: var(--text);
   }
   .txt {
     flex: 1;
@@ -84,22 +86,24 @@
   }
   .txt strong {
     font-size: 14px;
+    font-weight: 900;
   }
   .err {
     font-size: 11px;
-    opacity: 0.9;
+    color: var(--state-danger);
   }
+  /* Bouton principal de la charte : clair en sombre, sombre en clair. */
   .go {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: rgba(255, 255, 255, 0.22);
+    background: var(--btn-primary-bg);
     border: none;
-    color: #fff;
-    font-weight: 600;
-    font-size: 13px;
-    padding: 8px 12px;
-    border-radius: 999px;
+    color: var(--btn-primary-ink);
+    font-weight: 900;
+    font-size: 13.5px;
+    padding: 0 14px;
+    border-radius: var(--radius);
     flex: none;
   }
   .go:disabled {
@@ -108,11 +112,12 @@
   .x {
     background: transparent;
     border: none;
-    color: #fff;
+    border-radius: var(--radius);
+    color: var(--text-muted);
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     flex: none;
   }
 </style>

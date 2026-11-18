@@ -116,7 +116,7 @@
     padding: 16px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -124,6 +124,7 @@
   h3 {
     margin: 0;
     font-size: 17px;
+    font-weight: 900;
   }
   .intro {
     margin: 0;
@@ -144,39 +145,42 @@
   input {
     flex: 1;
     min-width: 0;
-    background: var(--elevated);
-    border: 1px solid var(--border);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     color: var(--text);
     padding: 12px;
+    font-family: var(--font-mono);
     font-size: 16px;
     outline: none;
   }
   input:focus {
     border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .reveal {
-    background: transparent;
-    border: 1px solid var(--border);
+    background: var(--btn-secondary-bg);
+    border: none;
     border-radius: var(--radius);
-    color: var(--text);
-    padding: 0 12px;
+    color: var(--btn-secondary-ink);
+    font-weight: 800;
+    padding: 0 14px;
   }
   .msg {
     margin: 0;
     font-size: 14px;
-    color: var(--brand-primary);
+    color: var(--state-running-text);
   }
   .msg.err {
     color: var(--state-danger);
   }
   button.primary {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: var(--radius);
     padding: 12px;
-    font-weight: 600;
+    font-weight: 900;
     font-size: 16px;
   }
   button.primary:disabled {
@@ -194,6 +198,7 @@
     border: none;
     color: var(--brand-primary);
     font-size: 15px;
+    font-weight: 800;
     padding: 8px;
   }
 </style>

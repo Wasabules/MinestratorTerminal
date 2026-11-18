@@ -4,6 +4,7 @@
   import { api, openExternal, ensureNotificationPermission } from "../ipc";
   import { t } from "../i18n";
   import { isFake, setFake } from "../fake.svelte";
+  import { isAnon, toggleAnon } from "../anon/anon.svelte";
   import Icon from "./Icon.svelte";
   import AccountsCard from "./AccountsCard.svelte";
   import type { UpdateInfo } from "../types";
@@ -133,7 +134,7 @@
 
 <div class="screen">
   <header>
-    <button class="ic" onclick={onBack} aria-label="Retour"><Icon name="back" size={20} /></button>
+    <button class="ic" onclick={onBack} aria-label={t("common.back")}><Icon name="back" size={20} /></button>
     <span class="title">{t("settings.title")}</span>
   </header>
 
@@ -165,9 +166,20 @@
       </div>
     </section>
 
-    <!-- Surveillance en arrière-plan -->
+    <!-- Confidentialité : mode anonyme (masque) et données de démo (substitution), côte à côte
+         pour qu'on voie ce qui les distingue. -->
     <section>
       <h3>{t("settings.privacy")}</h3>
+      <button class="switchrow" role="switch" aria-checked={isAnon()} onclick={toggleAnon}>
+        <span class="switchtxt">
+          <span class="switchlabel">
+            <Icon name={isAnon() ? "eyeOff" : "eye"} size={17} />
+            {t("anon.title")}
+          </span>
+          <span class="switchhint">{t("anon.settingDesc")}</span>
+        </span>
+        <span class="switch" class:on={isAnon()}><span class="knob"></span></span>
+      </button>
       <button
         class="switchrow"
         role="switch"
@@ -266,28 +278,33 @@
     min-height: 100dvh;
   }
   header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: calc(var(--safe-top) + 8px) 12px 8px;
-    background: var(--surface);
+    padding: calc(var(--safe-top) + 6px) 10px 6px;
+    background: var(--chrome);
     border-bottom: 1px solid var(--border);
   }
   .ic {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
     background: transparent;
     border: none;
+    border-radius: var(--radius);
     color: var(--text);
   }
   .title {
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 900;
   }
   .body {
-    padding: 16px;
+    padding: 18px 16px calc(var(--safe-bottom) + 28px);
     display: flex;
     flex-direction: column;
     gap: 26px;
@@ -298,39 +315,42 @@
     gap: 10px;
   }
   h3 {
-    margin: 0;
-    font-size: 13px;
+    margin: 0 2px;
+    font-size: 12.5px;
+    font-weight: 900;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
     color: var(--text-dim);
   }
+  /* Segment : la sélection prend l'accent (vert de la forêt hors d'une vue serveur). */
   .seg {
     display: flex;
-    background: var(--surface);
+    background: var(--inset);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 4px;
-    gap: 4px;
+    border-radius: 12px;
+    padding: 3px;
+    gap: 2px;
   }
   .seg button {
     flex: 1;
     background: transparent;
     border: none;
     color: var(--text-muted);
-    padding: 11px;
-    border-radius: var(--radius-sm);
-    font-size: 14px;
-    font-weight: 600;
+    padding: 0 8px;
+    border-radius: 9px;
+    font-size: 14.5px;
+    font-weight: 800;
   }
   .seg button.sel {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .rowline {
     display: flex;
     justify-content: space-between;
     align-items: center;
     padding: 6px 2px;
+    font-weight: 800;
   }
   .dim {
     color: var(--text-dim);
@@ -338,28 +358,32 @@
   .link {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     background: transparent;
     border: none;
     color: var(--brand-primary);
-    padding: 8px 2px;
+    padding: 0 2px;
     font-size: 15px;
+    font-weight: 800;
+    text-align: left;
   }
   .link:disabled {
     opacity: 0.6;
   }
+  /* Mise à jour : bouton principal (clair en sombre, sombre en clair). */
   .update {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    background: var(--brand-primary);
-    color: #fff;
+    min-height: 48px;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: var(--radius);
-    padding: 12px;
+    padding: 0 14px;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 900;
   }
   .update:disabled {
     opacity: 0.6;
@@ -372,13 +396,13 @@
   .switchrow {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     width: 100%;
     text-align: left;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px 14px;
+    border-radius: var(--radius-lg);
+    padding: 14px 16px;
     color: var(--text);
   }
   .switchrow:disabled {
@@ -388,24 +412,27 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 4px;
     min-width: 0;
   }
   .switchlabel {
-    font-size: 15px;
-    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15.5px;
+    font-weight: 800;
   }
   .switchhint {
-    font-size: 12px;
+    font-size: 12.5px;
     color: var(--text-dim);
-    line-height: 1.35;
+    line-height: 1.45;
   }
   .switch {
     flex: none;
-    width: 46px;
+    width: 48px;
     height: 28px;
     border-radius: 999px;
-    background: var(--border);
+    background: var(--border-strong);
     position: relative;
     transition: background 0.18s;
   }
@@ -419,11 +446,12 @@
     width: 22px;
     height: 22px;
     border-radius: 50%;
-    background: #fff;
-    transition: transform 0.18s;
+    background: var(--text);
+    transition: transform 0.18s, background 0.18s;
   }
   .switch.on .knob {
-    transform: translateX(18px);
+    transform: translateX(20px);
+    background: var(--on-primary);
   }
   .reliability {
     display: flex;
@@ -437,14 +465,14 @@
     gap: 10px;
     width: 100%;
     text-align: left;
-    background: color-mix(in srgb, var(--brand-accent) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--brand-accent) 45%, transparent);
+    background: color-mix(in srgb, var(--state-pending) 14%, var(--surface));
+    border: 1px solid color-mix(in srgb, var(--state-pending) 40%, transparent);
     border-radius: var(--radius);
     padding: 11px 12px;
     color: var(--text);
   }
   .warnrow :global(svg:first-child) {
-    color: var(--brand-accent);
+    color: var(--state-pending);
     flex: none;
   }
   .warntxt {
@@ -458,15 +486,16 @@
     font-size: 14px;
   }
   .warntxt small {
-    font-size: 12px;
+    font-size: 12.5px;
     color: var(--text-dim);
   }
   .okrow {
     display: flex;
     align-items: center;
     gap: 8px;
-    color: var(--brand-primary);
+    color: var(--state-running-text);
     font-size: 14px;
+    font-weight: 800;
     padding: 4px 2px;
   }
 </style>

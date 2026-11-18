@@ -194,6 +194,7 @@
 {/if}
 
 <style>
+  /* Action du biome : fond teinté de l'accent du serveur. */
   .dl {
     display: flex;
     align-items: center;
@@ -201,13 +202,14 @@
     gap: 8px;
     width: 100%;
     margin-bottom: 10px;
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
-    color: var(--brand-primary);
+    padding: 0 14px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+    color: var(--accent-text);
     font: inherit;
     font-size: 14px;
+    font-weight: 800;
   }
 
   .view {
@@ -238,13 +240,13 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
-    border-radius: var(--radius-sm);
-    padding: 8px 12px;
-    font-size: 13px;
-    font-weight: 600;
+    border-radius: var(--radius);
+    padding: 0 14px;
+    font-size: 13.5px;
+    font-weight: 900;
   }
   ul {
     list-style: none;
@@ -260,8 +262,8 @@
     gap: 8px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px;
+    border-radius: var(--radius-lg);
+    padding: 10px 10px 10px 14px;
   }
   .meta {
     flex: 1;
@@ -272,30 +274,33 @@
   }
   .meta strong {
     font-size: 15px;
+    font-weight: 800;
   }
   .meta small {
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
   }
   .act {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     flex: none;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
+    background: var(--btn-secondary-bg);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--btn-secondary-ink);
   }
   .act.danger {
-    color: var(--state-danger);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
   .dim {
     color: var(--text-dim);
   }
   .ok {
     margin: 0;
-    color: var(--brand-primary);
+    color: var(--state-running-text);
   }
   .err {
     margin: 0;
@@ -305,7 +310,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim);
     z-index: 40;
   }
   .dialog {
@@ -317,7 +322,8 @@
     width: min(90vw, 380px);
     background: var(--elevated);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
     padding: 18px;
     display: flex;
     flex-direction: column;
@@ -326,17 +332,21 @@
   .dtitle {
     margin: 0;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 800;
     line-height: 1.4;
   }
   .dialog input {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
     color: var(--text);
     padding: 12px;
     font-size: 16px;
     outline: none;
+  }
+  .dialog input:focus {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .dacts {
     display: flex;
@@ -344,19 +354,21 @@
     gap: 8px;
   }
   .dacts button {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    padding: 10px 16px;
-    font-weight: 600;
+    background: var(--btn-secondary-bg);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--btn-secondary-ink);
+    padding: 0 16px;
+    font-weight: 800;
   }
   .dacts button.primary {
-    background: var(--brand-primary);
-    border-color: transparent;
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
+    font-weight: 900;
   }
   .dacts button.primary.danger {
-    background: var(--state-danger);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+    font-weight: 800;
   }
 </style>

@@ -1,57 +1,166 @@
-/* Charte MineStrator (extraite de DESIGN.md) — dark-first, idéal pour une app console.
-   Tokens partagés avec le desktop ; on les factorisera dans un package commun plus tard. */
-:root {
-  /* Marque */
-  --brand-primary: #009b72;
-  --brand-primary-700: #005d44;
-  --brand-accent: #ff715b;
-  --brand-strator: #ffb4a8;
-  --brand-secondary: #cc5740;
-  --brand-tertiary: #7828c8;
-  --brand-pro: #394666;
-  --brand-discord: #5865f2;
-  --brand-gradient: linear-gradient(135deg, #009b72 0%, #ff715b 100%);
+/* =========================================================================
+   Minestrator Terminal mobile — charte « Biome » : tokens et primitives (voir DESIGN.md).
+   Mêmes valeurs que le desktop (`desktop/src/app.css`), plus ce qu'impose le tactile : zones
+   sûres (encoches, barres système), cibles d'au moins 44 px, feuilles du bas.
+   Sombre par défaut ; thème clair sous :root[data-theme="light"].
+   Aucune ombre (sauf ce qui flotte : menus, feuilles, dialogues), aucun dégradé.
+   ========================================================================= */
 
-  /* États serveur */
-  --state-running: #009b72;
-  --state-pending: #f59e0b;
-  --state-offline: #859398;
-  --state-danger: #ff5f57;
-  --state-hibernate: #7828c8;
+/* `.force-dark` : zone toujours sombre quel que soit le thème (console, éditeur de fichiers) ;
+   elle redéclare les tokens du thème sombre, que ses descendants héritent. */
+:root,
+.force-dark {
+  /* Marque : chevron vert et curseur corail du logo. Le corail ne sert qu'au logo. */
+  --brand-green: #5fd68c;
+  --brand-coral: #ff715b;
 
-  /* Rayons / typo */
-  --radius: 10px;
+  /* Typographie (polices embarquées, cf. routes/+layout.svelte : aucune requête réseau) */
+  --font-sans: "Nunito Variable", Nunito, "Segoe UI", Roboto, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code",
+    Consolas, monospace;
+
+  /* Formes */
   --radius-sm: 6px;
-  --font-ui: -apple-system, "Segoe UI", Roboto, Inter, system-ui, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --radius: 10px; /* boutons, champs */
+  --radius-lg: 16px; /* cartes, haut des feuilles */
+  /* Ombre réservée à ce qui flotte au-dessus de la page (menus, feuilles, dialogues). */
+  --shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  /* Voile sous une feuille ou un dialogue. */
+  --scrim: rgba(5, 8, 10, 0.6);
 
-  /* Encoches / barres système (Android/iOS) */
+  /* Surfaces */
+  --chrome: #0d1113; /* barres d'app, console, éditeur */
+  --bg: #14191d; /* page */
+  --surface: #1b2126; /* carte */
+  --inset: #161b1f; /* encart, champ, bandeau d'infos */
+  --elevated: #20272d; /* menu, feuille, dialogue */
+  --border: #232b31;
+  --border-strong: #262e35; /* pistes de jauge, grilles des graphes */
+  --hover: rgba(241, 245, 243, 0.06);
+
+  /* Texte */
+  --text: #f1f5f3;
+  --text-muted: #b3bfba;
+  --text-dim: #8c9a94;
+
+  /* États (couleur de pastille ; `-text` quand la couleur sert de texte) */
+  --state-running: #5fd68c;
+  --state-running-text: #8fe8b0;
+  --state-pending: #f2b84b;
+  --state-offline: #6b7a7f;
+  --state-danger: #ff6b63;
+  --state-hibernate: #c79bff;
+
+  /* Liens, icônes actives, anneau de focus */
+  --brand-primary: #5fd68c;
+  --on-primary: #0b2414; /* texte posé sur --brand-primary */
+  --ring: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 35%, transparent);
+
+  /* Accent de sélection (période choisie, onglet actif, segment…). La vue serveur le remplace
+     par l'accent de son biome (classe .biome). */
+  --accent: #3fbf6e;
+  --on-accent: #0b2414;
+  --accent-soft: #13261d; /* fond teinté : tuiles d'icône, boutons d'action du biome */
+  --accent-text: #8fe8b0; /* texte posé sur --accent-soft */
+
+  /* Boutons */
+  --btn-primary-bg: #f1f5f3;
+  --btn-primary-ink: #0d1113;
+  --btn-secondary-bg: #0d1113;
+  --btn-secondary-ink: #f1f5f3;
+  --danger-bg: #3a1517;
+  --danger-ink: #ff9d97;
+
+  /* Séries des graphes */
+  --chart-cpu: #3fbf6e;
+  --chart-ram: #ff8a75;
+  --chart-players: #c79bff;
+
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --shadow: 0 14px 36px rgba(13, 17, 19, 0.14);
+  --scrim: rgba(13, 17, 19, 0.4);
+
+  --chrome: #e4eae7;
+  --bg: #f3f6f4;
+  --surface: #ffffff;
+  --inset: #eef2f0;
+  --elevated: #ffffff;
+  --border: #dfe5e2;
+  --border-strong: #d3dbd7;
+  --hover: rgba(13, 17, 19, 0.05);
+
+  --text: #0d1113;
+  --text-muted: #46524d;
+  --text-dim: #5d6a65;
+
+  --state-running: #16794a;
+  --state-running-text: #16794a;
+  --state-pending: #8a5a0b;
+  --state-offline: #7b878c;
+  --state-danger: #c4302b;
+  --state-hibernate: #8a4fd6;
+
+  --brand-primary: #16794a;
+  --on-primary: #ffffff;
+
+  --accent: #1a6e3f;
+  --on-accent: #ffffff;
+  --accent-soft: #e2f1e8;
+  --accent-text: #16603a;
+
+  --btn-primary-bg: #0d1113;
+  --btn-primary-ink: #f1f5f3;
+  --btn-secondary-bg: #e4eae7;
+  --btn-secondary-ink: #0d1113;
+  --danger-bg: #fde4e2;
+  --danger-ink: #b42318;
+
+  --chart-cpu: #1f9d55;
+  --chart-ram: #e0533d;
+  --chart-players: #8a4fd6;
+
+  color-scheme: light;
+}
+
+/* Zones système (Android/iOS) et barre du bas : propres au mobile. */
+:root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --nav-height: 60px;
+  --nav-height: 64px;
 }
 
-/* Dark (défaut) */
-:root,
-:root[data-theme="dark"] {
-  --bg: #12171a;
-  --surface: #181d22;
-  --elevated: #2c3038;
-  --border: #2c3038;
-  --text: #f1f5f9;
-  --text-muted: #cbd5e1;
-  --text-dim: #859398;
+/* --- Biome d'un serveur ---------------------------------------------------
+   Un conteneur reçoit la palette brute de son biome en variables (`biomeVars()` de
+   servers/colors.svelte.ts : --b-accent, --b-accent-l, --b-ink, --b-soft…) et la classe
+   .biome les résout selon le thème : tout ce qu'il contient lit --accent & co.
+   `[data-biome]` : feuille téléportée hors de la vue serveur (`portal.ts`), même palette. */
+.biome,
+[data-biome] {
+  --accent: var(--b-accent);
+  --on-accent: var(--b-ink);
+  --accent-soft: var(--b-soft);
+  --accent-text: var(--b-soft-text);
 }
-
-/* Light */
-:root[data-theme="light"] {
-  --bg: #f9fafb;
-  --surface: #ffffff;
-  --elevated: #ffffff;
-  --border: #e5e7eb;
-  --text: #1a1a1a;
-  --text-muted: #4b5563;
-  --text-dim: #9ca3af;
+:root[data-theme="light"] .biome,
+:root[data-theme="light"] [data-biome] {
+  --accent: var(--b-accent-l);
+  --on-accent: #ffffff;
+  --accent-soft: var(--b-soft-l);
+  --accent-text: var(--b-accent-l);
+}
+/* Zone sombre dans un biome : elle garde l'accent du biome, version sombre. */
+.biome .force-dark,
+[data-biome] .force-dark {
+  --accent: var(--b-accent);
+  --on-accent: var(--b-ink);
+  --accent-soft: var(--b-soft);
+  --accent-text: var(--b-soft-text);
+}
+.force-dark {
+  color: var(--text);
 }
 
 * {
@@ -68,14 +177,37 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-ui);
-  font-size: 16px;
-  line-height: 1.4;
-  /* Pas de sélection/长-press bleus intempestifs façon web sur mobile. */
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  /* Pas de sélection ni de surbrillance bleue au toucher, façon web, sur mobile. */
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
   overscroll-behavior: none;
+}
+
+h1,
+h2,
+h3 {
+  font-weight: 900;
+}
+b,
+strong {
+  font-weight: 800;
+}
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--brand-primary) 35%, transparent);
 }
 
 /* Le texte utile (console, valeurs) reste sélectionnable. */
@@ -86,10 +218,16 @@ textarea {
   user-select: text;
 }
 
-button {
+button,
+input,
+select,
+textarea {
   font-family: inherit;
   font-size: inherit;
+  font-weight: inherit;
   color: inherit;
+}
+button {
   cursor: pointer;
 }
 
@@ -101,4 +239,139 @@ button,
 
 a {
   color: var(--brand-primary);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+
+/* --- Primitives réutilisables ------------------------------------------- */
+
+.muted {
+  color: var(--text-muted);
+}
+.dim {
+  color: var(--text-dim);
+}
+.mono {
+  font-family: var(--font-mono);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+/* Bouton principal : clair, il ressort sur la page comme sur tous les paysages. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: var(--radius);
+  border: 1px solid transparent;
+  font-weight: 900;
+  font-size: 15px;
+  color: var(--btn-primary-ink);
+  background: var(--btn-primary-bg);
+  transition: background 0.12s ease, opacity 0.12s ease;
+}
+.btn:active:not(:disabled) {
+  background: color-mix(in srgb, var(--btn-primary-bg) 86%, var(--btn-primary-ink));
+}
+.btn:disabled {
+  opacity: 0.5;
+}
+/* Secondaire : sombre (clair en thème clair). */
+.btn--ghost {
+  font-weight: 800;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-ink);
+}
+.btn--ghost:active:not(:disabled) {
+  background: color-mix(in srgb, var(--btn-secondary-bg) 82%, var(--btn-secondary-ink));
+}
+/* Destructif : forcer l'arrêt, supprimer… */
+.btn--danger {
+  font-weight: 800;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+}
+.btn--danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-bg) 85%, var(--danger-ink));
+}
+/* Accent du biome : action propre à la vue (tuiles, liens d'action). */
+.btn--accent {
+  font-weight: 800;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.btn--block {
+  width: 100%;
+}
+
+.input {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  color: var(--text);
+  background: var(--inset);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  width: 100%;
+  min-height: 48px;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.input:focus {
+  border-color: var(--brand-primary);
+  box-shadow: var(--ring);
+}
+
+/* Puce (pilule) */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--inset);
+}
+
+/* Feuille du bas : poignée décorative en tête. */
+.sheet-handle {
+  width: 40px;
+  height: 4px;
+  margin: 2px auto 8px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  flex: none;
+}
+
+/* Spinner */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--text) 25%, transparent);
+  border-top-color: var(--brand-primary);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
 }

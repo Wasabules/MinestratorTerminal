@@ -15,6 +15,9 @@
   import { t } from "../../i18n";
   import { portal } from "../../portal";
   import Icon from "../Icon.svelte";
+  import Masked from "../Masked.svelte";
+  import { isAnon } from "../../anon/anon.svelte";
+  import { hasSensitive } from "../../anon/mask";
   import type { ServerListItem } from "../../types";
 
   let { server, active }: { server: ServerListItem; active: boolean } = $props();
@@ -83,6 +86,15 @@
   /** Réglage secret (mot de passe RCON…) : jamais affiché en clair sans demande explicite. */
   function isSecret(key: string): boolean {
     return /password|secret|token/i.test(key);
+  }
+
+  /**
+   * Saisie masquée dans la feuille d'édition : réglage secret, ou valeur d'origine contenant une
+   * IP ou une adresse (`server-ip`…) quand le mode anonyme est actif. Lue sur la valeur enregistrée,
+   * pas sur la saisie : le champ ne bascule pas pendant qu'on tape.
+   */
+  function isMaskedInput(key: string): boolean {
+    return isSecret(key) || (isAnon() && hasSensitive(values[key]));
   }
 
   function isNumeric(v: string): boolean {
@@ -243,8 +255,11 @@
                   <span class="v" class:empty={v === ""}>
                     {#if isSecret(key) && v !== ""}
                       <Icon name="key" size={13} /> ••••••••
+                    {:else if v === ""}
+                      {t("props.empty")}
                     {:else}
-                      {v === "" ? t("props.empty") : v}
+                      <!-- Mode anonyme : IP et adresses de la valeur (server-ip…) masquées. -->
+                      <Masked value={v} />
                     {/if}
                   </span>
                 </span>
@@ -269,6 +284,7 @@
     onkeydown={(e) => e.key === "Escape" && (editing = null)}
   ></div>
   <div class="sheet" use:portal>
+    <div class="sheet-handle"></div>
     <div class="s-title selectable">{editing.key}</div>
     {#if isSecret(editing.key)}
       <p class="s-hint dim"><Icon name="key" size={13} /> {t("props.secret")}</p>
@@ -277,7 +293,7 @@
       <!-- svelte-ignore a11y_autofocus -->
       <input
         class="selectable"
-        type={isSecret(editing.key) && !editing.reveal ? "password" : "text"}
+        type={isMaskedInput(editing.key) && !editing.reveal ? "password" : "text"}
         inputmode={isNumeric(values[editing.key] ?? "") ? "numeric" : "text"}
         bind:value={editing.value}
         autocapitalize="off"
@@ -286,7 +302,7 @@
         autofocus
         onkeydown={(e) => e.key === "Enter" && submitEditor()}
       />
-      {#if isSecret(editing.key)}
+      {#if isMaskedInput(editing.key)}
         <button
           class="reveal"
           onclick={() => editing && (editing.reveal = !editing.reveal)}
@@ -325,7 +341,7 @@
     <p class="d-text selectable">{server.restart_warning}</p>
     <div class="s-acts">
       <button class="ghost" onclick={() => (confirmRestart = false)}>{t("props.cancel")}</button>
-      <button class="primary warn" onclick={restart}>{t("props.restartNow")}</button>
+      <button class="primary" onclick={restart}>{t("props.restartNow")}</button>
     </div>
   </div>
 {/if}
@@ -349,7 +365,7 @@
   h2 {
     margin: 0 0 4px;
     font-size: 18px;
-    font-weight: 700;
+    font-weight: 900;
   }
   .titles p {
     margin: 0;
@@ -362,9 +378,9 @@
     width: 44px;
     height: 44px;
     flex: none;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
     color: var(--text-muted);
   }
   .ic:disabled {
@@ -391,9 +407,9 @@
     align-items: center;
     gap: 8px 10px;
     padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--state-pending) 45%, var(--border));
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--state-pending) 12%, var(--surface));
+    border: none;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--state-pending) 14%, var(--surface));
   }
   .b-ico {
     display: inline-flex;
@@ -401,7 +417,8 @@
   }
   .b-text {
     flex: 1 1 180px;
-    font-size: 13px;
+    font-size: 13.5px;
+    font-weight: 700;
     line-height: 1.4;
   }
   .b-btn {
@@ -411,10 +428,10 @@
     margin-left: auto;
     padding: 0 14px;
     border: none;
-    border-radius: var(--radius-sm);
-    background: var(--brand-primary);
-    color: #fff;
-    font-weight: 600;
+    border-radius: var(--radius);
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
+    font-weight: 900;
     font-size: 14px;
   }
   .b-btn:disabled {
@@ -426,10 +443,14 @@
     align-items: center;
     gap: 8px;
     padding: 0 12px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
-    background: var(--surface);
+    background: var(--inset);
     color: var(--text-dim);
+  }
+  .search:focus-within {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .search input {
     flex: 1;
@@ -443,6 +464,7 @@
     outline: none;
   }
   .count {
+    font-family: var(--font-mono);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
@@ -452,12 +474,12 @@
     margin: 0;
     padding: 0;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
     overflow: hidden;
   }
   li + li {
-    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    border-top: 1px solid var(--border);
   }
   .row {
     width: 100%;
@@ -465,7 +487,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 8px 12px;
+    padding: 8px 12px 8px 14px;
     border: 0;
     background: none;
     color: var(--text-dim);
@@ -493,7 +515,8 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    font-size: 13px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     color: var(--text-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -504,19 +527,20 @@
     font-style: italic;
   }
 
-  /* Interrupteur : 44 × 26, l'état se lit aussi à la position du curseur (pas seulement à la couleur). */
+  /* Interrupteur : 44 × 26, l'état se lit aussi à la position du curseur (pas seulement à la couleur).
+     Allumé, il prend l'accent du biome du serveur. */
   .sw {
     position: relative;
     width: 44px;
     height: 26px;
     flex: none;
     border-radius: 999px;
-    background: var(--elevated);
-    border: 1px solid var(--border);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
     transition: background 0.15s;
   }
   .sw.on {
-    background: var(--brand-primary);
+    background: var(--accent);
     border-color: transparent;
   }
   .sw.busy {
@@ -529,12 +553,13 @@
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+    background: var(--text-muted);
     transition: transform 0.15s;
   }
+  /* Curseur à l'encre de l'accent : visible même sur un accent très clair (neige). */
   .sw.on .knob {
     transform: translateX(18px);
+    background: var(--on-accent);
   }
   .row-err {
     padding: 0 12px 10px;
@@ -548,18 +573,18 @@
   }
   .ghost {
     padding: 0 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text);
-    font-weight: 600;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-ink);
+    font-weight: 800;
   }
   .dim {
     color: var(--text-dim);
   }
   .ok {
     margin: 0;
-    color: var(--brand-primary);
+    color: var(--state-running-text);
     font-size: 14px;
   }
   .err {
@@ -571,7 +596,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim);
     z-index: 40;
   }
   .sheet {
@@ -583,15 +608,16 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 14px 16px calc(var(--safe-bottom) + 16px);
+    padding: 8px 16px calc(var(--safe-bottom) + 16px);
     background: var(--elevated);
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
   }
   .s-title {
     font-family: var(--font-mono);
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 700;
     overflow-wrap: anywhere;
   }
   .s-hint {
@@ -606,9 +632,13 @@
     align-items: center;
     gap: 6px;
     padding-right: 4px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--inset);
+  }
+  .field:focus-within {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .field input {
     flex: 1;
@@ -638,14 +668,10 @@
   .primary {
     padding: 0 18px;
     border: none;
-    border-radius: var(--radius-sm);
-    background: var(--brand-primary);
-    color: #fff;
-    font-weight: 600;
-  }
-  .primary.warn {
-    background: var(--state-pending);
-    color: #1a1a1a;
+    border-radius: var(--radius);
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
+    font-weight: 900;
   }
   .primary:disabled,
   .ghost:disabled {
@@ -664,7 +690,8 @@
     padding: 18px;
     background: var(--elevated);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
   }
   .d-text {
     margin: 0;

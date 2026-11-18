@@ -81,12 +81,18 @@
   });
 </script>
 
-<section class="card">
+<section class="card hist">
   <header>
-    <h3>{t("metrics.title")}</h3>
+    <h2>{t("metrics.title")}</h2>
+    <!-- Période : la sélection prend l'accent du biome. -->
     <div class="ranges" role="group" aria-label={t("metrics.title")}>
       {#each RANGES as r (r.secs)}
-        <button class="rg" class:on={range === r.secs} onclick={() => setRange(r.secs)}>
+        <button
+          class="rg"
+          class:on={range === r.secs}
+          aria-pressed={range === r.secs}
+          onclick={() => setRange(r.secs)}
+        >
           {r.key ? t(r.key) : r.label}
         </button>
       {/each}
@@ -110,55 +116,61 @@
     </p>
   {/if}
   {#if history && history.host_s > 0}
-    <p class="src dim">{t("metrics.hostHint")}</p>
+    <p class="src">
+      <span class="dash" aria-hidden="true"></span>
+      {t("metrics.hostHint")}
+    </p>
   {:else if history && !history.host_ok}
-    <p class="src dim">{t("metrics.hostUnavailable")}</p>
+    <p class="src">{t("metrics.hostUnavailable")}</p>
   {/if}
 </section>
 
 <style>
-  .card {
+  .hist {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px 14px 10px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: var(--surface);
+    gap: 12px;
+    padding: 16px;
   }
   header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: stretch;
     gap: 10px;
   }
-  h3 {
+  h2 {
     margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-muted);
+    font-size: 17px;
   }
+  /* Segment de période sur toute la largeur : quatre cibles larges, au pouce. */
   .ranges {
-    display: inline-flex;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 2px;
+    padding: 3px;
+    border-radius: 12px;
     background: var(--bg);
   }
-  /* Cible tactile ≥ 44 px de haut via le min-height global des boutons ; largeur resserrée. */
   .rg {
-    min-width: 48px;
-    padding: 0 10px;
+    min-height: 40px;
+    padding: 0 6px;
     border: none;
-    border-radius: 999px;
+    border-radius: 9px;
     background: transparent;
-    color: var(--text-dim);
-    font-size: 13px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
+  }
+  .rg.on {
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .players {
     margin: 0;
-    font-size: 13px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-strong);
+    font-size: 13.5px;
     color: var(--text-muted);
   }
   .players b {
@@ -166,16 +178,21 @@
     font-variant-numeric: tabular-nums;
   }
   .src {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin: 0;
-    font-size: 11.5px;
+    font-size: 12px;
     line-height: 1.4;
+    color: var(--text-dim);
+  }
+  /* Rappel du trait pointillé des mesures de l'hébergeur. */
+  .dash {
+    flex: none;
+    width: 18px;
+    border-top: 2px dashed var(--text-dim);
   }
   .dim {
     color: var(--text-dim);
-  }
-  .rg.on {
-    background: color-mix(in srgb, var(--brand-primary) 18%, transparent);
-    color: var(--text);
-    font-weight: 600;
   }
 </style>

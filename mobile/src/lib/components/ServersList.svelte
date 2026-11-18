@@ -4,8 +4,15 @@
   import { alerts } from "../stores/alerts.svelte";
   import { applyAccountSwitch } from "../stores/accounts.svelte";
   import { t } from "../i18n";
+  import { biomeVars, serverBiome } from "../servers/colors.svelte";
+  import { statusMeta } from "../status";
   import Icon from "./Icon.svelte";
   import GameIcon from "./GameIcon.svelte";
+  import Logo from "./Logo.svelte";
+  import AnonToggle from "./AnonToggle.svelte";
+  import BiomeLandscape from "./BiomeLandscape.svelte";
+  import Masked from "./Masked.svelte";
+  import StatusDot from "./StatusDot.svelte";
   import MyBoxResources from "./MyBoxResources.svelte";
   import type { MyBoxCapacity, MyBoxSummary, ServerListItem } from "../types";
 
@@ -101,20 +108,6 @@
     }
   }
 
-  function statusColor(status: string): string {
-    switch (status) {
-      case "active":
-        return "var(--state-running)";
-      case "hibernation":
-        return "var(--state-hibernate)";
-      case "suspended":
-      case "expired":
-        return "var(--state-danger)";
-      default:
-        return "var(--state-offline)";
-    }
-  }
-
   // Groupes MyBox (ordre des myboxes ; serveurs orphelins en fin).
   const groups = $derived.by(() => {
     const byBox = new Map<number, ServerListItem[]>();
@@ -134,9 +127,9 @@
     return out;
   });
 
-  function boxBadge(b: MyBoxSummary): { text: string; cls: string } | null {
-    if (b.expired) return { text: "Expiré", cls: "danger" };
-    if (b.suspended) return { text: "Suspendu", cls: "warn" };
+  function boxBadge(b: MyBoxSummary): { text: string; cls: string } {
+    if (b.expired) return { text: t("mybox.state.expired"), cls: "danger" };
+    if (b.suspended) return { text: t("mybox.state.suspended"), cls: "warn" };
     if (b.days_left <= 7) return { text: `${b.days_left} j`, cls: "warn" };
     return { text: `${b.days_left} j`, cls: "dim" };
   }
@@ -147,11 +140,13 @@
 </script>
 
 <header class="top">
+  <span class="mark" aria-hidden="true"><Logo size={24} /></span>
   <div class="titles">
     <h1>{t("servers.title")}</h1>
     {#if auth.user}<span class="who selectable">{auth.user.pseudo}</span>{/if}
   </div>
   <div class="actions">
+    <AnonToggle />
     <button class="ic bell" onclick={onAlerts} aria-label={t("alerts.title")}>
       <Icon name="bell" size={20} />
       {#if alerts.unread > 0}
@@ -169,10 +164,12 @@
 
 <div class="body">
   {#if loading}
-    <p class="dim">…</p>
+    <div class="state"><span class="spinner"></span></div>
   {:else if error}
-    <p class="err selectable">{error}</p>
-    <button class="ghost" onclick={() => load()}><Icon name="refresh" size={16} /> {t("servers.refresh")}</button>
+    <p class="alert selectable">{error}</p>
+    <button class="btn btn--ghost" onclick={() => load()}>
+      <Icon name="refresh" size={16} /> {t("servers.refresh")}
+    </button>
   {:else if servers.length === 0}
     <p class="dim">{t("servers.empty")}</p>
   {:else}
@@ -183,8 +180,8 @@
           {@const boxId = g.box.id}
           <div class="ghead">
             <span class="gname">{g.box.name}</span>
-            <span class="goffer dim">{g.box.offer}</span>
-            {#if badge}<span class="gbadge {badge.cls}">{badge.text}</span>{/if}
+            <span class="goffer">{g.box.offer}</span>
+            <span class="gbadge {badge.cls}">{badge.text}</span>
           </div>
           <!-- Ressources de la MyBox : carte repliable, chargée à la première ouverture. -->
           <div class="res" class:open={openRes[boxId]}>
@@ -193,9 +190,9 @@
               aria-expanded={!!openRes[boxId]}
               onclick={() => toggleRes(boxId)}
             >
-              <Icon name="sliders" size={15} />
+              <span class="rg"><Icon name="sliders" size={16} /></span>
               <span class="rlabel">{t("mybox.resources")}</span>
-              <span class="chev"><Icon name="chevronDown" size={16} /></span>
+              <span class="chev"><Icon name="chevronDown" size={18} /></span>
             </button>
             {#if openRes[boxId]}
               {@const cap = caps?.find((c) => c.id === boxId)}
@@ -205,8 +202,8 @@
                 {:else if capsLoading}
                   <p class="dim small">{t("mybox.loading")}</p>
                 {:else if capsError}
-                  <p class="err small selectable">{capsError}</p>
-                  <button class="ghost" onclick={() => loadCaps()}>
+                  <p class="alert small selectable">{capsError}</p>
+                  <button class="btn btn--ghost" onclick={() => loadCaps()}>
                     <Icon name="refresh" size={16} /> {t("mybox.retry")}
                   </button>
                 {:else}
@@ -216,26 +213,39 @@
             {/if}
           </div>
         {:else}
-          <div class="ghead"><span class="gname">Autres</span></div>
+          <div class="ghead"><span class="gname">{t("servers.other")}</span></div>
         {/if}
         <ul>
           {#each g.servers as s (s.id)}
-            <li>
-              <button class="row" onclick={() => onOpen(s, g.box)}>
-                <span class="ico">
-                  <GameIcon src={s.egg_icon_url} name={s.egg_name} size={38} />
-                  <span class="dot" style="background:{statusColor(s.status)}"></span>
-                </span>
-                <span class="name">
-                  <strong>{s.name}</strong>
-                  <small class="dim selectable">{s.egg_name} · {s.address}</small>
-                </span>
-                {#if players[s.id] && s.capabilities?.players}
-                  <span class="players dim">
-                    <Icon name="players" size={13} />{players[s.id].current}/{players[s.id].limit}
+            {@const biome = serverBiome(s.id)}
+            {@const meta = statusMeta(s.status)}
+            <li class="card srv biome" style={biomeVars(biome)}>
+              <button class="cardbtn" onclick={() => onOpen(s, g.box)} aria-label={t("servers.open").replace("{name}", s.name)}>
+                <!-- Fine bannière : le paysage du biome du serveur (même relief que son en-tête). -->
+                <span class="cover">
+                  <BiomeLandscape {biome} seed={s.id} height={58} pixel={4} />
+                  <span class="state" style="color: {meta.ink}">
+                    <StatusDot color={meta.color} size={7} />{t(meta.key)}
                   </span>
-                {/if}
-                <Icon name="chevronRight" size={18} />
+                </span>
+                <span class="head">
+                  <!-- L'icône du jeu chevauche le bas de la bannière. -->
+                  <span class="gicon"><GameIcon src={s.egg_icon_url} name={s.egg_name} size={38} radius={7} /></span>
+                  <span class="titles">
+                    <span class="name">{s.name}</span>
+                    <span class="addr"><Masked value={s.address} kind="address" /></span>
+                  </span>
+                  <span class="go"><Icon name="chevronRight" size={20} /></span>
+                </span>
+                <span class="meta">
+                  <span class="chip">{s.egg_name}{s.bedrock ? " · Bedrock" : ""}</span>
+                  {#if players[s.id] && s.capabilities?.players}
+                    <span class="chip pl">
+                      <Icon name="players" size={13} /><span class="mono">{players[s.id].current}/{players[s.id].limit}</span>
+                    </span>
+                  {/if}
+                  {#if !s.owner}<span class="chip sub">{t("servers.subUser")}</span>{/if}
+                </span>
               </button>
             </li>
           {/each}
@@ -246,47 +256,54 @@
 </div>
 
 <style>
-  .players {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    font-size: 12px;
-    font-variant-numeric: tabular-nums;
-    flex: none;
-  }
-
   .top {
     display: flex;
-    align-items: flex-end;
-    justify-content: space-between;
-    padding: calc(var(--safe-top) + 16px) 16px 10px;
-    gap: 12px;
+    align-items: center;
+    gap: 10px;
+    padding: calc(var(--safe-top) + 14px) 16px 12px;
+  }
+  /* Tuile du logo : toujours sombre (DESIGN.md). */
+  .mark {
+    display: grid;
+    place-items: center;
+    width: 38px;
+    height: 38px;
+    flex: none;
+    border-radius: 10px;
+    background: #0d1113;
   }
   .titles {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+    flex: 1;
   }
   h1 {
     margin: 0;
-    font-size: 22px;
-    font-weight: 700;
+    font-size: 23px;
+    line-height: 1.15;
   }
   .who {
     color: var(--text-dim);
     font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .actions {
     display: flex;
-    gap: 8px;
+    gap: 4px;
+    flex: none;
   }
   .ic {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    border-radius: var(--radius);
     color: var(--text-muted);
   }
   .bell {
@@ -302,76 +319,111 @@
     padding: 0 4px;
     border-radius: 999px;
     background: var(--state-danger);
-    color: #fff;
+    color: var(--bg);
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 900;
     line-height: 18px;
     text-align: center;
     box-shadow: 0 0 0 2px var(--bg);
   }
   .body {
-    padding: 4px 12px 20px;
+    padding: 4px 16px calc(var(--safe-bottom) + 24px);
+  }
+  .state {
+    display: grid;
+    place-items: center;
+    padding: 40px 0;
+  }
+  .alert {
+    margin: 0 0 12px;
+    padding: 10px 13px;
+    border-radius: var(--radius);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+    font-size: 14px;
+  }
+  .alert.small {
+    margin: 0;
+    font-size: 13px;
   }
   .group {
-    margin-bottom: 18px;
+    margin-bottom: 22px;
   }
   .ghead {
     display: flex;
-    align-items: center;
+    align-items: baseline;
     gap: 8px;
-    padding: 6px 4px 8px;
+    padding: 6px 2px 10px;
+    min-width: 0;
   }
   .gname {
-    font-size: 13px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    font-size: 15px;
+    font-weight: 900;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
   }
   .goffer {
-    font-size: 12px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    white-space: nowrap;
   }
   .gbadge {
     margin-left: auto;
-    font-size: 11px;
-    padding: 2px 8px;
+    flex: none;
+    font-size: 12px;
+    font-weight: 800;
+    padding: 2px 9px;
     border-radius: 999px;
-    border: 1px solid var(--border);
-  }
-  .gbadge.dim {
+    background: var(--inset);
     color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
   }
   .gbadge.warn {
     color: var(--state-pending);
-    border-color: var(--state-pending);
+    background: color-mix(in srgb, var(--state-pending) 14%, var(--surface));
   }
   .gbadge.danger {
-    color: var(--state-danger);
-    border-color: var(--state-danger);
+    color: var(--danger-ink);
+    background: var(--danger-bg);
   }
   .res {
-    margin-bottom: 8px;
+    margin-bottom: 10px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: 12px;
     overflow: hidden;
   }
   .restoggle {
     width: 100%;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 0 14px;
+    gap: 10px;
+    min-height: 48px;
+    padding: 0 12px;
     background: transparent;
     border: none;
-    color: var(--text-muted);
-    font-size: 14px;
+    color: var(--text);
+    font-size: 14.5px;
+    font-weight: 800;
     text-align: left;
+  }
+  .rg {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+    background: var(--inset);
+    color: var(--text-muted);
   }
   .rlabel {
     flex: 1;
   }
   .chev {
     display: inline-flex;
+    color: var(--text-muted);
     transition: transform 0.18s;
   }
   .res.open .chev {
@@ -385,7 +437,7 @@
     padding: 12px 14px 14px;
     border-top: 1px solid var(--border);
   }
-  .resbody .ghost {
+  .resbody .btn {
     align-self: flex-start;
   }
   .small {
@@ -398,64 +450,127 @@
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
-  }
-  .row {
-    width: 100%;
-    display: flex;
-    align-items: center;
     gap: 12px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px;
-    text-align: left;
-    color: var(--text);
   }
-  .ico {
-    position: relative;
-    flex: none;
+
+  /* --- Carte serveur ---------------------------------------------------------------- */
+  .srv {
+    overflow: hidden;
   }
-  .dot {
-    position: absolute;
-    right: -3px;
-    bottom: -3px;
-    width: 13px;
-    height: 13px;
-    border-radius: 50%;
-    border: 2px solid var(--surface);
-  }
-  .name {
+  .cardbtn {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    flex: 1;
-    min-width: 0;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+    text-align: left;
   }
-  .name strong {
-    font-size: 16px;
+  .cardbtn:active {
+    background: var(--hover);
   }
-  .name small {
-    font-size: 12px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .cover {
+    position: relative;
+    display: block;
+    width: 100%;
   }
-  .ghost {
+  /* Pastille d'état posée sur le paysage : couleurs du thème sombre dans les deux thèmes. */
+  .state {
+    --state-running: #5fd68c;
+    --state-running-text: #8fe8b0;
+    --state-pending: #f2b84b;
+    --state-offline: #6b7a7f;
+    --state-danger: #ff6b63;
+    --state-hibernate: #c79bff;
+    --text-dim: #8c9a94;
+    position: absolute;
+    top: 9px;
+    right: 10px;
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #0d1113;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 0 12px 0 14px;
+  }
+  .gicon {
+    position: relative; /* au-dessus du paysage (positionné) qu'elle chevauche */
+    margin-top: -20px;
+    padding: 3px;
+    border-radius: 10px;
+    background: var(--surface);
+    flex: none;
+  }
+  .titles {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .head .titles {
+    padding-top: 6px;
+  }
+  .name {
+    font-weight: 900;
+    font-size: 17px;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .addr {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .go {
+    display: inline-flex;
+    align-self: center;
+    margin-top: 6px;
+    color: var(--text-dim);
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 14px 14px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12.5px;
+    font-weight: 700;
     color: var(--text-muted);
-    padding: 8px 12px;
-    font-size: 13px;
+    background: var(--inset);
+    border-radius: 999px;
+    padding: 3px 10px;
+  }
+  .chip.pl {
+    color: var(--accent-text);
+    background: var(--accent-soft);
+  }
+  .chip.pl .mono {
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .chip.sub {
+    color: var(--state-hibernate);
   }
   .dim {
     color: var(--text-dim);
-  }
-  .err {
-    color: var(--state-danger);
   }
 </style>

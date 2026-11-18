@@ -8,6 +8,7 @@
   import { api, humanizeError } from "../ipc";
   import { t } from "../i18n";
   import { applyAccountSwitch } from "../stores/accounts.svelte";
+  import { avatarStyle } from "../servers/colors.svelte";
   import Icon from "./Icon.svelte";
   import type { Account } from "../types";
 
@@ -93,7 +94,7 @@
   <div class="list">
     {#each accounts as a (a.id)}
       <div class="row" class:active={a.active}>
-        <span class="avatar" aria-hidden="true">{a.pseudo.charAt(0).toUpperCase()}</span>
+        <span class="avatar" style={avatarStyle(a.pseudo)} aria-hidden="true">{a.pseudo.charAt(0).toUpperCase()}</span>
         <span class="name selectable">
           {a.pseudo}
           {#if a.active}<span class="badge">{t("account.active")}</span>{/if}
@@ -162,27 +163,26 @@
     flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
   }
   .row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 12px;
+    padding: 8px 8px 8px 14px;
   }
   .row + .row {
     border-top: 1px solid var(--border);
   }
+  /* Initiale sur l'accent d'un biome tiré du pseudo (encre sombre, lisible dans les deux thèmes). */
   .avatar {
     flex: none;
-    width: 30px;
-    height: 30px;
-    border-radius: 9px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     display: grid;
     place-items: center;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-gradient);
+    font-weight: 900;
     opacity: 0.7;
   }
   .row.active .avatar {
@@ -192,35 +192,37 @@
     flex: 1;
     min-width: 0;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 800;
     display: flex;
     align-items: center;
     gap: 8px;
     overflow-wrap: anywhere;
   }
   .badge {
-    font-size: 11px;
-    padding: 2px 8px;
+    font-size: 11.5px;
+    font-weight: 800;
+    padding: 2px 9px;
     border-radius: 999px;
-    color: #fff;
-    background: var(--brand-primary);
+    color: var(--accent-text);
+    background: var(--accent-soft);
   }
   .small {
     flex: none;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    padding: 7px 11px;
-    font-size: 13px;
-    font-weight: 600;
+    background: var(--btn-secondary-bg);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--btn-secondary-ink);
+    padding: 0 14px;
+    font-size: 13.5px;
+    font-weight: 800;
   }
   .ic {
     flex: none;
     display: grid;
     place-items: center;
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius);
     background: transparent;
     border: none;
     color: var(--text-muted);
@@ -237,21 +239,27 @@
     gap: 8px;
   }
   .addform input {
-    background: var(--surface);
-    border: 1px solid var(--border);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius);
     color: var(--text);
-    padding: 12px;
+    padding: 12px 14px;
+    font-family: var(--font-mono);
     font-size: 15px;
+    outline: none;
+  }
+  .addform input:focus {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .primary {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: var(--radius);
     padding: 12px;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 900;
   }
   .link {
     display: flex;
@@ -262,6 +270,7 @@
     color: var(--brand-primary);
     padding: 8px 2px;
     font-size: 15px;
+    font-weight: 800;
   }
   .hint {
     margin: 0 2px;
@@ -275,6 +284,6 @@
     color: var(--state-danger);
   }
   .msg.ok {
-    color: var(--brand-primary);
+    color: var(--state-running-text);
   }
 </style>
