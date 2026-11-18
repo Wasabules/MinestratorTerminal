@@ -123,7 +123,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | POST / PATCH | `/user/{id_user}/ark/cluster` | — | écriture, non testé |  |
 | DELETE | `/user/{id_user}/ark/cluster/{id}` | — | écriture, non testé |  |
 | GET | `/user/{id_user}/ark/clusters` | — | ✓ GET |  |
-| GET | `/user/{id_user}/backup_job/{id}` | — | non testé |  |
+| GET | `/user/{id_user}/backup_job/{id}` | — | non testé | Avancement d'un job (snapshot avant suppression, reprise) : `{ status, progress, … }`. |
 | GET | `/user/{id_user}/backup_jobs/active` | — | ✓ GET |  |
 | GET | `/user/{id_user}/database_archive_v2/download/{chemin}` | — | non testé |  |
 | DELETE | `/user/{id_user}/database_archive_v2/{id}` | — | écriture, non testé |  |
@@ -165,7 +165,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | ? | `/mybox/downgrade` | — | écriture, non testé |  |
 | POST | `/mybox/subscription` | — | écriture, non testé |  |
 | ? | `/mybox/type/downgrade` | — | écriture, non testé |  |
-| GET / DELETE | `/mybox/{id_mybox}` | ✓ | ✓ GET |  |
+| GET / DELETE | `/mybox/{id_mybox}` | ✓ | ✓ GET | CPU en cœurs et RAM en Go ; seuls les serveurs actifs (`disabled: 0`) consomment. `offer.pods` = serveurs actifs max (en pause : ⌊pods × 1,5⌋). Utilisé par l'app (`mybox.rs`, voir `docs/api/MYBOX.md`). |
 | GET | `/mybox/{id_mybox}/activity` | — | ✓ GET |  |
 | POST | `/mybox/{id_mybox}/database` | — | écriture, non testé |  |
 | PATCH | `/mybox/{id_mybox}/database/description` | — | écriture, non testé |  |
@@ -176,23 +176,23 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | GET | `/mybox/{id_mybox}/database/{id}/backups/{id}/download` | — | non testé |  |
 | POST | `/mybox/{id_mybox}/database/{id}/backups/{id}/restore` | — | écriture, non testé |  |
 | POST | `/mybox/{id_mybox}/database/{id}/pma-token` | — | écriture, non testé |  |
-| GET | `/mybox/{id_mybox}/disk` | — | ✓ GET |  |
+| GET | `/mybox/{id_mybox}/disk` | — | ✓ GET | Occupation de tous les serveurs : `{ disk_servers, disk_servers_unit: "MB" }`. Le disque est partagé par la MyBox. |
 | POST | `/mybox/{id_mybox}/free/renew` | — | écriture, non testé |  |
-| PATCH | `/mybox/{id_mybox}/name` | — | écriture, non testé |  |
+| PATCH | `/mybox/{id_mybox}/name` | — | écriture, non testé | Corps `{ name }` (1 à 50 caractères). |
 | POST | `/mybox/{id_mybox}/option` | — | écriture, non testé |  |
 | DELETE | `/mybox/{id_mybox}/option/{id}` | — | écriture, non testé |  |
 | PATCH | `/mybox/{id_mybox}/owner` | — | écriture, non testé |  |
 | GET | `/mybox/{id_mybox}/players` | — | ✓ GET |  |
 | DELETE | `/mybox/{id_mybox}/refund` | — | écriture, non testé |  |
 | POST | `/mybox/{id_mybox}/review` | — | écriture, non testé |  |
-| POST / PATCH | `/mybox/{id_mybox}/server` | ✓ | écriture, non testé |  |
-| PATCH | `/mybox/{id_mybox}/server/disable` | ✓ | écriture, non testé |  |
-| PATCH | `/mybox/{id_mybox}/server/enable` | ✓ | écriture, non testé |  |
-| DELETE | `/mybox/{id_mybox}/server/{id_server}` | ✓ | écriture, non testé |  |
+| POST / PATCH | `/mybox/{id_mybox}/server` | ✓ | écriture, non testé | `POST` (création) : `{ name, cpu, ram, location, id_egg \| id_egg_experimental, required_fields: [{ key, value }] }` → `{ id_mybox, id_server, ip }`. `PATCH` : `{ id_server, cpu, ram }` (valeurs finales ; serveur arrêté exigé selon les cas : `API_MYBOX_NEED_OFFLINE_SERVER`). |
+| PATCH | `/mybox/{id_mybox}/server/disable` | ✓ | écriture, non testé | Mise en pause : `{ id_server }` ; ressources rendues, fichiers gardés. |
+| PATCH | `/mybox/{id_mybox}/server/enable` | ✓ | écriture, non testé | Reprise : `{ id_server }` ; peut renvoyer `reactivation: { status, job_id }` (fichiers remis en place). |
+| DELETE | `/mybox/{id_mybox}/server/{id_server}` | ✓ | écriture, non testé | Suppression définitive (`DELETE`). |
 | POST / DELETE | `/mybox/{id_mybox}/server/{id_server}/dedicated_ip` | — | écriture, non testé |  |
-| POST | `/mybox/{id_mybox}/server/{id_server}/snapshot-before-delete` | — | écriture, non testé |  |
-| PATCH | `/mybox/{id_mybox}/servers/order` | — | écriture, non testé |  |
-| GET | `/mybox/{id_mybox}/smartscan` | — | non testé |  |
+| POST | `/mybox/{id_mybox}/server/{id_server}/snapshot-before-delete` | — | écriture, non testé | Sans corps → `{ job_id, snapshot_name, current_count, limit }` ; suivi par `GET /user/{id}/backup_job/{job_id}`. |
+| PATCH | `/mybox/{id_mybox}/servers/order` | — | écriture, non testé | Corps `{ servers_ids: [tous les serveurs, dans l'ordre] }`. |
+| GET | `/mybox/{id_mybox}/smartscan` | — | non testé | `GET` (lu, testé à la main) : analyse p95 (`shrink_recommendation`, `balance_recommendation`, `scale_recommendation`). `PATCH { action: shrink \| balance, servers? }` applique (serveurs arrêtés). |
 | GET | `/mybox/{id_mybox}/stats/{début}/{fin}` | — | ✓ GET | Historique de la MyBox ; même format de période. |
 | POST / PATCH | `/mybox/{id_mybox}/subuser` | — | écriture, non testé |  |
 | GET | `/mybox/{id_mybox}/subuser/permissions` | — | ✓ GET |  |
@@ -360,7 +360,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | Méthode | Chemin | Doc. | Clé API | Remarque |
 |---|---|---|---|---|
 | GET | `/server/catalog/eggs` | ✓ | non testé |  |
-| GET | `/server/catalog/locations` | ✓ | non testé |  |
+| GET | `/server/catalog/locations` | ✓ | non testé | `locations[{ id, city, country, country_iso, in_stock }]` (`in_stock` absent de la doc). Utilisé par l'app. |
 | GET | `/server/{id_server}/console/logs` | ✓ | non testé |  |
 | PATCH | `/server/{id_server}/icon` | ✓ | écriture, non testé |  |
 | PATCH | `/server/{id_server}/name` | ✓ | écriture, non testé |  |
@@ -386,8 +386,8 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | GET | `/site/dashboard_news` | — | ✓ GET |  |
 | GET | `/site/databases` | — | ✓ GET |  |
 | GET | `/site/datacenters` | — | ✓ GET |  |
-| GET | `/site/eggs` | — | ✓ GET |  |
-| GET | `/site/eggs/experimentals` | — | ✓ GET |  |
+| GET | `/site/eggs` | — | ✓ GET | Catalogue de création : `resources { cpu, ram, disk, disk_install }` (cœurs, Go), `required_fields[{ name, label }]`, `eggs_categories`. Utilisé par l'app. |
+| GET | `/site/eggs/experimentals` | — | ✓ GET | Types expérimentaux, par catégorie : `eggs.{APPLICATION, VIDEO_GAME, GENERIC}[{ id, name, fields[{ name, description }] }]`, envoyés en `id_egg_experimental`. |
 | GET | `/site/feature_flags` | — | ✓ GET |  |
 | POST | `/site/giftcode` | — | écriture, non testé |  |
 | GET | `/site/index` | — | ✓ GET |  |

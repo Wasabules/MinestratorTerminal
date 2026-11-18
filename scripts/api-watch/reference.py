@@ -39,6 +39,21 @@ NOTES = {
     "/user/{x}/2fa/setup": "Non testé : un `GET` qui peut générer un nouveau secret 2FA.",
     "/server/{x}/files/upload/url": "Non testé : génère une URL d'envoi.",
     "/server/{x}/files/bulk-upload-token": "Non testé : génère un jeton d'envoi.",
+    # Gestion des MyBox (mybox.rs) — analyse complète : docs/api/MYBOX.md.
+    "/mybox/{x}": "CPU en cœurs et RAM en Go ; seuls les serveurs actifs (`disabled: 0`) consomment. `offer.pods` = serveurs actifs max (en pause : ⌊pods × 1,5⌋). Utilisé par l'app (`mybox.rs`, voir `docs/api/MYBOX.md`).",
+    "/mybox/{x}/disk": "Occupation de tous les serveurs : `{ disk_servers, disk_servers_unit: \"MB\" }`. Le disque est partagé par la MyBox.",
+    "/mybox/{x}/server": "`POST` (création) : `{ name, cpu, ram, location, id_egg | id_egg_experimental, required_fields: [{ key, value }] }` → `{ id_mybox, id_server, ip }`. `PATCH` : `{ id_server, cpu, ram }` (valeurs finales ; serveur arrêté exigé selon les cas : `API_MYBOX_NEED_OFFLINE_SERVER`).",
+    "/mybox/{x}/server/disable": "Mise en pause : `{ id_server }` ; ressources rendues, fichiers gardés.",
+    "/mybox/{x}/server/enable": "Reprise : `{ id_server }` ; peut renvoyer `reactivation: { status, job_id }` (fichiers remis en place).",
+    "/mybox/{x}/server/{x}": "Suppression définitive (`DELETE`).",
+    "/mybox/{x}/server/{x}/snapshot-before-delete": "Sans corps → `{ job_id, snapshot_name, current_count, limit }` ; suivi par `GET /user/{id}/backup_job/{job_id}`.",
+    "/mybox/{x}/servers/order": "Corps `{ servers_ids: [tous les serveurs, dans l'ordre] }`.",
+    "/mybox/{x}/name": "Corps `{ name }` (1 à 50 caractères).",
+    "/mybox/{x}/smartscan": "`GET` (lu, testé à la main) : analyse p95 (`shrink_recommendation`, `balance_recommendation`, `scale_recommendation`). `PATCH { action: shrink | balance, servers? }` applique (serveurs arrêtés).",
+    "/user/{x}/backup_job/{x}": "Avancement d'un job (snapshot avant suppression, reprise) : `{ status, progress, … }`.",
+    "/site/eggs": "Catalogue de création : `resources { cpu, ram, disk, disk_install }` (cœurs, Go), `required_fields[{ name, label }]`, `eggs_categories`. Utilisé par l'app.",
+    "/site/eggs/experimentals": "Types expérimentaux, par catégorie : `eggs.{APPLICATION, VIDEO_GAME, GENERIC}[{ id, name, fields[{ name, description }] }]`, envoyés en `id_egg_experimental`.",
+    "/server/catalog/locations": "`locations[{ id, city, country, country_iso, in_stock }]` (`in_stock` absent de la doc). Utilisé par l'app.",
 }
 
 SECTIONS = [
