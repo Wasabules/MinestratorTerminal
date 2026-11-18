@@ -508,6 +508,83 @@ export type MetricSample = {
   state: string,
 };
 
+// --- Historique croisé local + hébergeur (history.rs) ---
+
+/**
+ * Historique fusionné d'un serveur sur `[from, to]`.
+ */
+export type MetricsHistory = {
+  server_id: number,
+  from: number,
+  to: number,
+  /**
+   * Pas des points (s) : la tranche de regroupement, sinon le pas de mesure le plus large
+   * présent. Un écart nettement supérieur entre deux points est un trou de données.
+   */
+  step_s: number,
+  /**
+   * Points chronologiques, origine comprise.
+   */
+  points: Array<HistoryPoint>,
+  /**
+   * Joueurs connectés (hébergeur seulement), même regroupement (maximum par tranche).
+   */
+  players: Array<PlayersPoint>,
+  /**
+   * Temps couvert par la surveillance locale dans la fenêtre (s).
+   */
+  local_s: number,
+  /**
+   * Temps comblé par les mesures de l'hébergeur (s).
+   */
+  host_s: number,
+  /**
+   * Les statistiques de l'hébergeur ont pu être lues (sinon : local seul, ou cache partiel).
+   */
+  host_ok: boolean,
+};
+
+/**
+ * Un point de l'historique fusionné (unités du local).
+ */
+export type HistoryPoint = {
+  ts: number,
+  /**
+   * CPU en % d'un cœur (100 = un cœur).
+   */
+  cpu: number,
+  /**
+   * RAM, en octets.
+   */
+  mem: number,
+  /**
+   * Limite de RAM, en octets (0 si inconnue).
+   */
+  mem_limit: number,
+  /**
+   * Disque, en octets.
+   */
+  disk: number,
+  /**
+   * État Wings du point local ; `running` pour une mesure de l'hébergeur.
+   */
+  state: string,
+  source: HistorySource,
+};
+
+/**
+ * Origine d'un point d'historique.
+ */
+export type HistorySource = "local" | "host";
+
+/**
+ * Joueurs connectés (statistiques de l'hébergeur).
+ */
+export type PlayersPoint = {
+  ts: number,
+  count: number,
+};
+
 // --- Sauvegardes (models.rs) ---
 
 /**
@@ -1631,6 +1708,11 @@ export type UptimeWindow = {
    * Dont en service.
    */
   up_s: number,
+  /**
+   * Part de `monitored_s` connue seulement par les statistiques de l'hébergeur (toujours en
+   * service : il ne prouve jamais une coupure).
+   */
+  host_s: number,
   /**
    * `up_s / monitored_s` en % ; `null` si rien n'a été surveillé.
    */

@@ -1,7 +1,8 @@
 //! Historique local de métriques (SQLite embarqué).
 //!
-//! L'API ne fournit AUCUN historique — le cœur l'accumule lui-même. C'est l'un des
-//! avantages structurels d'une app persistante par rapport au panel web.
+//! L'hébergeur ne garde qu'une mesure par minute (voir [`crate::history`], qui croise les deux) :
+//! le cœur accumule son propre historique, plus fin (10 s) et porteur de l'état Wings. C'est l'un
+//! des avantages structurels d'une app persistante par rapport au panel web.
 //!
 //! La même base garde aussi :
 //! - un **journal des alertes** (table `alerts`) : le service d'arrière-plan y consigne ce qu'il

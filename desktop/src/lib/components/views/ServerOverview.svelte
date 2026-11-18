@@ -12,7 +12,7 @@
   import type {
     ConsoleStats,
     LiveLight,
-    MetricSample,
+    MetricsHistory,
     ActivityEntry,
     ServerListItem,
     ServerLive,
@@ -21,6 +21,7 @@
   import PowerControl from '../PowerControl.svelte';
   import StatusDot from '../StatusDot.svelte';
   import MetricsChart from '../MetricsChart.svelte';
+  import PlayersChart from '../PlayersChart.svelte';
   import UptimeCard from '../UptimeCard.svelte';
   import Icon from '../Icon.svelte';
 
@@ -42,8 +43,10 @@
   let stats = $state<ConsoleStats | null>(null);
   let runState = $state('offline');
   let hibernated = $state(false);
-  let metrics = $state<MetricSample[]>([]);
+  let metrics = $state<MetricsHistory | null>(null);
   let range = $state(3600);
+  /** Dernier chargement (ms) : les longues fenêtres ne sont pas relues toutes les 15 s. */
+  let metricsAt = 0;
   let metricsTimer: ReturnType<typeof setInterval> | undefined;
   let perfTimer: ReturnType<typeof setTimeout> | undefined;
   let perfBusy = $state(false);
@@ -145,9 +148,27 @@
     copiedTimer = setTimeout(() => (copied = false), 1500);
   }
 
-  async function loadMetrics() {
+  /**
+   * Fenêtres de l'historique (libellé ou clé i18n, traduite au rendu) ; au-delà de 24 h,
+   * l'hébergeur fournit l'essentiel des points.
+   */
+  const RANGES: { secs: number; label?: string; key?: string }[] = [
+    { secs: 3600, label: '1h' },
+    { secs: 6 * 3600, label: '6h' },
+    { secs: 86400, label: '24h' },
+    { secs: 7 * 86400, key: 'overview.range7d' },
+    { secs: 30 * 86400, key: 'overview.range30d' },
+  ];
+
+  async function loadMetrics(force = false) {
+    // 7 j / 30 j : une minute de plus ou de moins ne se voit pas, inutile de relire toutes les 15 s.
+    if (!force && range > 86400 && Date.now() - metricsAt < 60_000) return;
+    const asked = range;
     try {
-      metrics = await api.metricsHistory(serverId, range);
+      const h = await api.metricsHistory(serverId, asked, 600);
+      if (asked !== range) return; // réponse périmée (fenêtre changée entre-temps)
+      metrics = h;
+      metricsAt = Date.now();
     } catch {
       /* historique indisponible */
     }
@@ -155,7 +176,7 @@
 
   function setRange(secs: number) {
     range = secs;
-    void loadMetrics();
+    void loadMetrics(true);
   }
 
   async function runPerf() {
@@ -342,18 +363,31 @@
           <Icon name="zap" size={15} /> {perfBusy ? t('overview.perfRunning') : t('overview.perf')}
         </button>
         <div class="ranges">
-          <button class="rg" class:on={range === 3600} onclick={() => setRange(3600)}>1h</button>
-          <button class="rg" class:on={range === 21600} onclick={() => setRange(21600)}>6h</button>
-          <button class="rg" class:on={range === 86400} onclick={() => setRange(86400)}>24h</button>
+          {#each RANGES as r (r.secs)}
+            <button class="rg" class:on={range === r.secs} onclick={() => setRange(r.secs)}>
+              {r.key ? t(r.key) : r.label}
+            </button>
+          {/each}
         </div>
       </div>
     </div>
     <div class="card chart-card">
-      <MetricsChart samples={metrics} cpuLimit={live?.cpu.limit ?? 0} />
+      <MetricsChart history={metrics} cpuLimit={live?.cpu.limit ?? 0} />
+      {#if metrics && metrics.players.length > 0 && (!caps || caps.players)}
+        <div class="players-chart">
+          <PlayersChart
+            players={metrics.players}
+            from={metrics.from}
+            to={metrics.to}
+            stepS={metrics.step_s}
+          />
+        </div>
+      {/if}
     </div>
   </section>
 
-  <!-- Disponibilité 24 h / 7 j / 30 j et coupures, d'après la surveillance locale. -->
+  <!-- Disponibilité 24 h / 7 j / 30 j et coupures : surveillance locale, complétée par les
+       mesures de l'hébergeur là où rien ne surveillait. -->
   <UptimeCard {serverId} />
 
   {#if history.length > 0}
@@ -669,6 +703,11 @@
   }
   .chart-card {
     padding: 14px 16px 12px;
+  }
+  .players-chart {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
   }
   .views {
     display: grid;

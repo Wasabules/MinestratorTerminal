@@ -5,7 +5,7 @@
 use minestrator_core::{
     PanelSchedule, PanelScheduleInput,
     Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
-    LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
+    LiveLight, LivePlayers, MarketPage, MarketVersion, MetricsHistory, ServerDetails, ServerProperties,
     ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
 };
 use std::sync::Arc;
@@ -120,13 +120,16 @@ pub async fn user_notifications(
     core.user_notifications().await
 }
 
+/// Historique croisé : échantillons locaux (surveillance de l'app) complétés par les statistiques
+/// de l'hébergeur là où l'app ne surveillait pas.
 #[tauri::command]
-pub fn metrics_history(
+pub async fn metrics_history(
     core: State<'_, Arc<Core>>,
     server_id: i64,
     since_secs: i64,
-) -> Result<Vec<MetricSample>, Error> {
-    core.metrics(server_id, since_secs)
+    max_points: Option<u32>,
+) -> Result<MetricsHistory, Error> {
+    core.server_history(server_id, since_secs, max_points).await
 }
 
 // --- Paramètres du serveur (`server.properties`, via l'API : ni SFTP ni mot de passe) -------

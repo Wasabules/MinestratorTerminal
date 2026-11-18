@@ -163,9 +163,27 @@ Regroupés par domaine (liste réelle des fichiers).
   destination, file bornée). Erreurs journalisées sans URL.
 - **`uptime`** — suivi de disponibilité (pur) : observations → périodes surveillées → % sur
   24 h / 7 j / 30 j et journal des coupures (cause `crash` / `stop` / inconnue). Les périodes non
-  surveillées (app fermée, PC éteint) ne comptent pas ; fusion avec l'historique du service.
-- **`store`** — historique local de métriques en **SQLite embarqué** (`rusqlite` *bundled*). L'API ne
-  fournit aucun historique : l'app l'accumule elle-même (avantage structurel d'un client persistant).
+  surveillées (app fermée, PC éteint) ne comptent pas ; fusion avec l'historique du service, puis
+  **comblement par l'hébergeur** (`host_spans` / `fill_unmonitored`) : une minute *mesurée* par
+  l'hébergeur prouve que le serveur tournait et compte « en service » là où rien ne surveillait ;
+  une minute à zéro (serveur éteint **ou** non mesurée : l'API ne les distingue pas) reste non
+  surveillée — l'hébergeur ne crée **jamais** de coupure et ne contredit jamais le local. La part
+  qu'il fournit est exposée (`UptimeWindow.host_s`) et affichée.
+- **`history`** — **historique croisé** : échantillons locaux (app + service, 10 s, 14 jours) et
+  statistiques à la minute de l'hébergeur (`GET /server/{id}/stats/{début}/{fin}`, voir §4.3).
+  Le local fait foi là où il existe ; les minutes mesurées de l'hébergeur comblent les trous et
+  prolongent l'historique jusqu'à 30 jours ; unités ramenées à celles du local ; chaque point porte
+  son origine (`HistorySource` : `local` | `host`) ; regroupement par tranches en gardant le maximum ;
+  joueurs connectés (hébergeur seulement). Cache mémoire par blocs de 6 h : un bloc lu plus de
+  10 min après sa fin ne change plus et n'est jamais relu, le bloc en cours l'est au plus une fois par
+  minute, une requête par tranche de 3 jours au plus, pause d'une minute après une erreur. Les
+  bornes sont en **heure de Paris** (calculée en Rust : règle européenne des changements d'heure) ;
+  un écart d'horloge de la machine (en-tête `Date` des réponses, au-delà de 90 s) est corrigé pour
+  que les deux séries restent alignées. Façade : `Core::server_history` (commande
+  `metrics_history`, outil MCP `server_metrics`) et le comblement de `Core::uptime_report`.
+- **`store`** — historique local de métriques en **SQLite embarqué** (`rusqlite` *bundled*). L'API
+  ne garde qu'une mesure par minute (et seulement en moyennes horaires au-delà de 7 jours) : l'app
+  accumule son propre historique, plus fin (10 s) et porteur de l'état Wings, que `history` complète.
   Même base : journal d'alertes (avec `details`, colonne ajoutée par migration), observations d'état
   (`uptime`) et journal des automatisations (`automation_runs`), gardés 32 jours.
 - **`cache`** — cache mémoire TTL des lectures d'API stables/semi-stables (au niveau du `Core`).
@@ -311,6 +329,19 @@ les usages critiques gardent un **repli** sur le chemin éprouvé.
 en plus `history[]` (journal d'actions : date, IP, `is_staff`, `action`) et `ports[]` — pistes pour
 le « journal d'audit » du ROADMAP.
 
+### 4.3 Statistiques de l'hébergeur (non documenté, relevé le 2026-11-18)
+
+`GET /server/{id}/stats/{début}/{fin}`, lu par `history.rs` (contrat surveillé par
+`examples/api_contract.rs`). Relevé avec une clé API, en lectures seules :
+
+| Fait | Conséquence |
+|---|---|
+| Bornes `AAAA-MM-JJTHH:MM:SS` **en heure de Paris**, changements d'heure compris (grille sans l'heure sautée de mars, heure d'octobre répétée avec les mêmes valeurs) ; date seule, `Z` ou Unix → 404 ; fin avant début → `API_INCORRECT_DATE_FORMAT` | conversion faite en Rust (`paris_label`, `paris_instants`), indépendante du fuseau de la machine |
+| Moins de 7 jours : grille **à la minute** (`AAAA-MM-JJ HH:MM:SS`, entiers) ; à partir de 7 jours : **moyennes horaires** des seules minutes mesurées (`AAAA-MM-JJ HH:MM`, flottants), lentes (3 à 10 s pour 30 à 90 jours, 504 vers 365 jours) | l'app ne demande que des minutes, par tranches de 3 jours au plus, et regroupe elle-même |
+| La grille est **complétée de zéros** (serveur éteint, minute pas encore écrite, bord de plage non aligné) | un zéro n'est jamais une mesure : ni point de graphe, ni coupure |
+| `cpu` en % d'un cœur (comme `cpu_absolute` de Wings), arrondi à l'entier ; `ram` et `disk` en **Mo décimaux** (10⁶ octets — `/live` les donne en Mio) ; `players` | normalisés en octets pour être comparables au local |
+| `retention_days: 365`, `data_available_from` ; une borne plus ancienne est ramenée | l'app se limite à 30 jours |
+
 **Séquence WebSocket (`console.rs`).** `get_server` → connexion `wss://…` avec `Origin` → `{"event":"auth","args":[token]}` → sur `auth success`, `send logs` (sauf mode monitor) + `send stats` → relais des events en `CoreEvent`. Sur `token expiring`/`token expired` : re-`get_server` et ré-`auth` avec le token frais. `Ping`→`Pong`. Sur close/erreur : **reconnexion à backoff** (1 s → ×2 → **30 s max**), remis à 1 s si la session a tenu ≥ 30 s (jugée saine). Une **connexion monitor** (superviseur) ne demande pas les logs et ne relaie pas `console output` : elle ne pousse que stats/status et repère les lignes WARN/ERROR pour le Copilote.
 
 **Envoi via REST, WS en lecture seule.** Commandes et power actions passent par les endpoints REST
@@ -333,7 +364,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | Domaine | Commandes (extraits) |
 |---|---|
 | **Auth & comptes** | `validate_and_store_key` (connexion : la clé devient celle du compte actif), `has_stored_key`, `get_user` (profil + mise en cohérence de la liste des comptes), `logout` (retire le compte actif, renvoie celui qui prend la relève), `accounts_list`, `account_add`, `account_switch`, `account_remove` |
-| **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
+| **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history` (historique croisé local + hébergeur, `MetricsHistory`), `get_startup`/… |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
 | **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |
@@ -437,8 +468,10 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   `+page.svelte` remonte le workspace par `{#key}` sur l'id du compte, donc toutes les listes se
   rechargent. Sélecteur dans `UserMenu`, `AddAccountDialog`, Réglages → Comptes
   (`settings/AccountsSection.svelte`, section mémorisée par `settings/nav.svelte.ts`, partagé avec la palette).
-- **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique +
-  `UptimeCard` : disponibilité 24 h / 7 j / 30 j et coupures), `ConsoleView`
+- **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique
+  1 h → 30 j, `MetricsChart` en trait plein pour le local et pointillé pour l'hébergeur,
+  `PlayersChart` des joueurs connectés + `UptimeCard` : disponibilité 24 h / 7 j / 30 j, part de
+  l'hébergeur et coupures), `ConsoleView`
   (xterm + envoi de commandes), `SftpView` (+ `FileEditor` CodeMirror, archives, NBT, `.mca`), `PlayersView`,
   `MarketplaceView` (mods/plugins), `AssistantView` (chat Copilote streamé), `BackupsView`
   (backups + snapshots), `AutomationsView` (redémarrage automatique, tâches planifiées, historique

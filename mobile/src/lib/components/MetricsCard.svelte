@@ -1,16 +1,18 @@
 <script lang="ts">
   /**
-   * Carte « Historique » de l'Aperçu : CPU / RAM / disque sur 1 h, 6 h ou 24 h.
+   * Carte « Historique » de l'Aperçu : CPU / RAM / disque sur 1 h, 6 h, 24 h ou 7 jours, et pic de
+   * joueurs connectés.
    *
-   * L'API ne fournit aucun historique : ces points viennent du SQLite local du core, alimenté par
-   * le superviseur (un échantillon toutes les 10 s par serveur surveillé). Ils n'existent donc que
-   * pour les périodes où l'app tournait — au premier plan, ou en continu avec la surveillance en
-   * arrière-plan. Lecture locale, sans réseau : on peut rafraîchir souvent sans coût.
+   * Le cœur croise deux sources (crates/minestrator-core/src/history.rs) : le SQLite local, alimenté
+   * par le superviseur (un échantillon toutes les 10 s pendant que l'app surveille), et les
+   * statistiques à la minute de l'hébergeur, qui comblent les périodes où l'app ne tournait pas. Le
+   * cœur garde ces dernières en cache (seule la tranche en cours est relue, au plus une fois par
+   * minute) : rafraîchir toutes les 30 s ne coûte presque rien.
    */
   import { api } from "../ipc";
   import { t } from "../i18n";
   import MetricsChart from "./MetricsChart.svelte";
-  import type { MetricSample } from "../types";
+  import type { MetricsHistory } from "../types";
 
   let {
     serverId,
@@ -19,16 +21,22 @@
     diskLimit,
   }: { serverId: number; active: boolean; cpuLimit: number; diskLimit: number } = $props();
 
-  const RANGES = [
+  /** Libellé, ou clé i18n traduite au rendu. */
+  const RANGES: { secs: number; label?: string; key?: string }[] = [
     { secs: 3600, label: "1 h" },
     { secs: 6 * 3600, label: "6 h" },
     { secs: 24 * 3600, label: "24 h" },
+    { secs: 7 * 24 * 3600, key: "metrics.range7d" },
   ];
+  /** Points demandés au cœur (le graphe en affiche au plus 240). */
+  const MAX_POINTS = 480;
   const RANGE_KEY = "mnstr-metrics-range";
 
   let range = $state(readRange());
-  let samples = $state<MetricSample[]>([]);
-  let now = $state(Math.floor(Date.now() / 1000));
+  let history = $state<MetricsHistory | null>(null);
+  const now = $derived(history?.to ?? Math.floor(Date.now() / 1000));
+  const peak = $derived(history?.players.reduce((m, p) => Math.max(m, p.count), 0) ?? 0);
+  const lastPlayers = $derived(history?.players.length ? history.players[history.players.length - 1] : null);
 
   /** Préférence d'affichage (pas une donnée sensible) : la fenêtre choisie est retenue. */
   function readRange(): number {
@@ -54,10 +62,9 @@
     const id = serverId;
     const secs = range;
     try {
-      const list = await api.metricsHistory(id, secs);
+      const h = await api.metricsHistory(id, secs, MAX_POINTS);
       if (id !== serverId || secs !== range) return; // réponse périmée
-      samples = list;
-      now = Math.floor(Date.now() / 1000);
+      history = h;
     } catch {
       /* historique indisponible : la carte affiche son état vide */
     }
@@ -80,12 +87,33 @@
     <div class="ranges" role="group" aria-label={t("metrics.title")}>
       {#each RANGES as r (r.secs)}
         <button class="rg" class:on={range === r.secs} onclick={() => setRange(r.secs)}>
-          {r.label}
+          {r.key ? t(r.key) : r.label}
         </button>
       {/each}
     </div>
   </header>
-  <MetricsChart {samples} {range} {now} {cpuLimit} {diskLimit} />
+  <MetricsChart
+    samples={history?.points ?? []}
+    stepS={history?.step_s ?? 10}
+    {range}
+    {now}
+    {cpuLimit}
+    {diskLimit}
+  />
+  {#if history && history.players.length > 0}
+    <p class="players">
+      {t("metrics.players")}
+      <b>{t("metrics.playersPeak").replace("{n}", String(peak))}</b>
+      {#if lastPlayers}
+        <span class="dim">· {t("metrics.playersLast").replace("{n}", String(lastPlayers.count))}</span>
+      {/if}
+    </p>
+  {/if}
+  {#if history && history.host_s > 0}
+    <p class="src dim">{t("metrics.hostHint")}</p>
+  {:else if history && !history.host_ok}
+    <p class="src dim">{t("metrics.hostUnavailable")}</p>
+  {/if}
 </section>
 
 <style>
@@ -127,6 +155,23 @@
     color: var(--text-dim);
     font-size: 13px;
     font-variant-numeric: tabular-nums;
+  }
+  .players {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .players b {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .src {
+    margin: 0;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .dim {
+    color: var(--text-dim);
   }
   .rg.on {
     background: color-mix(in srgb, var(--brand-primary) 18%, transparent);

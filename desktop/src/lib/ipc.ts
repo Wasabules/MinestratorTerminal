@@ -50,7 +50,7 @@ import type {
   MarketSource,
   MarketVersion,
   McpConfig,
-  MetricSample,
+  MetricsHistory,
   ModInstallItem,
   NbtNode,
   PlayerAction,
@@ -231,9 +231,13 @@ export const api = {
       list.map((n) => ({ ...n, message: fakeText(n.message) })),
     ),
 
-  /** Historique de métriques (depuis N secondes) pour les graphes. */
-  metricsHistory: (serverId: number, sinceSecs: number) =>
-    invoke<MetricSample[]>('metrics_history', { serverId, sinceSecs }),
+  /**
+   * Historique des `sinceSecs` dernières secondes (30 jours au plus) : surveillance locale complétée
+   * par les statistiques de l'hébergeur (origine de chaque point dans `source`), joueurs connectés,
+   * au plus `maxPoints` points (600 par défaut). Que des mesures : rien à masquer en mode démo.
+   */
+  metricsHistory: (serverId: number, sinceSecs: number, maxPoints?: number) =>
+    invoke<MetricsHistory>('metrics_history', { serverId, sinceSecs, maxPoints: maxPoints ?? null }),
 
   /** Réglages du superviseur. */
   getSupervisorConfig: () => invoke<SupervisorConfig>('get_supervisor_config'),

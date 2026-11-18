@@ -26,6 +26,7 @@ mod events;
 mod factorio;
 mod ficsit;
 mod games;
+mod history;
 mod llm;
 pub mod http;
 pub mod logs;
@@ -73,6 +74,7 @@ pub use ficsit::{
     FicsitVersion, SmlTarget, SmlVersion,
 };
 pub use games::GameCapabilities;
+pub use history::{HistoryPoint, HistorySource, MetricsHistory, PlayersPoint};
 pub use panel_schedules::{PanelCron, PanelSchedule, PanelScheduleInput, PanelTask, PanelTaskInput};
 pub use util::data_dir;
 /// Base de l'API MineStrator (outillage : contrôle de contrat `examples/api_contract.rs`).
@@ -141,6 +143,8 @@ pub struct Core {
     transfer_cancels: Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
     /// Cache TTL des lectures d'API stables/semi-stables (voir [`cache`]). Purgé après toute écriture.
     cache: cache::TtlCache,
+    /// Statistiques de l'hébergeur déjà lues (historique croisé, voir [`history`]).
+    host_stats: history::HostStatsCache,
     /// Token API mémorisé → évite une lecture BLOQUANTE du trousseau OS (DPAPI/Keychain/D-Bus) à
     /// CHAQUE appel async. Invalidé au (re)login / logout.
     token_cache: Mutex<Option<String>>,
@@ -190,6 +194,7 @@ impl Core {
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
+            host_stats: history::HostStatsCache::default(),
             token_cache: Mutex::new(None),
             user_id_cache: Mutex::new(None),
             events,
