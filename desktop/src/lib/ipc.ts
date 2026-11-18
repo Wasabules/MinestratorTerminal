@@ -39,6 +39,15 @@ import type {
   JsonValue,
   LiveLight,
   MyBoxDetails,
+  BackupJob,
+  CreateServerInput,
+  CreatedServer,
+  MyBoxCapacity,
+  PauseOutcome,
+  PlacementPlan,
+  PlacementRequest,
+  ServerCatalog,
+  SnapshotJob,
   ServerLive,
   ServerProperties,
   LivePlayers,
@@ -92,6 +101,15 @@ import type {
 async function demo<T>(value: Promise<T>, transform: (v: T) => T): Promise<T> {
   const v = await value;
   return isFake() ? transform(v) : v;
+}
+
+/** Mode démo : noms de MyBox et de serveurs, références support. */
+function fakeCapacity(c: MyBoxCapacity): MyBoxCapacity {
+  return {
+    ...c,
+    name: fakeBox(c.name),
+    servers: c.servers.map((s) => ({ ...s, name: fakeServer(s.name), support_ref: fakeRef(s.support_ref) })),
+  };
 }
 
 /** Mode démo : le pseudo du compte surveillé par le service est substitué comme les autres. */
@@ -201,6 +219,46 @@ export const api = {
       ...d,
       mybox: { ...d.mybox, name: fakeBox(d.mybox.name) },
       servers: d.servers.map((s) => ({ ...s, name: fakeServer(s.name) })),
+    })),
+
+  // --- Gestion des MyBox (core/src/mybox.rs) -----------------------------------
+  // CPU en cœurs entiers, RAM en Go entiers ; le disque est partagé par la MyBox.
+
+  /** Capacité de toutes les MyBox : totaux, alloués, restants, emplacements, serveurs. */
+  myboxCapacities: () =>
+    demo(invoke<MyBoxCapacity[]>('mybox_capacities'), (list) => list.map(fakeCapacity)),
+  myboxCapacity: (id: number) => demo(invoke<MyBoxCapacity>('mybox_capacity', { id }), fakeCapacity),
+  /** Catalogue de création (jeux, champs requis, localisations). Données publiques. */
+  serverCatalog: () => invoke<ServerCatalog>('server_catalog'),
+  /** Crée un serveur ; validé en Rust avant envoi (ressources restantes, champs requis…). */
+  myboxCreateServer: (input: CreateServerInput) =>
+    demo(invoke<CreatedServer>('mybox_create_server', { input }), (c) => ({ ...c, ip: fakeIp(c.ip) })),
+  /** Valeurs FINALES de CPU (cœurs) et de RAM (Go). */
+  myboxResizeServer: (myboxId: number, serverId: number, cpu: number, ram: number) =>
+    invoke<void>('mybox_resize_server', { myboxId, serverId, cpu, ram }),
+  myboxSetServerPaused: (myboxId: number, serverId: number, paused: boolean) =>
+    invoke<PauseOutcome>('mybox_set_server_paused', { myboxId, serverId, paused }),
+  myboxReorderServers: (myboxId: number, serverIds: number[]) =>
+    invoke<void>('mybox_reorder_servers', { myboxId, serverIds }),
+  renameServer: (serverId: number, name: string) => invoke<void>('rename_server', { serverId, name }),
+  renameMybox: (myboxId: number, name: string) => invoke<void>('rename_mybox', { myboxId, name }),
+  myboxSnapshotBeforeDelete: (myboxId: number, serverId: number) =>
+    invoke<SnapshotJob>('mybox_snapshot_before_delete', { myboxId, serverId }),
+  /** Avancement d'un job de sauvegarde (snapshot, reprise d'un serveur en pause). */
+  backupJob: (jobId: number) => invoke<BackupJob>('backup_job', { jobId }),
+  /** Suppression définitive : `confirm` = nom exact du serveur (vérifié côté Rust). */
+  myboxDeleteServer: (myboxId: number, serverId: number, confirm: string) =>
+    invoke<void>('mybox_delete_server', { myboxId, serverId, confirm }),
+  /** Où placer des serveurs à créer (calcul pur, rien n'est modifié). */
+  myboxPlanPlacement: (requests: PlacementRequest[], strategy: 'pack' | 'spread' = 'pack') =>
+    demo(invoke<PlacementPlan>('mybox_plan_placement', { requests, strategy }), (p) => ({
+      ...p,
+      choices: p.choices.map((c) => ({
+        ...c,
+        mybox_name: c.mybox_name ? fakeBox(c.mybox_name) : c.mybox_name,
+        reasons: c.reasons.map((r) => fakeText(r)),
+      })),
+      suggestions: p.suggestions.map((s) => fakeText(s)),
     })),
 
   /**
@@ -589,6 +647,13 @@ export function humanizeError(value: unknown): string {
     const text = t(key);
     if (text !== key) return text;
   }
+  // Erreur MineStrator : son code (`API_MYBOX_NOT_ENOUGH_CPU`…) est traduit quand on le connaît.
+  if (value.kind === 'api' && value.code) {
+    const key = `apiErrors.${value.code}`;
+    const text = t(key);
+    if (text !== key) return text;
+  }
+  // `invalid` (validation locale avant envoi) : le message dit déjà quoi corriger, il est affiché tel quel.
   // Typé par le discriminant généré depuis Rust : un `kind` renommé ou retiré casse le typecheck.
   const known: Partial<Record<AppErrorKind, string>> = {
     unauthorized: 'errors.unauthorized',

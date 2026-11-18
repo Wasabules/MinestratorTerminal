@@ -319,6 +319,13 @@ export function installBuiltinPaletteSources(): void {
       },
       { id: 'nav:copilot', title: t('copilot.title'), icon: 'activity', run: () => tabs.openCopilot() },
       {
+        id: 'nav:myboxes',
+        title: t('mybox.title'),
+        icon: 'cpu',
+        keywords: [t('mybox.paletteKeywords')],
+        run: () => tabs.openMyboxes(),
+      },
+      {
         id: 'nav:alerts',
         title: t('palette.alerts'),
         icon: 'triangle-alert',

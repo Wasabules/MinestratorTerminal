@@ -30,6 +30,7 @@
   import SettingsView from './views/SettingsView.svelte';
   import CopilotView from './views/CopilotView.svelte';
   import NotificationsView from './views/NotificationsView.svelte';
+  import MyBoxView from './views/MyBoxView.svelte';
 
   const unlisteners: UnlistenFn[] = [];
   let destroyed = false;
@@ -137,6 +138,8 @@
           <CopilotView />
         {:else if tab.kind === 'notifications'}
           <NotificationsView />
+        {:else if tab.kind === 'myboxes'}
+          <MyBoxView />
         {:else}
           <ServerPanel {tab} />
         {/if}
