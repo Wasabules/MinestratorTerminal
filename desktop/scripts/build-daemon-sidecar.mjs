@@ -38,8 +38,12 @@ function build(target) {
 mkdirSync(outDir, { recursive: true });
 const dest = join(outDir, `minestrator-daemon-${triple}${exe}`);
 if (triple === 'universal-apple-darwin') {
-  // Binaire universel macOS : les deux architectures, assemblées par `lipo`.
-  const parts = ['aarch64-apple-darwin', 'x86_64-apple-darwin'].map(build);
+  // Binaire universel macOS : les deux architectures, assemblées par `lipo`. Tauri compile aussi
+  // l'app architecture par architecture avant de les fusionner, et son script de build exige alors
+  // le binaire propre à chaque cible : les trois sont déposés.
+  const archs = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
+  const parts = archs.map(build);
+  archs.forEach((arch, i) => copyFileSync(parts[i], join(outDir, `minestrator-daemon-${arch}${exe}`)));
   execFileSync('lipo', ['-create', '-output', dest, ...parts], { stdio: 'inherit' });
 } else {
   copyFileSync(build(triple), dest);
