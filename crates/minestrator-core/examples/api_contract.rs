@@ -45,13 +45,23 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
         "/server/{id}/websocket",
         &["api.data.websocket.url", "api.data.websocket.token"],
     ),
+    // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
+    (
+        "/server/{id}/sftp",
+        &[
+            "api.data.sftp.host",
+            "api.data.sftp.port",
+            "api.data.sftp.user",
+            "api.data.sftp.password",
+        ],
+    ),
 ];
 
 /// Champs dont la présence est seulement **signalée** (changement à connaître, pas une panne).
 const INFO_FIELDS: &[(&str, &str, &str)] = &[(
     "/server/{id}",
     "api.data.sftp.password",
-    "L'API renvoie de nouveau le mot de passe SFTP (retiré fin 2026) : l'app l'utilise en second essai.",
+    "`GET /server/{id}` renvoie de nouveau le mot de passe SFTP (retiré fin 2026) : l'app le lit toujours via `/server/{id}/sftp`.",
 )];
 
 struct Report {
@@ -265,6 +275,15 @@ async fn main() {
                     );
                     let tag = format!(" (serveur {n})");
                     raw_checks(&mut report, &http, &key, "/server/{id}", &format!("/server/{}", server.id), &tag).await;
+                    raw_checks(
+                        &mut report,
+                        &http,
+                        &key,
+                        "/server/{id}/sftp",
+                        &format!("/server/{}/sftp", server.id),
+                        &tag,
+                    )
+                    .await;
                     raw_checks(
                         &mut report,
                         &http,

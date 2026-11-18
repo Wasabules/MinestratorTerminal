@@ -514,7 +514,7 @@ pub fn sftp_disconnect(core: State<'_, Arc<Core>>, server_id: i64) {
     core.sftp_disconnect(server_id);
 }
 
-// --- Mot de passe SFTP (l'API ne le transmet plus : saisi une fois par serveur) -----------
+// --- Mot de passe SFTP de secours (saisi par serveur quand celui de l'API manque) ---------
 
 /// Vérifie le mot de passe en ouvrant une session, puis l'enregistre dans le stockage sécurisé.
 /// Refusé par le serveur → erreur `sftp_auth`, rien n'est enregistré.

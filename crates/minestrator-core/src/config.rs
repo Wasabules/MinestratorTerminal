@@ -34,8 +34,8 @@ pub const KEYRING_ACCOUNT_LLM_PREFIX: &str = "llm-key-";
 /// Préfixe de compte trousseau pour les secrets par jeu (ex. `game-secret-factorio` = token du
 /// compte factorio.com pour télécharger des mods).
 pub const KEYRING_ACCOUNT_GAME_PREFIX: &str = "game-secret-";
-/// Préfixe de compte trousseau pour le mot de passe SFTP d'un serveur (`sftp-password-<id>`) :
-/// l'API ne le transmet plus, l'utilisateur le saisit une fois par serveur.
+/// Préfixe de compte trousseau pour le mot de passe SFTP saisi par l'utilisateur pour un serveur
+/// (`sftp-password-<id>`) : secours quand l'API n'en fournit pas, ou un qui ne fonctionne pas.
 pub const KEYRING_ACCOUNT_SFTP_PREFIX: &str = "sftp-password-";
 /// Préfixe de compte trousseau pour l'URL d'une destination d'alertes (`webhook-url-<id>`) : une
 /// URL de webhook Discord suffit à poster dans le salon, c'est donc un secret à part entière.

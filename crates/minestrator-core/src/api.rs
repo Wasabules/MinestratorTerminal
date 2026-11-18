@@ -593,11 +593,26 @@ impl ApiClient {
         .await
     }
 
+    /// Identifiants SFTP d'un serveur.
+    ///
+    /// `GET /server/{id}/sftp` (non documenté, utilisé par le panel web) est le seul endpoint qui
+    /// renvoie encore le **mot de passe** à une clé API : le bloc `sftp` de `GET /server/{id}` ne
+    /// le contient plus depuis fin 2026. Repli sur ce dernier (sans mot de passe) si l'endpoint
+    /// dédié disparaît ; seules les erreurs d'accès (clé refusée, réseau, quota) remontent telles
+    /// quelles. Voir `docs/api/REFERENCE.md`.
     pub async fn get_sftp_creds(&self, token: &str, id: i64) -> Result<SftpCreds> {
+        let usable = |d: SftpData| d.sftp.filter(|c| !c.host.is_empty());
+        match self.get::<SftpData>(token, &format!("/server/{id}/sftp")).await {
+            Ok(d) => {
+                if let Some(creds) = usable(d) {
+                    return Ok(creds);
+                }
+            }
+            Err(e @ (Error::Unauthorized | Error::Network(_) | Error::RateLimited)) => return Err(e),
+            Err(e) => tracing::warn!(server = id, "GET /server/{{id}}/sftp indisponible, repli : {e}"),
+        }
         let data: SftpData = self.get(token, &format!("/server/{id}")).await?;
-        data.sftp
-            .filter(|c| !c.host.is_empty())
-            .ok_or_else(|| Error::Unexpected("Accès SFTP indisponible pour ce serveur.".into()))
+        usable(data).ok_or_else(|| Error::Unexpected("Accès SFTP indisponible pour ce serveur.".into()))
     }
 }
 

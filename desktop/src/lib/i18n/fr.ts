@@ -878,7 +878,7 @@ export const fr = {
       button: 'Mot de passe SFTP',
       title: 'Mot de passe SFTP',
       required:
-        'MineStrator ne transmet plus le mot de passe SFTP : saisis-le une fois pour ce serveur.',
+        'MineStrator n’a pas fourni de mot de passe SFTP valable pour ce serveur : saisis-le une fois.',
       rejected: 'Le serveur SFTP a refusé ce mot de passe. Vérifie-le dans le panel.',
       change: 'Le mot de passe enregistré pour ce serveur est utilisé automatiquement.',
       where: 'Il figure dans l’onglet « Accès » du serveur, sur le panel MineStrator.',

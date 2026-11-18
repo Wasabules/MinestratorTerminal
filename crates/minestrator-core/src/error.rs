@@ -38,9 +38,9 @@ pub enum Error {
     #[error("Le serveur SFTP a refusé le mot de passe. Vérifie-le dans l'onglet « Accès » du panel MineStrator.")]
     SftpAuth,
 
-    /// Aucun mot de passe SFTP connu pour ce serveur : l'API ne le transmet plus et l'utilisateur
-    /// ne l'a pas encore enregistré (onglet Fichiers du serveur dans l'app).
-    #[error("Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.")]
+    /// Aucun mot de passe SFTP connu pour ce serveur : l'API n'en a pas fourni et l'utilisateur
+    /// n'en a pas enregistré (onglet Fichiers du serveur dans l'app).
+    #[error("Mot de passe SFTP requis : MineStrator ne l'a pas fourni pour ce serveur. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il figure dans l'onglet « Accès » du panel.")]
     SftpPasswordRequired,
 
     /// L'empreinte de la clé d'hôte du serveur SFTP n'est plus celle mémorisée : connexion bloquée
@@ -225,7 +225,7 @@ mod tests {
             (
                 Error::SftpPasswordRequired,
                 "sftp_password_required",
-                "Mot de passe SFTP requis : MineStrator ne le transmet plus. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il est copié depuis l'onglet « Accès » du panel.",
+                "Mot de passe SFTP requis : MineStrator ne l'a pas fourni pour ce serveur. Saisis-le une fois dans l'onglet Fichiers du serveur (Minestrator Terminal) ; il figure dans l'onglet « Accès » du panel.",
             ),
             (
                 Error::AccountExists,
