@@ -21,6 +21,7 @@
   import PowerControl from '../PowerControl.svelte';
   import StatusDot from '../StatusDot.svelte';
   import MetricsChart from '../MetricsChart.svelte';
+  import UptimeCard from '../UptimeCard.svelte';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
@@ -351,6 +352,9 @@
       <MetricsChart samples={metrics} cpuLimit={live?.cpu.limit ?? 0} />
     </div>
   </section>
+
+  <!-- Disponibilité 24 h / 7 j / 30 j et coupures, d'après la surveillance locale. -->
+  <UptimeCard {serverId} />
 
   {#if history.length > 0}
     <section class="block">

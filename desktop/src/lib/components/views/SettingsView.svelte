@@ -29,12 +29,14 @@
   } from '#lib/types.ts';
   import Icon from '../Icon.svelte';
   import ServiceSection from '../settings/ServiceSection.svelte';
+  import WebhooksSection from '../settings/WebhooksSection.svelte';
 
   type Section =
     | 'general'
     | 'games'
     | 'supervisor'
     | 'service'
+    | 'webhooks'
     | 'mcp'
     | 'copilot'
     | 'privacy'
@@ -540,6 +542,9 @@
     <button class="nav-item" class:on={section === 'service'} onclick={() => (section = 'service')}>
       {t('service.nav')}
     </button>
+    <button class="nav-item" class:on={section === 'webhooks'} onclick={() => (section = 'webhooks')}>
+      {t('webhooks.nav')}
+    </button>
     <button class="nav-item" class:on={section === 'mcp'} onclick={() => (section = 'mcp')}>
       {t('settings.mcp')}
     </button>
@@ -737,6 +742,8 @@
       </div>
     {:else if section === 'service'}
       <ServiceSection />
+    {:else if section === 'webhooks'}
+      <WebhooksSection />
     {:else if section === 'mcp' && mcp}
       <h1>{t('settings.mcp')}</h1>
 

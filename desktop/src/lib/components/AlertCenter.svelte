@@ -5,11 +5,32 @@
   import { alertItems, unreadCount, markAllRead, clearAlerts } from '#lib/alerts/alerts.svelte.ts';
   import { api } from '#lib/ipc.ts';
   import { tabs } from '#lib/tabs/tabs.svelte.ts';
+  import { isFake, fakeText } from '#lib/fake.svelte.ts';
   import type { UserNotification } from '#lib/types.ts';
   import Icon from './Icon.svelte';
 
   let open = $state(false);
   let now = $state(Date.now());
+  /** Alerte dont le détail (logs du crash, erreur d'une tâche) est déplié, et celle copiée. */
+  let expanded = $state<string | null>(null);
+  let copiedId = $state<string | null>(null);
+  let copyTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Détail affichable : déjà anonymisé par le cœur ; en mode démo, IP et e-mails restants substitués. */
+  function shownDetails(details: string): string {
+    return isFake() ? fakeText(details) : details;
+  }
+
+  async function copyDetails(id: string, details: string) {
+    try {
+      await navigator.clipboard.writeText(shownDetails(details));
+      copiedId = id;
+      clearTimeout(copyTimer);
+      copyTimer = setTimeout(() => (copiedId = null), 1500);
+    } catch {
+      /* presse-papiers indisponible */
+    }
+  }
   const count = $derived(unreadCount());
   /**
    * Notifications de l'hébergeur — distinctes des alertes du superviseur (locales, temps réel).
@@ -94,6 +115,21 @@
                   <span class="time dim">{ago(now, a.ts)}</span>
                 </div>
                 <div class="msg">{a.message}</div>
+                {#if a.details}
+                  <div class="det-actions">
+                    <button class="clear" onclick={() => (expanded = expanded === a.id ? null : a.id)}>
+                      {expanded === a.id ? t('alerts.hideDetails') : t('alerts.showDetails')}
+                    </button>
+                    {#if expanded === a.id}
+                      <button class="clear" onclick={() => copyDetails(a.id, a.details!)}>
+                        {copiedId === a.id ? t('alerts.copied') : t('alerts.copyDetails')}
+                      </button>
+                    {/if}
+                  </div>
+                  {#if expanded === a.id}
+                    <pre class="details">{shownDetails(a.details)}</pre>
+                  {/if}
+                {/if}
               </div>
             </div>
           {/each}
@@ -312,5 +348,30 @@
     font-size: 12.5px;
     color: var(--text-muted);
     margin-top: 2px;
+  }
+  .det-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .det-actions .clear {
+    padding: 0;
+    color: var(--brand-primary);
+  }
+  /* Logs du crash : défilement propre, sélectionnables, jamais plus haut que le panneau. */
+  .details {
+    margin: 6px 0 0;
+    max-height: 220px;
+    overflow: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
   }
 </style>

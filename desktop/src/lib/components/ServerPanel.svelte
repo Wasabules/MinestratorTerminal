@@ -11,6 +11,7 @@
   import ModMarketplaceView from './views/ModMarketplaceView.svelte';
   import AssistantView from './views/AssistantView.svelte';
   import BackupsView from './views/BackupsView.svelte';
+  import AutomationsView from './views/AutomationsView.svelte';
   import ServerSettingsView from './views/ServerSettingsView.svelte';
   import ComingSoon from './views/ComingSoon.svelte';
 
@@ -47,6 +48,8 @@
   <AssistantView {tab} />
 {:else if tab.view === 'backups'}
   <BackupsView {tab} />
+{:else if tab.view === 'automations'}
+  <AutomationsView {tab} />
 {:else if tab.view === 'settings'}
   {#if caps === undefined || caps.properties}
     <ServerSettingsView {tab} />
