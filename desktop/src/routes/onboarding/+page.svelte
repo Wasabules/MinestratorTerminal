@@ -154,6 +154,7 @@
   }
   /* Tuile du logo, sombre dans les deux thèmes ; elle chevauche le bas du paysage. */
   .mark {
+    position: relative;
     width: 52px;
     height: 52px;
     margin-top: -50px;
@@ -161,7 +162,7 @@
     border: 3px solid var(--surface);
     display: grid;
     place-items: center;
-    background: #1b2126;
+    background: #0d1113;
   }
   h1 {
     margin: 4px 0 0;

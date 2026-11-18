@@ -132,13 +132,14 @@
   }
   .body {
     padding: 0 14px 14px;
+    margin-top: -2px;
     display: flex;
     flex-direction: column;
     gap: 12px;
   }
   .head {
     display: flex;
-    align-items: flex-end;
+    align-items: flex-start;
     gap: 12px;
     background: none;
     border: none;
@@ -152,6 +153,7 @@
   /* L'icône du jeu chevauche le bas de la bannière. */
   .mono-icon,
   .game-icon {
+    position: relative; /* au-dessus du paysage (positionné) qu'elle chevauche */
     width: 44px;
     height: 44px;
     margin-top: -20px;
@@ -178,7 +180,7 @@
     flex-direction: column;
     min-width: 0;
     flex: 1;
-    padding-top: 8px;
+    padding-top: 6px;
   }
   .name {
     font-weight: 900;

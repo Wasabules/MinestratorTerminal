@@ -119,7 +119,7 @@
     font-weight: 800;
     display: grid;
     place-items: center;
-    box-shadow: 0 0 0 2px var(--surface);
+    box-shadow: 0 0 0 2px var(--chrome);
   }
   /* Point « live » qui bat (comme la pastille de notification), coin haut-droit de l'icône. */
   .pulse {
