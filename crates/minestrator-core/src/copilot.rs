@@ -74,7 +74,14 @@ fn tool_disabled(name: &str, disabled: &[String]) -> bool {
 fn allowed_tool_names(cfg: &CopilotConfig, autonomous: bool) -> Vec<String> {
     let mut v: Vec<String> = READ_TOOLS.iter().map(|s| s.to_string()).collect();
     if autonomous {
-        v.extend(WRITE_TOOLS.iter().map(|s| s.to_string()));
+        // Jamais la gestion de l'infrastructure MyBox (créer/supprimer des serveurs…) : le
+        // Copilote lit du contenu non fiable.
+        v.extend(
+            WRITE_TOOLS
+                .iter()
+                .filter(|n| !crate::mcp::INFRA_TOOLS.contains(n))
+                .map(|s| s.to_string()),
+        );
     }
     // Quand le MCP officiel prend la gestion, NOTRE serveur est recentré sur SFTP + exclusifs
     // (`LOCAL_KEEP_TOOLS`) — le reste est délégué à l'officiel, pas de doublon pour l'agent.
@@ -97,7 +104,13 @@ fn cli_command(cfg: &CopilotConfig) -> &str {
 
 /// Enum JSON des outils d'action (pour le schéma `report_diagnosis`), dérivé de la source unique.
 fn action_enum() -> Value {
-    Value::Array(WRITE_TOOLS.iter().map(|n| json!(n)).collect())
+    Value::Array(
+        WRITE_TOOLS
+            .iter()
+            .filter(|n| !crate::mcp::INFRA_TOOLS.contains(n))
+            .map(|n| json!(n))
+            .collect(),
+    )
 }
 
 /// Liste lisible des outils MCP de lecture (pour les prompts), filtrée par jeu.
@@ -1404,6 +1417,9 @@ async fn chat_http(
                 mcp::dispatch(core, &call.name, call.input.clone())
                     .await
                     .unwrap_or_else(|e| format!("Erreur outil : {e}"))
+            } else if crate::mcp::INFRA_TOOLS.contains(&call.name.as_str()) {
+                // Hors de son catalogue : le Copilote ne gère jamais l'infrastructure MyBox.
+                "Action refusée : la gestion des MyBox est réservée à l'app et au serveur MCP local.".to_string()
             } else if autonomous && is_write_tool(&call.name) {
                 let args = prepare_action_args(server_id, &call.name, call.input.clone());
                 mcp::dispatch(core, &call.name, args)
@@ -1665,6 +1681,7 @@ fn chat_tools(autonomous: bool, disabled: &[String], family: &str) -> Vec<ToolSp
     tool_specs(|n| {
         !tool_disabled(n, disabled)
             && crate::mcp::tool_for_game(n, family)
+            && !crate::mcp::INFRA_TOOLS.contains(&n)
             && (READ_TOOLS.contains(&n) || (autonomous && is_write_tool(n)))
     })
 }

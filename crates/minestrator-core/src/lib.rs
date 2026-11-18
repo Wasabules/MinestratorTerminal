@@ -33,6 +33,7 @@ mod mca;
 pub mod mcp;
 mod models;
 mod mods;
+pub mod mybox;
 mod nbt;
 mod official_mcp;
 pub mod panel_schedules;
@@ -83,6 +84,11 @@ pub use mods::{
     ModInstallItem,
 };
 pub use mcp::McpConfig;
+pub use mybox::{
+    BackupJob, CatalogEgg, CatalogLocation, CreateServerInput, CreatedServer, EggField, FieldValue,
+    MyBoxCapacity, MyBoxDisk, MyBoxServerSlot, MyBoxSlots, PauseOutcome, PlacementChoice,
+    PlacementPlan, PlacementRequest, ResourceUsage, ServerCatalog, SnapshotJob,
+};
 pub use nbt::NbtNode;
 pub use redact::PrivacyConfig;
 pub use models::{
@@ -301,6 +307,13 @@ impl Core {
         tool: &str,
         args: serde_json::Value,
     ) -> Result<String> {
+        // Gestion de l'infrastructure (créer, redimensionner, supprimer des serveurs…) : jamais
+        // par le Copilote, qui lit du contenu non fiable (chat des joueurs). MCP local et app seulement.
+        if mcp::INFRA_TOOLS.contains(&tool) {
+            return Err(Error::Invalid(format!(
+                "« {tool} » gère l'infrastructure MyBox : action réservée à l'app et au serveur MCP local."
+            )));
+        }
         let args = copilot::prepare_action_args(server_id, tool, args);
         mcp::dispatch(self, tool, args)
             .await

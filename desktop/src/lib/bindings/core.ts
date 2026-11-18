@@ -15,8 +15,10 @@ export type AppError = {
    */
   message: string,
   /**
-   * Sous-cas stable d'une erreur `service` (`unreachable`, `forbidden`, `elevation_cancelled`…),
-   * traduit par l'UI via `service.errors.*`. Absent du JSON pour les autres erreurs.
+   * Sous-cas stable : pour une erreur `service` (`unreachable`, `forbidden`,
+   * `elevation_cancelled`…), traduit par l'UI via `service.errors.*` ; pour une erreur `api`, le
+   * code renvoyé par MineStrator (`API_MYBOX_NOT_ENOUGH_CPU`…), que l'UI peut traduire. Absent
+   * du JSON pour les autres erreurs.
    */
   code?: string,
 };
@@ -25,7 +27,7 @@ export type AppError = {
  * Discriminant d'une [`Error`], tel qu'il part dans le champ `kind` du JSON (type TypeScript
  * `AppErrorKind`). Un variant d'[`Error`] ajouté doit être rattaché ici via [`Error::error_kind`].
  */
-export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "sftp_password_required" | "sftp_host_key_changed" | "account_exists" | "account_not_found" | "service";
+export type AppErrorKind = "unauthorized" | "forbidden" | "rate_limited" | "no_key" | "network" | "unexpected" | "keyring" | "api" | "sftp_auth" | "sftp_password_required" | "sftp_host_key_changed" | "account_exists" | "account_not_found" | "service" | "invalid";
 
 // --- Compte, serveurs, journal (models.rs, games.rs) ---
 
@@ -470,9 +472,10 @@ export type MyBoxOffer = {
    */
   database_size: number,
   /**
-   * IP dédiées disponibles.
+   * Nombre maximal de serveurs **actifs** (`pods` ; les serveurs en pause n'en consomment pas).
+   * Voir `docs/api/MYBOX.md`.
    */
-  dedicated_ips: number,
+  max_servers: number,
 };
 
 /**
@@ -506,6 +509,356 @@ export type MetricSample = {
   mem_limit: number,
   disk: number,
   state: string,
+};
+
+// --- Gestion des MyBox (mybox.rs) ---
+
+/**
+ * Une ressource allouable de la MyBox. CPU : **cœurs** ; RAM : **Go**.
+ */
+export type ResourceUsage = {
+  /**
+   * Total de l'offre, options comprises.
+   */
+  total: number,
+  /**
+   * Somme des allocations des serveurs **actifs** (les serveurs en pause ne comptent pas).
+   */
+  allocated: number,
+  /**
+   * Encore allouable à un serveur (jamais plus que ce que l'API annonce).
+   */
+  remaining: number,
+};
+
+/**
+ * Disque de la MyBox : **partagé** par tous ses serveurs, rien n'est réservé par serveur.
+ */
+export type MyBoxDisk = {
+  /**
+   * Capacité totale (Go), options comprises.
+   */
+  total_gb: number,
+  /**
+   * Occupation actuelle de tous les serveurs (Mo) ; `None` si l'API ne l'a pas fournie.
+   */
+  used_mb: number | null,
+};
+
+/**
+ * Emplacements de serveurs (`pods`). `0` comme maximum = pas de limite connue (MyBox Pro).
+ */
+export type MyBoxSlots = {
+  max_active: number,
+  active: number,
+  max_paused: number,
+  paused: number,
+};
+
+/**
+ * Serveur d'une MyBox, avec ce qui lui est alloué.
+ */
+export type MyBoxServerSlot = {
+  id: number,
+  name: string,
+  egg_id: number,
+  egg_name: string,
+  /**
+   * Cœurs alloués.
+   */
+  cpu: number,
+  /**
+   * Go de RAM alloués.
+   */
+  ram: number,
+  /**
+   * En pause (« désactivé » dans l'API) : ne consomme ni CPU ni RAM, ses fichiers sont gardés.
+   */
+  paused: boolean,
+  expired: boolean,
+  /**
+   * Suspendu : l'API le signale aussi pour **tout** serveur en pause.
+   */
+  suspended: boolean,
+  /**
+   * Ville de la localisation (`Toulouse`…).
+   */
+  location: string,
+  country_iso: string,
+  /**
+   * Position dans la MyBox (ordre du panel).
+   */
+  order: number,
+  /**
+   * Référence courte à donner au support.
+   */
+  support_ref: string,
+};
+
+/**
+ * Capacité d'une MyBox : ressources totales, allouées et restantes, emplacements, serveurs.
+ */
+export type MyBoxCapacity = {
+  id: number,
+  name: string,
+  /**
+   * Nom de l'offre (`MyBox 32`…).
+   */
+  offer: string,
+  /**
+   * Faux pour un sous-utilisateur.
+   */
+  owner: boolean,
+  /**
+   * Permissions de sous-utilisateur sur la MyBox (`server_create`…), vides pour le propriétaire.
+   */
+  permissions: Array<string>,
+  /**
+   * MyBox Pro : ressources sur mesure, non bornées par l'offre.
+   */
+  pro: boolean,
+  free: boolean,
+  trial: boolean,
+  expired: boolean,
+  suspended: boolean,
+  /**
+   * Cœurs FlexCore : rafale partagée ajoutée à la limite de chaque serveur, **non allouable**.
+   */
+  flexcore: number,
+  cpu: ResourceUsage,
+  ram: ResourceUsage,
+  disk: MyBoxDisk,
+  slots: MyBoxSlots,
+  /**
+   * Serveurs actifs (dans l'ordre du panel), puis serveurs en pause.
+   */
+  servers: Array<MyBoxServerSlot>,
+  /**
+   * Ce qui empêche d'y créer un serveur maintenant (vide = possible) : `expired`, `suspended`,
+   * `forbidden`, `slots_full`, `no_cpu`, `no_ram`.
+   */
+  blockers: Array<string>,
+};
+
+/**
+ * Champ à renseigner à la création d'un serveur de ce jeu (variable d'environnement de l'egg).
+ */
+export type EggField = {
+  /**
+   * Clé envoyée à l'API (`STEAM_USER`…).
+   */
+  key: string,
+  label: string,
+  description: string,
+};
+
+/**
+ * Jeu (egg) proposé à la création.
+ */
+export type CatalogEgg = {
+  id: number,
+  name: string,
+  /**
+   * `games`, `programming`, `databases`, `custom` (PimpMyBox), `experimental` ou `other`.
+   */
+  category: string,
+  /**
+   * Type expérimental : non testé par l'hébergeur, sans support garanti ; envoyé à part.
+   */
+  experimental: boolean,
+  icon_url: string | null,
+  /**
+   * Ressources minimales recommandées : cœurs, Go de RAM, Go de disque (0 = inconnu).
+   */
+  cpu: number,
+  ram: number,
+  disk: number,
+  /**
+   * Disque nécessaire à l'installation (Go, 0 = inconnu).
+   */
+  install_disk: number,
+  /**
+   * Niveau de certification de l'hébergeur (1 à 3, 0 = aucun).
+   */
+  certification: number,
+  required_fields: Array<EggField>,
+};
+
+/**
+ * Localisation (datacenter) où créer un serveur.
+ */
+export type CatalogLocation = {
+  id: number,
+  city: string,
+  country: string,
+  country_iso: string,
+  in_stock: boolean,
+};
+
+/**
+ * Catalogue de création : jeux (officiels, personnalisés, expérimentaux) et localisations.
+ */
+export type ServerCatalog = {
+  eggs: Array<CatalogEgg>,
+  locations: Array<CatalogLocation>,
+};
+
+/**
+ * Valeur d'un champ requis. `Debug` masque la valeur : ce peut être un mot de passe (Steam…).
+ */
+export type FieldValue = {
+  key: string,
+  value: string,
+};
+
+/**
+ * Demande de création d'un serveur dans une MyBox.
+ */
+export type CreateServerInput = {
+  mybox_id: number,
+  name: string,
+  /**
+   * Identifiant du jeu dans le catalogue ([`CatalogEgg::id`]).
+   */
+  egg_id: number,
+  /**
+   * Le jeu vient du catalogue **expérimental** (identifiants distincts).
+   */
+  experimental: boolean,
+  /**
+   * Localisation ([`CatalogLocation::id`]) ; ignorée pour une MyBox Pro.
+   */
+  location_id: number | null,
+  /**
+   * Cœurs (entier ≥ 1).
+   */
+  cpu: number,
+  /**
+   * Go de RAM (entier ≥ 1).
+   */
+  ram: number,
+  /**
+   * Champs requis du jeu.
+   */
+  fields: Array<FieldValue>,
+};
+
+/**
+ * Serveur créé.
+ */
+export type CreatedServer = {
+  mybox_id: number,
+  server_id: number,
+  /**
+   * Adresse de connexion attribuée (peut être vide le temps de l'installation).
+   */
+  ip: string,
+};
+
+/**
+ * Résultat d'une mise en pause ou d'une reprise.
+ */
+export type PauseOutcome = {
+  /**
+   * Reprise asynchrone en cours (fichiers remis en place) : suivre `job_id` via `backup_job`.
+   */
+  resuming: boolean,
+  job_id: number | null,
+};
+
+/**
+ * Snapshot lancée avant une suppression.
+ */
+export type SnapshotJob = {
+  job_id: number,
+  snapshot_name: string,
+  /**
+   * Snapshots déjà présentes sur le compte, et limite.
+   */
+  current_count: number,
+  limit: number,
+};
+
+/**
+ * Avancement d'un job de sauvegarde (snapshot, reprise d'un serveur en pause).
+ */
+export type BackupJob = {
+  /**
+   * `pending`, `running`, `completed`, `failed` ou `cancelled`.
+   */
+  status: string,
+  /**
+   * Pourcentage (0 à 100).
+   */
+  progress: number,
+  error: string | null,
+};
+
+/**
+ * Serveur à placer (plan de placement).
+ */
+export type PlacementRequest = {
+  /**
+   * Libellé libre (« survie », « lobby »…), repris dans le plan.
+   */
+  label: string,
+  /**
+   * Cœurs.
+   */
+  cpu: number,
+  /**
+   * Go de RAM.
+   */
+  ram: number,
+  /**
+   * Disque libre souhaité dans la MyBox (Go, 0 = sans exigence). Le disque est partagé.
+   */
+  disk_gb: number,
+};
+
+/**
+ * Où placer un serveur demandé.
+ */
+export type PlacementChoice = {
+  /**
+   * Position de la demande dans la liste reçue.
+   */
+  index: number,
+  label: string,
+  /**
+   * MyBox retenue (`None` : aucune ne peut l'accueillir).
+   */
+  mybox_id: number | null,
+  mybox_name: string | null,
+  /**
+   * Cœurs et Go encore libres dans cette MyBox **après** ce placement (et les précédents).
+   */
+  cpu_left: number,
+  ram_left: number,
+  /**
+   * Pourquoi rien ne convient (par MyBox), ou remarques.
+   */
+  reasons: Array<string>,
+};
+
+/**
+ * Plan de placement : proposition seulement, rien n'est modifié.
+ */
+export type PlacementPlan = {
+  /**
+   * `pack` (remplir au plus juste) ou `spread` (répartir la charge).
+   */
+  strategy: string,
+  placed: number,
+  unplaced: number,
+  /**
+   * Une entrée par demande, dans l'ordre reçu.
+   */
+  choices: Array<PlacementChoice>,
+  /**
+   * Pistes pour ce qui ne rentre pas (mises en pause qui libéreraient assez).
+   */
+  suggestions: Array<string>,
 };
 
 // --- Sauvegardes (models.rs) ---

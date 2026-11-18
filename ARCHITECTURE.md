@@ -219,6 +219,18 @@ Regroupés par domaine (liste réelle des fichiers).
   `power`, délai 0-900 s) et ordre ; toute saisie est validée avant envoi (cron borné, commande
   sur une ligne). Desktop : section de la vue Automatisations ; mobile : vue « Tâches » (lecture et
   activation) ; MCP : `list_schedules`.
+- **`mybox`** — gestion des MyBox (analyse : [`docs/api/MYBOX.md`](docs/api/MYBOX.md)). Capacité
+  (`MyBoxCapacity` : CPU en cœurs et RAM en Go totaux / alloués aux serveurs **actifs** / restants,
+  disque **partagé**, emplacements `pods`, FlexCore, `blockers`), catalogue de création (jeux,
+  champs requis, ressources recommandées, localisations ; cache 1 h), écritures construites et
+  **validées sans réseau** (`WriteRequest` : création, redimensionnement, pause/reprise, ordre,
+  renommages, snapshot avant suppression, suppression gardée par le nom exact) puis envoyées par
+  `ApiClient::send_raw` ; chaque écriture vide le cache TTL. `plan_placement` : plan de placement
+  **pur** (stratégies `pack`/`spread`, pistes de mise en pause). Desktop : onglet unique « MyBox »
+  (`MyBoxView`, dialogues dans `src/lib/mybox/`) ouvert depuis l'accueil ou la palette ; mobile :
+  lecture des ressources et renommage ; MCP : outils « architecte » (`mybox_capacity`,
+  `server_catalog`, `plan_placement`, `mybox_smartscan`) et `INFRA_TOOLS` modifiants, **jamais**
+  exposés au Copilote.
 - **`secrets`** — stockage sécurisé natif : clés API (compte actif `api-key`, comptes inactifs
   `api-key-<id>`), clés LLM par fournisseur (`llm-key-<slug>`),
   secrets par jeu, mots de passe SFTP par serveur (`sftp-password-<id>`), URL des destinations
@@ -282,7 +294,8 @@ les usages critiques gardent un **repli** sur le chemin éprouvé.
 | `GET /server/{id}/live` | `Core::server_live` : outil MCP `server_status`, `wait_offline` (installation de mods), Aperçu desktop (FlexCore, réseau, uptime) | `live/light` + échantillon WebSocket (`sample_stats`) |
 | `GET /server/{id}/properties` | `Core::server_properties` : vue **Paramètres** desktop, outil MCP `read_properties` (secrets masqués) | — (lecture seule, erreur affichée) |
 | `PATCH /server/{id}/properties` (`{property, value}`) | `Core::set_server_property` : une clé à la fois, effet au prochain démarrage ; outil `set_property` | — |
-| `GET /mybox/{id}` | `Core::mybox_details` : accueil (renouvellement auto, ressources libres, suppression), outil `mybox_info`, superviseur (pas d'alerte d'expiration si renouvellement auto ; alerte critique de suppression) | alerte d'expiration classique si l'appel échoue |
+| `GET /mybox/{id}` | `Core::mybox_details` : accueil (renouvellement auto, ressources libres, suppression), outil `mybox_info`, superviseur (pas d'alerte d'expiration si renouvellement auto ; alerte critique de suppression). Lu aussi, avec tolérance, par `Core::mybox_capacity` (module `mybox`) | alerte d'expiration classique si l'appel échoue |
+| `POST/PATCH /mybox/{id}/server`, `…/server/disable·enable`, `DELETE /mybox/{id}/server/{id}`, `PATCH /server/{id}/name`, `GET /server/catalog/locations` | module `mybox` : création, redimensionnement, pause/reprise, suppression, renommage, localisations. Plus, non documentés (panel) : `GET /mybox/{id}/disk`, `/site/eggs/experimentals`, `/user/{id}/pimpmybox`, `/mybox/{id}/smartscan`, `PATCH /mybox/{id}/name`, `PATCH /mybox/{id}/servers/order`, `POST …/snapshot-before-delete`, `GET /user/{id}/backup_job/{id}` — voir `docs/api/MYBOX.md` | écritures jamais testées contre l'API réelle : validées localement, corps conformes au panel |
 
 > **Piège de l'API** : un chemin `/user/<inconnu>` ne renvoie **pas** 404 mais le profil complet,
 > avec `description: "User - Informations - Get user datas"`. Un endpoint « qui répond 200 » n'est
@@ -334,6 +347,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 |---|---|
 | **Auth & comptes** | `validate_and_store_key` (connexion : la clé devient celle du compte actif), `has_stored_key`, `get_user` (profil + mise en cohérence de la liste des comptes), `logout` (retire le compte actif, renvoie celui qui prend la relève), `accounts_list`, `account_add`, `account_switch`, `account_remove` |
 | **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
+| **MyBox** | `mybox_details`, `mybox_capacities`, `mybox_capacity`, `server_catalog`, `mybox_create_server`, `mybox_resize_server`, `mybox_set_server_paused`, `mybox_reorder_servers`, `rename_server`, `rename_mybox`, `mybox_snapshot_before_delete`, `backup_job`, `mybox_delete_server` (nom exact exigé), `mybox_plan_placement` |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
 | **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |
@@ -414,7 +428,7 @@ restent montés (masqués en `display`), ce qui préserve l'état vivant (WS con
 SFTP) quand on change d'onglet. Une route dédiée les démonterait.
 
 - **`tabs/tabs.svelte.ts`** — `TabManager` (store rune). Onglet **Home permanent** + N onglets, plus des
-  onglets uniques **Réglages** et **Copilote**. Un onglet serveur cible un couple `(serverId, view)`.
+  onglets uniques **Réglages**, **Copilote**, **Notifications** et **MyBox** (`openMyboxes`). Un onglet serveur cible un couple `(serverId, view)`.
   **Doublons autorisés** (`openNew` vs `focusOrOpen`), plus `close`/`closeOthers`/`closeLeft`/`closeRight`
   et `moveTo` (réordonnancement par glisser). `ServerView` = `overview \| console \| sftp \| players \|
   mods \| assistant \| backups \| automations \| settings`.
