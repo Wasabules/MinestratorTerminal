@@ -1,29 +1,32 @@
 /**
- * États serveur → clé i18n (`status.*`) + couleur (voir DESIGN.md).
+ * États serveur → clé i18n (`status.*`) + couleurs (voir DESIGN.md).
  * Deux dimensions : l'état d'infrastructure (liste) et l'état d'exécution (live).
  */
 
 export interface StateMeta {
   /** Clé i18n sous `status.*`. */
   key: string;
+  /** Couleur de la pastille. */
   color: string;
+  /** Couleur du libellé : lisible (≥ 4,5:1) là où la couleur de pastille ne le serait pas. */
+  ink: string;
 }
 
 /** État d'infrastructure d'un serveur (issu de la liste). */
 export function statusMeta(status: string): StateMeta {
   switch (status) {
     case 'active':
-      return { key: 'active', color: 'var(--state-running)' };
+      return { key: 'active', color: 'var(--state-running)', ink: 'var(--state-running-text)' };
     case 'hibernation':
-      return { key: 'hibernation', color: 'var(--state-hibernate)' };
+      return { key: 'hibernation', color: 'var(--state-hibernate)', ink: 'var(--state-hibernate)' };
     case 'disabled':
-      return { key: 'disabled', color: 'var(--state-offline)' };
+      return { key: 'disabled', color: 'var(--state-offline)', ink: 'var(--text-dim)' };
     case 'suspended':
-      return { key: 'suspended', color: 'var(--state-danger)' };
+      return { key: 'suspended', color: 'var(--state-danger)', ink: 'var(--state-danger)' };
     case 'expired':
-      return { key: 'expired', color: 'var(--state-danger)' };
+      return { key: 'expired', color: 'var(--state-danger)', ink: 'var(--state-danger)' };
     default:
-      return { key: status, color: 'var(--text-dim)' };
+      return { key: status, color: 'var(--text-dim)', ink: 'var(--text-dim)' };
   }
 }
 
@@ -31,16 +34,16 @@ export function statusMeta(status: string): StateMeta {
 export function runtimeMeta(state: string): StateMeta {
   switch (state) {
     case 'running':
-      return { key: 'online', color: 'var(--state-running)' };
+      return { key: 'online', color: 'var(--state-running)', ink: 'var(--state-running-text)' };
     case 'starting':
-      return { key: 'starting', color: 'var(--state-pending)' };
+      return { key: 'starting', color: 'var(--state-pending)', ink: 'var(--state-pending)' };
     case 'stopping':
-      return { key: 'stopping', color: 'var(--state-pending)' };
+      return { key: 'stopping', color: 'var(--state-pending)', ink: 'var(--state-pending)' };
     // Déploiement de l'egg par Wings : la console reçoit `install output`, pas `console output`.
     case 'installing':
-      return { key: 'installing', color: 'var(--state-hibernate)' };
+      return { key: 'installing', color: 'var(--state-hibernate)', ink: 'var(--state-hibernate)' };
     default:
-      return { key: 'offline', color: 'var(--state-offline)' };
+      return { key: 'offline', color: 'var(--state-offline)', ink: 'var(--text-dim)' };
   }
 }
 

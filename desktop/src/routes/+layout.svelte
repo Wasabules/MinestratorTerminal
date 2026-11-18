@@ -1,4 +1,8 @@
 <script lang="ts">
+  // Polices embarquées (paquets @fontsource, licence OFL) : servies par l'app, jamais par un
+  // CDN — le webview ne fait aucune requête réseau.
+  import '@fontsource-variable/nunito';
+  import '@fontsource-variable/jetbrains-mono';
   import '../app.css';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
@@ -82,9 +86,11 @@
     transform: translateX(-50%);
     padding: 4px 12px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--brand-tertiary) 85%, black);
-    color: #fff;
+    /* Violet « veille » de l'End, identique dans les deux thèmes (encre sombre : 8:1). */
+    background: #c79bff;
+    color: #1e0b3a;
     font-size: 11px;
+    font-weight: 800;
     letter-spacing: 0.03em;
     pointer-events: none;
     opacity: 0.85;

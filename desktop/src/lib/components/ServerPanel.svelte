@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import type { ServerTab } from '#lib/tabs/tabs.svelte.ts';
   import { serverCaps, ensureCaps } from '#lib/games/capabilities.svelte.ts';
+  import { biomeVars, serverBiome } from '#lib/servers/colors.svelte.ts';
   import ServerOverview from './views/ServerOverview.svelte';
   import ConsoleView from './views/ConsoleView.svelte';
   import SftpView from './views/SftpView.svelte';
@@ -22,40 +23,50 @@
   onMount(() => void ensureCaps(tab.serverId));
 </script>
 
-{#if tab.view === 'overview'}
-  <ServerOverview {tab} />
-{:else if tab.view === 'console'}
-  <ConsoleView {tab} />
-{:else if tab.view === 'sftp'}
-  <SftpView {tab} />
-{:else if tab.view === 'players'}
-  {#if caps === undefined || caps.players}
-    <PlayersView {tab} />
+<!-- Toutes les vues d'un serveur prennent l'accent de son biome pour leurs sélections
+     (`display: contents` : aucune boîte ajoutée, seules les variables CSS sont transmises). -->
+<div class="srvpanel biome" style={biomeVars(serverBiome(tab.serverId))}>
+  {#if tab.view === 'overview'}
+    <ServerOverview {tab} />
+  {:else if tab.view === 'console'}
+    <ConsoleView {tab} />
+  {:else if tab.view === 'sftp'}
+    <SftpView {tab} />
+  {:else if tab.view === 'players'}
+    {#if caps === undefined || caps.players}
+      <PlayersView {tab} />
+    {:else}
+      <ComingSoon {tab} />
+    {/if}
+  {:else if tab.view === 'mods'}
+    {#if caps?.mods === 'ficsit'}
+      <SatisfactoryModsView {tab} />
+    {:else if caps?.mods === 'thunderstore' || caps?.mods === 'factorio' || caps?.mods === 'umod'}
+      <ModMarketplaceView {tab} />
+    {:else if caps?.mods === 'none'}
+      <ComingSoon {tab} />
+    {:else}
+      <MarketplaceView {tab} />
+    {/if}
+  {:else if tab.view === 'assistant'}
+    <AssistantView {tab} />
+  {:else if tab.view === 'backups'}
+    <BackupsView {tab} />
+  {:else if tab.view === 'automations'}
+    <AutomationsView {tab} />
+  {:else if tab.view === 'settings'}
+    {#if caps === undefined || caps.properties}
+      <ServerSettingsView {tab} />
+    {:else}
+      <ComingSoon {tab} />
+    {/if}
   {:else}
     <ComingSoon {tab} />
   {/if}
-{:else if tab.view === 'mods'}
-  {#if caps?.mods === 'ficsit'}
-    <SatisfactoryModsView {tab} />
-  {:else if caps?.mods === 'thunderstore' || caps?.mods === 'factorio' || caps?.mods === 'umod'}
-    <ModMarketplaceView {tab} />
-  {:else if caps?.mods === 'none'}
-    <ComingSoon {tab} />
-  {:else}
-    <MarketplaceView {tab} />
-  {/if}
-{:else if tab.view === 'assistant'}
-  <AssistantView {tab} />
-{:else if tab.view === 'backups'}
-  <BackupsView {tab} />
-{:else if tab.view === 'automations'}
-  <AutomationsView {tab} />
-{:else if tab.view === 'settings'}
-  {#if caps === undefined || caps.properties}
-    <ServerSettingsView {tab} />
-  {:else}
-    <ComingSoon {tab} />
-  {/if}
-{:else}
-  <ComingSoon {tab} />
-{/if}
+</div>
+
+<style>
+  .srvpanel {
+    display: contents;
+  }
+</style>

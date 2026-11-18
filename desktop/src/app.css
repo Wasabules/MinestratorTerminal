@@ -1,55 +1,156 @@
 /* =========================================================================
-   Minestrator Terminal — tokens & base (voir DESIGN.md)
-   Charte extraite du design system de minestrator.com. Dark-first.
+   Minestrator Terminal — charte « Biome » : tokens et primitives (voir DESIGN.md).
+   Sombre par défaut ; thème clair sous :root[data-theme="light"].
+   Aucune ombre (sauf menus et popovers), aucun dégradé.
    ========================================================================= */
 
-:root {
-  /* Marque */
-  --brand-primary: #009b72;
-  --brand-primary-700: #005d44;
-  --brand-accent: #ff715b;
-  --brand-strator: #ffb4a8;
-  --brand-tertiary: #7828c8;
-  --brand-pro: #394666;
-  --brand-gradient: linear-gradient(115deg, #009b72 0%, #ff715b 100%);
+/* `.force-dark` : zone toujours sombre quel que soit le thème (console, éditeur de fichiers) ;
+   elle redéclare les tokens du thème sombre, que ses descendants héritent. */
+:root,
+.force-dark {
+  /* Marque : chevron vert et curseur corail du logo. Le corail ne sert qu'au logo. */
+  --brand-green: #5fd68c;
+  --brand-coral: #ff715b;
 
-  /* États serveur */
-  --state-running: #009b72;
-  --state-pending: #f59e0b;
-  --state-offline: #859398;
-  --state-danger: #ff5f57;
-  --state-hibernate: #7828c8;
+  /* Typographie (polices embarquées, cf. +layout.svelte : aucune requête réseau) */
+  --font-sans: 'Nunito Variable', Nunito, 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'Cascadia Code', Consolas,
+    monospace;
 
-  /* Typographie */
-  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
-  --font-mono: ui-monospace, "Cascadia Code", "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
-
-  /* Forme */
+  /* Formes */
   --radius-sm: 6px;
-  --radius: 10px;
-  --radius-lg: 14px;
-  --shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  --radius: 10px; /* boutons, champs */
+  --radius-tab: 12px; /* haut des onglets */
+  --radius-lg: 16px; /* cartes */
+  /* Ombre réservée aux menus, popovers et dialogues (ce qui flotte au-dessus de la page). */
+  --shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+
+  /* Surfaces */
+  --chrome: #0d1113; /* barre d'onglets */
+  --bg: #14191d; /* page */
+  --surface: #1b2126; /* carte */
+  --inset: #161b1f; /* encart, champ, onglet inactif */
+  --elevated: #20272d; /* menu, popover, dialogue */
+  --border: #232b31;
+  --border-strong: #262e35; /* pistes de jauge, grilles des graphes */
+  --hover: rgba(241, 245, 243, 0.06);
+
+  /* Texte */
+  --text: #f1f5f3;
+  --text-muted: #b3bfba;
+  --text-dim: #8c9a94;
+
+  /* États (couleur de pastille ; `-text` quand la couleur sert de texte) */
+  --state-running: #5fd68c;
+  --state-running-text: #8fe8b0;
+  --state-pending: #f2b84b;
+  --state-offline: #6b7a7f;
+  --state-danger: #ff6b63;
+  --state-hibernate: #c79bff;
+
+  /* Liens, icônes actives, anneau de focus */
+  --brand-primary: #5fd68c;
+  --on-primary: #0b2414; /* texte posé sur --brand-primary */
   --ring: 0 0 0 3px color-mix(in srgb, var(--brand-primary) 35%, transparent);
 
-  /* Surfaces & texte — thème sombre (défaut) */
-  --bg: #12171a;
-  --surface: #181d22;
-  --elevated: #2c3038;
-  --border: #2b333a;
-  --text: #eef3f5;
-  --text-muted: #a7b6bb;
-  --text-dim: #6f8085;
+  /* Accent de sélection (période choisie, onglet actif…). Une vue serveur le remplace par
+     l'accent de son biome (classe .biome). */
+  --accent: #3fbf6e;
+  --on-accent: #0b2414;
+  --accent-soft: #13261d; /* fond teinté : tuiles d'icône, boutons d'action du biome */
+  --accent-text: #8fe8b0; /* texte posé sur --accent-soft */
+
+  /* Boutons */
+  --btn-primary-bg: #f1f5f3;
+  --btn-primary-ink: #0d1113;
+  --btn-secondary-bg: #0d1113;
+  --btn-secondary-ink: #f1f5f3;
+  --danger-bg: #3a1517;
+  --danger-ink: #ff9d97;
+
+  /* Onglets neutres (Accueil, MyBox, Réglages, Copilote, Alertes) */
+  --tab-neutral: #3a454c;
+
+  /* Séries des graphes */
+  --chart-cpu: #3fbf6e;
+  --chart-ram: #ff8a75;
+  --chart-players: #c79bff;
+
+  color-scheme: dark;
 }
 
-:root[data-theme="light"] {
-  --bg: #f9fafb;
+:root[data-theme='light'] {
+  --shadow: 0 14px 36px rgba(13, 17, 19, 0.14);
+
+  --chrome: #e4eae7;
+  --bg: #f3f6f4;
   --surface: #ffffff;
+  --inset: #eef2f0;
   --elevated: #ffffff;
-  --border: #e5e7eb;
-  --text: #101619;
-  --text-muted: #4b5563;
-  --text-dim: #8a999e;
-  --shadow: 0 8px 30px rgba(15, 23, 42, 0.1);
+  --border: #dfe5e2;
+  --border-strong: #d3dbd7;
+  --hover: rgba(13, 17, 19, 0.05);
+
+  --text: #0d1113;
+  --text-muted: #46524d;
+  --text-dim: #5d6a65;
+
+  --state-running: #16794a;
+  --state-running-text: #16794a;
+  --state-pending: #8a5a0b;
+  --state-offline: #7b878c;
+  --state-danger: #c4302b;
+  --state-hibernate: #8a4fd6;
+
+  --brand-primary: #16794a;
+  --on-primary: #ffffff;
+
+  --accent: #1a6e3f;
+  --on-accent: #ffffff;
+  --accent-soft: #e2f1e8;
+  --accent-text: #16603a;
+
+  --btn-primary-bg: #0d1113;
+  --btn-primary-ink: #f1f5f3;
+  --btn-secondary-bg: #e4eae7;
+  --btn-secondary-ink: #0d1113;
+  --danger-bg: #fde4e2;
+  --danger-ink: #b42318;
+
+  --tab-neutral: #c3ccc8;
+
+  --chart-cpu: #1f9d55;
+  --chart-ram: #e0533d;
+  --chart-players: #8a4fd6;
+
+  color-scheme: light;
+}
+
+/* --- Biome d'un serveur ---------------------------------------------------
+   Un conteneur reçoit la palette brute de son biome en variables (`biomeVars()` de
+   servers/colors.svelte.ts : --b-accent, --b-accent-l, --b-ink, --b-soft…) et la classe
+   .biome les résout selon le thème : tout ce qu'il contient lit --accent & co. */
+.biome {
+  --accent: var(--b-accent);
+  --on-accent: var(--b-ink);
+  --accent-soft: var(--b-soft);
+  --accent-text: var(--b-soft-text);
+}
+:root[data-theme='light'] .biome {
+  --accent: var(--b-accent-l);
+  --on-accent: #ffffff;
+  --accent-soft: var(--b-soft-l);
+  --accent-text: var(--b-accent-l);
+}
+/* Zone sombre dans un biome : elle garde l'accent du biome, version sombre. */
+.biome .force-dark {
+  --accent: var(--b-accent);
+  --on-accent: var(--b-ink);
+  --accent-soft: var(--b-soft);
+  --accent-text: var(--b-soft-text);
+}
+.force-dark {
+  color: var(--text);
 }
 
 * {
@@ -66,13 +167,31 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 600;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
+h1,
+h2,
+h3 {
+  font-weight: 900;
+}
+b,
+strong {
+  font-weight: 800;
+}
+code,
+kbd,
+pre,
+samp {
+  font-family: var(--font-mono);
+}
+
 ::selection {
-  background: color-mix(in srgb, var(--brand-primary) 40%, transparent);
+  background: color-mix(in srgb, var(--brand-primary) 35%, transparent);
 }
 
 a {
@@ -91,17 +210,10 @@ a:hover {
 /* Scrollbar discrète */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--elevated) transparent;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 /* --- Primitifs réutilisables ------------------------------------------- */
-
-.gradient-text {
-  background: var(--brand-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
 
 .muted {
   color: var(--text-muted);
@@ -109,45 +221,56 @@ a:hover {
 .dim {
   color: var(--text-dim);
 }
+.mono {
+  font-family: var(--font-mono);
+}
 
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
 }
 
+/* Bouton principal : clair, il ressort sur la page comme sur tous les paysages. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
   font: inherit;
-  font-weight: 600;
-  padding: 10px 16px;
+  font-weight: 900;
+  padding: 9px 16px;
   border-radius: var(--radius);
   border: 1px solid transparent;
   cursor: pointer;
-  transition: filter 0.12s ease, background 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
-  color: #fff;
-  background: var(--brand-primary);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s ease;
+  color: var(--btn-primary-ink);
+  background: var(--btn-primary-bg);
 }
 .btn:hover:not(:disabled) {
-  filter: brightness(1.08);
+  background: color-mix(in srgb, var(--btn-primary-bg) 86%, var(--btn-primary-ink));
 }
 .btn:disabled {
-  opacity: 0.55;
+  opacity: 0.5;
   cursor: not-allowed;
 }
+/* Secondaire : sombre (clair en thème clair). */
 .btn--ghost {
-  background: transparent;
-  color: var(--text-muted);
-  border-color: var(--border);
+  font-weight: 800;
+  background: var(--btn-secondary-bg);
+  color: var(--btn-secondary-ink);
 }
 .btn--ghost:hover:not(:disabled) {
-  color: var(--text);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  filter: none;
+  background: color-mix(in srgb, var(--btn-secondary-bg) 82%, var(--btn-secondary-ink));
+}
+/* Destructif : forcer l'arrêt, supprimer… */
+.btn--danger {
+  font-weight: 800;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
+}
+.btn--danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger-bg) 85%, var(--danger-ink));
 }
 .btn--block {
   width: 100%;
@@ -160,7 +283,7 @@ a:hover {
 }
 .label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 800;
   color: var(--text-muted);
 }
 .input {
@@ -168,10 +291,10 @@ a:hover {
   font-family: var(--font-mono);
   font-size: 14px;
   color: var(--text);
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--inset);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  padding: 11px 13px;
+  padding: 10px 13px;
   width: 100%;
   transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
@@ -185,28 +308,28 @@ a:hover {
   border-radius: var(--radius);
   padding: 10px 13px;
   font-size: 13.5px;
-  border: 1px solid color-mix(in srgb, var(--state-danger) 45%, var(--border));
-  background: color-mix(in srgb, var(--state-danger) 12%, transparent);
-  color: color-mix(in srgb, var(--state-danger) 65%, var(--text));
+  border: 1px solid transparent;
+  background: var(--danger-bg);
+  color: var(--danger-ink);
 }
 
+/* Puce (pilule) */
 .badge {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   font-size: 12.5px;
-  font-weight: 600;
+  font-weight: 800;
   padding: 4px 10px;
   border-radius: 999px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--inset);
 }
 .badge .led {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
 
 /* Boot / spinner */
@@ -250,7 +373,7 @@ a:hover {
 .md h3,
 .md h4 {
   margin: 13px 0 6px;
-  font-weight: 700;
+  font-weight: 900;
   line-height: 1.3;
 }
 .md h1 {
@@ -279,12 +402,12 @@ a:hover {
 .md code {
   font-family: var(--font-mono);
   font-size: 0.88em;
-  background: color-mix(in srgb, var(--text) 9%, transparent);
+  background: var(--inset);
   padding: 1px 5px;
   border-radius: 5px;
 }
 .md pre {
-  background: var(--bg);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
@@ -300,7 +423,7 @@ a:hover {
 .md blockquote {
   margin: 8px 0;
   padding: 2px 12px;
-  border-left: 3px solid var(--border);
+  border-left: 3px solid var(--border-strong);
   color: var(--text-muted);
 }
 .md a {
@@ -329,8 +452,8 @@ a:hover {
   vertical-align: top;
 }
 .md th {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-  font-weight: 600;
+  background: var(--inset);
+  font-weight: 800;
 }
 .md tbody tr:nth-child(even) td {
   background: color-mix(in srgb, var(--text) 3%, transparent);
