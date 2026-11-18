@@ -11,6 +11,7 @@
 //! - **alertes app fermée** : le superviseur de fond n'existe pas sur mobile → daemon + push
 //!   FCM (cf. `crates/minestrator-daemon` et `docs/PUSH.md`).
 
+mod alerts;
 mod apk_installer;
 mod background;
 #[cfg(all(test, feature = "ts"))]
@@ -40,11 +41,17 @@ pub fn run() {
         .setup(|app| {
             // 1. Dossier de données privé de l'app → env, AVANT de créer le Core.
             //    C'est là que le Core écrit ses secrets (Android) et son SQLite de métriques.
-            if let Ok(dir) = app.path().app_data_dir() {
-                let _ = std::fs::create_dir_all(&dir);
-                std::env::set_var("MINESTRATOR_DATA_DIR", &dir);
+            let data_dir = app.path().app_data_dir().ok();
+            if let Some(dir) = &data_dir {
+                let _ = std::fs::create_dir_all(dir);
+                std::env::set_var("MINESTRATOR_DATA_DIR", dir);
             }
             init_tracing();
+            // Journal des alertes (centre d'alertes) : alimenté par le pont d'events ci-dessous,
+            // il survit à la destruction du webview quand seul le service garde le process.
+            app.manage(alerts::AlertJournal::open(
+                data_dir.map(|d| d.join("alerts.json")),
+            ));
 
             // 2. Core + abonnement aux events + superviseur.
             let core = Arc::new(Core::new());
@@ -106,6 +113,17 @@ pub fn run() {
             commands::server_activity,
             commands::user_notifications,
             commands::metrics_history,
+            commands::server_properties,
+            commands::set_server_property,
+            commands::market_minecraft_versions,
+            commands::market_list,
+            commands::market_versions,
+            commands::install_mod,
+            commands::installed_mods,
+            commands::installed_plugins,
+            alerts::alerts_list,
+            alerts::alerts_mark_read,
+            alerts::alerts_clear,
             commands::console_logs,
             commands::power_action,
             commands::send_command,
@@ -249,6 +267,10 @@ fn forward(handle: &tauri::AppHandle, ev: CoreEvent) {
             let _ = handle.emit("mods://install-progress", p);
         }
         CoreEvent::Alert(a) => {
+            // Consignée AVANT l'event : le webview relit le journal en le recevant.
+            if let Some(journal) = handle.try_state::<alerts::AlertJournal>() {
+                journal.push(a.clone());
+            }
             let title = if a.severity == "critical" {
                 format!("⚠ {}", a.server_name)
             } else {

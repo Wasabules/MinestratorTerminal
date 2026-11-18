@@ -20,6 +20,12 @@ export type * from "./bindings/mobile";
  */
 export type PowerAction = "start" | "restart" | "stop" | "kill";
 
+/** Type de contenu de la marketplace Minecraft (chaîne côté Rust). */
+export type MarketKind = "mods" | "plugins";
+
+/** Catalogues proposés par l'hébergeur (chaîne côté Rust). */
+export type MarketSource = "modrinth" | "curseforge" | "spigot";
+
 /** Actions joueur relayées telles quelles à l'API par `player_action` (chaîne côté Rust). */
 export type PlayerAction =
   | "kick"

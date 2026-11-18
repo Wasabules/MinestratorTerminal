@@ -14,6 +14,8 @@ fn mobile() -> Bindings {
         .add::<crate::update::UpdateInfo>()
         .section("SFTP (commands.rs)")
         .add::<crate::commands::SftpSearchOut>()
+        .section("Centre d'alertes (alerts.rs)")
+        .add::<crate::alerts::AlertEntry>()
 }
 
 #[test]
