@@ -18,6 +18,7 @@ import {
 } from './fake.svelte';
 import { t } from './i18n';
 import type {
+  Account,
   ActivityPage,
   Alert,
   AppError,
@@ -86,20 +87,43 @@ function fakeServiceOverview(o: ServiceOverview): ServiceOverview {
   return { ...o, status: { ...o.status, account_name: fakePlayer(o.status.account_name) } };
 }
 
+/** Mode démo : profil du compte (pseudo et e-mail). */
+function fakeProfile(u: UserProfile): UserProfile {
+  return { ...u, pseudo: fakePlayer(u.pseudo), mail: fakeMail(u.mail) };
+}
+
+/** Mode démo : compte enregistré (pseudo). */
+function fakeAccount(a: Account): Account {
+  return { ...a, pseudo: fakePlayer(a.pseudo) };
+}
+
 export const api = {
-  /** Valide une clé API et l'enregistre dans le trousseau. Renvoie le profil. */
-  validateAndStoreKey: (key: string) => invoke<UserProfile>('validate_and_store_key', { key }),
+  /**
+   * Connexion (écran de connexion) : valide la clé et en fait la clé du compte actif — compte
+   * ajouté s'il est nouveau, clé remplacée s'il était déjà enregistré. Renvoie le profil.
+   */
+  validateAndStoreKey: (key: string) =>
+    demo(invoke<UserProfile>('validate_and_store_key', { key }), fakeProfile),
 
   /** Une clé est-elle déjà enregistrée ? */
   hasStoredKey: () => invoke<boolean>('has_stored_key'),
 
-  /** Profil de l'utilisateur courant (à partir de la clé enregistrée). */
-  getUser: () =>
-    demo(invoke<UserProfile>('get_user'), (u) => ({
-      ...u,
-      pseudo: fakePlayer(u.pseudo),
-      mail: fakeMail(u.mail),
-    })),
+  /** Profil du compte actif (à partir de la clé enregistrée). */
+  getUser: () => demo(invoke<UserProfile>('get_user'), fakeProfile),
+
+  // --- Comptes (plusieurs comptes MineStrator, changement de compte) ---
+  /** Comptes enregistrés sur l'appareil, dans l'ordre d'ajout (`active` marque le compte actif). */
+  accountsList: () => demo(invoke<Account[]>('accounts_list'), (list) => list.map(fakeAccount)),
+  /** Ajoute un compte (clé validée par l'API, doublon refusé). Il est rangé inactif. */
+  accountAdd: (key: string) => demo(invoke<Account>('account_add', { key }), fakeAccount),
+  /**
+   * Bascule vers un compte enregistré. Le core ferme consoles et sessions SFTP, relance la
+   * supervision et émet `account://switched` (toutes les fenêtres se rechargent).
+   */
+  accountSwitch: (id: number) => demo(invoke<Account>('account_switch', { id }), fakeAccount),
+  /** Retire un compte (clé et mots de passe SFTP). Renvoie le compte actif après coup (`null` : aucun). */
+  accountRemove: (id: number) =>
+    demo(invoke<Account | null>('account_remove', { id }), (a) => (a ? fakeAccount(a) : a)),
 
   /** MyBox et serveurs de l'utilisateur. */
   listServers: () =>
@@ -465,8 +489,11 @@ export const api = {
   /** Alertes récentes du service (survenues app fermée), sans notification. */
   serviceAlerts: (sinceSecs: number) => invoke<Alert[]>('service_alerts', { sinceSecs }),
 
-  /** Efface la clé enregistrée. */
-  logout: () => invoke<void>('logout'),
+  /**
+   * Déconnexion : retire le compte actif (clé et mots de passe SFTP). Renvoie le compte qui prend
+   * la relève, `null` s'il n'en reste aucun (retour à l'écran de connexion).
+   */
+  logout: () => demo(invoke<Account | null>('logout'), (a) => (a ? fakeAccount(a) : a)),
 };
 
 /** Garde de type : un rejet d'invoke porte-t-il la forme d'un `AppError` ? */
@@ -497,6 +524,8 @@ export function humanizeError(value: unknown): string {
     no_key: 'errors.no_key',
     sftp_auth: 'errors.sftp_auth',
     sftp_password_required: 'errors.sftp_password_required',
+    account_exists: 'errors.account_exists',
+    account_not_found: 'errors.account_not_found',
   };
   const key = known[value.kind];
   return key ? t(key) : value.message;

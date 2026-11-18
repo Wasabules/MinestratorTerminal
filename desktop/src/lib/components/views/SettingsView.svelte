@@ -29,9 +29,12 @@
   } from '#lib/types.ts';
   import Icon from '../Icon.svelte';
   import ServiceSection from '../settings/ServiceSection.svelte';
+  import AccountsSection from '../settings/AccountsSection.svelte';
+  import { settingsNav } from '#lib/stores/settingsNav.svelte.ts';
 
   type Section =
     | 'general'
+    | 'accounts'
     | 'games'
     | 'supervisor'
     | 'service'
@@ -39,7 +42,15 @@
     | 'copilot'
     | 'privacy'
     | 'debug';
-  let section = $state<Section>('general');
+  let section = $state<Section>(settingsNav.section as Section);
+  // Section mémorisée hors du composant (remonté au changement de compte), et ouverture directe
+  // d'une section depuis ailleurs (« Gérer les comptes » du menu utilisateur).
+  $effect(() => {
+    settingsNav.section = section;
+  });
+  $effect(() => {
+    section = settingsNav.section as Section;
+  });
   let debugOn = $state(false);
   let fakeOn = $state(false);
 
@@ -527,6 +538,9 @@
     <button class="nav-item" class:on={section === 'general'} onclick={() => (section = 'general')}>
       {t('settings.general')}
     </button>
+    <button class="nav-item" class:on={section === 'accounts'} onclick={() => (section = 'accounts')}>
+      {t('account.nav')}
+    </button>
     <button class="nav-item" class:on={section === 'games'} onclick={() => (section = 'games')}>
       {t('settings.games')}
     </button>
@@ -635,6 +649,8 @@
           </button>
         </div>
       </div>
+    {:else if section === 'accounts'}
+      <AccountsSection />
     {:else if section === 'games'}
       <h1>{t('settings.games')}</h1>
       <p class="desc dim">{t('settings.gamesDesc')}</p>

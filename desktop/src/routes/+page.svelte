@@ -15,7 +15,10 @@
 </script>
 
 {#if auth.status === 'signed_in'}
-  <Workspace />
+  <!-- Changement de compte : le workspace est remonté, toutes ses listes se rechargent. -->
+  {#key auth.user.id}
+    <Workspace />
+  {/key}
 {:else}
   <div class="boot"><span class="spinner"></span></div>
 {/if}

@@ -33,6 +33,7 @@ export const en: Dict = {
     verifying: 'Verifying…',
     noKey: 'No key?',
     openPanel: 'Open the panel → Account → API keys',
+    otherAccounts: 'Or pick an account already registered:',
   },
   home: {
     title: 'My servers',
@@ -676,6 +677,9 @@ export const en: Dict = {
     sftp_auth:
       'The SFTP server rejected the password. Check it in the “Access” tab of the MineStrator panel, then enter it again in the Files tab.',
     sftp_password_required: 'SFTP password required: enter it once in this server’s Files tab.',
+    account_exists: 'This MineStrator account is already registered on this device.',
+    account_not_found:
+      'Account not found: its key is no longer stored on this device. Remove it, then add it again.',
   },
   // Background service (machine-wide supervision) — dedicated namespace, see docs/SERVICE.md.
   service: {
@@ -696,9 +700,12 @@ export const en: Dict = {
     byService: 'Handled by the service — the app’s supervisor is idle.',
     byApp: 'Handled by the app while it runs (window or system tray).',
     accountLabel: 'Watched account',
+    accountActive: 'active account',
+    accountOther: 'not the active account',
     noKey: 'None — the service is waiting to be enabled.',
     otherAccount:
-      'The service watches another MineStrator account: the app keeps its own supervision.',
+      'The service watches an account other than the active one: the app supervises the active account itself while it runs. “Watch the active account” hands its key to the service, which then stops watching the other account.',
+    enableActive: 'Watch the active account',
     activityLabel: 'Activity',
     monitored: '{n} server(s) watched',
     lastPoll: 'last poll {s} s ago',
@@ -768,5 +775,37 @@ export const en: Dict = {
       identity: 'Could not determine your system identity.',
       bad_request: 'Request refused by the service.',
     },
+  },
+  // Several MineStrator accounts and account switching (user menu, Settings → Accounts).
+  account: {
+    nav: 'Accounts',
+    title: 'MineStrator accounts',
+    intro:
+      'Register several MineStrator accounts on this device and switch between them. Each API key stays in your system’s secure keychain; only the account list (username, date added) is kept separately.',
+    active: 'Active',
+    watchedByService: 'Watched by the service',
+    addedOn: 'added {date}',
+    switch: 'Switch',
+    switching: 'Switching…',
+    switchTo: 'Switch to',
+    remove: 'Remove',
+    removed: 'Account {pseudo} removed from this device.',
+    add: 'Add an account',
+    manage: 'Manage accounts',
+    addTitle: 'Add a MineStrator account',
+    addIntro:
+      'Paste the other account’s API key. It is checked with MineStrator, then stored in your system’s secure keychain — never in plain text.',
+    addStored: 'Keys are created in the MineStrator panel:',
+    switchAfterAdd: 'Switch to this account once added',
+    confirmRemove:
+      'Remove the account {pseudo}? Its API key and saved SFTP passwords will be erased from this device.',
+    confirmRemoveActive:
+      'Remove the active account {pseudo}? Its API key and saved SFTP passwords will be erased from this device. The app will switch to another registered account, or go back to the sign-in screen if none is left.',
+    confirmRemoveService:
+      'The background service watches this account with its own copy of the key: it will carry on. To stop it: Settings → Background service → Disable.',
+    activeUsage:
+      'The active account is also the one used by the MCP server and the Copilot agents. An MCP client that is already running keeps the account it started with: restart it after switching accounts.',
+    serviceNote:
+      'The background service watches the account it was enabled with, whatever the active account here. When the active account is a different one, the app supervises it itself while it runs.',
   },
 };

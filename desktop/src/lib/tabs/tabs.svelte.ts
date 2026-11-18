@@ -190,6 +190,15 @@ class TabManager {
     }
   }
 
+  /**
+   * Ferme les onglets serveur et garde les autres (Réglages, Copilote, Notifications) : au
+   * changement de compte, les serveurs ouverts appartiennent à l'ancien compte.
+   */
+  closeServerTabs(): void {
+    this.tabs = this.tabs.filter((t) => t.kind !== 'server');
+    this.ensureActiveValid(HOME_ID);
+  }
+
   /** Ferme tous les onglets serveur (ex. à la déconnexion). */
   reset(): void {
     this.tabs = [{ id: HOME_ID, kind: 'home' }];
