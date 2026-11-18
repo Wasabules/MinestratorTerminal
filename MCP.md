@@ -47,14 +47,14 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (43)
+## 5. Capacités — catalogue d'outils (45)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **28 outils de lecture**
-> + **15 modifiants**.
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **29 outils de lecture**
+> + **16 modifiants**.
 
 #### Découverte & état
 
@@ -93,7 +93,9 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `create_dir` | ✎ | `server_id`, `path` | Crée un dossier. |
 | `delete_path` | ✎ | `server_id`, `path`, `is_dir?` | Supprime un fichier ou un dossier. |
 | `rename_path` | ✎ | `server_id`, `from`, `to` | Renomme ou déplace un fichier/dossier. |
-| `extract_archive` | ✎ | `server_id`, `path`, `dest_dir` | **Extrait** une archive `.zip`/`.tar`/`.tar.gz` sur le serveur (anti zip-slip, plafonné). |
+| `extract_archive` | ✎ | `server_id`, `path`, `dest_dir` | **Extrait** une archive présente sur le serveur, **par le serveur** (rien ne transite par la machine ; `.zip`, `.jar`, `.tar`, `.tar.gz/.bz2/.xz/.zst`, `.7z`, `.rar`, `.mcworld`…). Repli automatique par SFTP pour `.zip`/`.tar`/`.tar.gz` si l'API échoue (anti zip-slip, plafonné). Écrase les fichiers du même nom. |
+| `compress_files` | ✎ | `server_id`, `paths[]`, `name?` | **Compresse en `.zip` sur le serveur** des fichiers/dossiers d'un même dossier (l'archive y est créée) : sauvegarde ponctuelle d'un monde avant une intervention, rapide même pour plusieurs Go. Suit le job jusqu'au bout (~30 min max) ; renvoie chemin, taille, nombre de fichiers, fichiers ignorés. N'écrase jamais une archive existante. |
+| `disk_usage` | | `server_id`, `path?`, `limit?` | **Espace disque** calculé par le serveur : plus grosses entrées d'un dossier (tailles récursives, part en %), et à la racine l'occupation comptée face à la limite du serveur et au disque partagé de la MyBox. Pour un serveur plein : descendre dans les plus gros dossiers. |
 | `upload_file` | ✎ | `server_id`, `local_path`, `remote_path` | **Téléverse** un fichier **local** (BINAIRE, sans la limite 2 Mo de `write_file`) — déployer un `.jar`, un resource pack, un monde. `local_path` = machine hôte du MCP. Crée le parent, écrase la cible. |
 | `edit_file` | ✎ | `server_id`, `path`, `find`, `replace` | Édition **partielle** (remplace toutes les occurrences de `find`). Ne renvoie **jamais** le contenu → sûr même si le fichier contient un secret (contrairement à `read_file`+`write_file` qui réécrirait `[SECRET]`). Erreur si `find` absent. |
 | `download_file` | | `server_id`, `remote_path`, `local_path` | **Télécharge** un fichier distant (BINAIRE) vers un chemin local (comparer/backup ciblé avant de pousser). `local_path` = machine hôte du MCP. |
@@ -158,6 +160,9 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
   vérifier l'intégrité d'un upload)
 - **Logs & archives** : `read_gz` (logs gzippés tournés), `list_archive` + `read_archive_entry`
   (fouiller un `.zip`/`.tar.gz` sans extraire) — utile pour diagnostiquer sur des logs/backups archivés
+- **Opérations faites par le serveur** (API REST du panel, le SFTP restant le transport) :
+  `compress_files` (archive `.zip` créée sur place), `extract_archive` (extraction sur place, repli
+  SFTP), `disk_usage` (ce qui occupe le disque, limite du serveur et de la MyBox)
 - **Démarrage / JVM** : `read_startup`, `set_startup_params` (mémoire, GC, Aikar…)
 - **Réglages du serveur** : `read_properties`, `set_property` (`server.properties` via l'API, sans SFTP)
 - **Mods & plugins** : `market_search`, `list_mod_versions`, `install_mod`, `list_installed_mods`,
@@ -175,7 +180,7 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
   (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
   `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `set_property`, `install_mod`,
-  `install_ficsit_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
+  `install_ficsit_mod`, `extract_archive`, `compress_files`, `create_snapshot`) sont refusés ; les outils de
   lecture/diagnostic restent disponibles. Idéal pour donner un accès *observation* sans risque.
 
 **Garde-fous by design :**

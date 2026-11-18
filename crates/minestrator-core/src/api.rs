@@ -15,6 +15,7 @@ use crate::models::{
     WsBulkData, WsCredentials, WsCredentialsData,
 };
 use crate::panel_schedules::{PanelSchedule, PanelScheduleInput, PanelTaskInput, SchedulesData};
+use crate::server_files::{self, CompressJob, DiskSpace, DiskUsage};
 use base64::Engine;
 use reqwest::{header, Response, StatusCode};
 use serde::de::DeserializeOwned;
@@ -730,6 +731,78 @@ impl ApiClient {
             &json!({ "task_ids": task_ids }),
         )
         .await
+    }
+
+    // --- Fichiers côté serveur (non documentés, cf. server_files.rs) ----------------------------
+
+    /// Plus grosses entrées d'un dossier (`GET /server/{id}/disk/usage?limit=&path=`).
+    pub async fn disk_usage(&self, token: &str, id: i64, path: &str, limit: u32) -> Result<DiskUsage> {
+        let query = server_files::disk_usage_query(path, limit);
+        let data: Value = self.get_query(token, &format!("/server/{id}/disk/usage"), &query).await?;
+        Ok(server_files::parse_disk_usage(&data, path))
+    }
+
+    /// Occupation comptée du disque d'un serveur (`GET /server/{id}/disk/total`), sans la limite.
+    pub async fn disk_total(&self, token: &str, id: i64) -> Result<DiskSpace> {
+        let data: Value = self.get(token, &format!("/server/{id}/disk/total")).await?;
+        Ok(server_files::parse_disk_total(&data))
+    }
+
+    /// Octets occupés par l'ensemble des serveurs d'une MyBox (`GET /mybox/{id}/disk`).
+    pub async fn mybox_disk(&self, token: &str, mybox_id: i64) -> Result<u64> {
+        let data: Value = self.get(token, &format!("/mybox/{mybox_id}/disk")).await?;
+        Ok(server_files::parse_mybox_disk(&data))
+    }
+
+    /// Lance une compression sur le serveur (`POST /server/{id}/files/compress/jobs`) : renvoie
+    /// le job créé, à suivre avec [`Self::compress_job`].
+    pub async fn compress_start(&self, token: &str, id: i64, body: &Value) -> Result<CompressJob> {
+        let data: Value = self.post_data(token, &format!("/server/{id}/files/compress/jobs"), body).await?;
+        CompressJob::from_value(&data)
+            .ok_or_else(|| Error::Unexpected("compression lancée sans identifiant de suivi".into()))
+    }
+
+    /// État d'un job de compression, en « long polling » : le serveur répond au changement d'état
+    /// ou au bout de `wait` secondes (comme le panel). Délai propre à la requête, au-delà de
+    /// l'attente annoncée : une réponse qui ne vient jamais ne bloque pas le suivi.
+    pub async fn compress_job(&self, token: &str, id: i64, job_id: i64) -> Result<CompressJob> {
+        let wait = server_files::JOB_WAIT_S;
+        let resp = self
+            .http
+            .get(format!("{API_BASE_URL}/server/{id}/files/compress/jobs/{job_id}"))
+            .header(header::AUTHORIZATION, Self::bearer(token))
+            .header(header::ACCEPT, "application/json")
+            .query(&[("wait", wait.to_string())])
+            .timeout(std::time::Duration::from_secs(wait + 25))
+            .send()
+            .await?;
+        let data = Self::read_envelope(resp)
+            .await?
+            .ok_or_else(|| Error::Unexpected("réponse sans champ `data`".into()))?;
+        CompressJob::from_value(&data)
+            .ok_or_else(|| Error::Unexpected("job de compression illisible".into()))
+    }
+
+    /// Derniers jobs de compression d'un serveur (`GET …/compress/jobs?limit=`).
+    pub async fn compress_jobs(&self, token: &str, id: i64, limit: u32) -> Result<Vec<CompressJob>> {
+        let data: Value = self
+            .get_query(token, &format!("/server/{id}/files/compress/jobs"), &[("limit", limit.to_string())])
+            .await?;
+        Ok(server_files::parse_jobs(&data))
+    }
+
+    /// Extrait une archive sur le serveur (`POST /server/{id}/files/extract`) ; l'appel rend la
+    /// main une fois l'extraction finie. Renvoie le `data` de la réponse (destination, ignorés).
+    pub async fn extract(&self, token: &str, id: i64, body: &Value) -> Result<Option<Value>> {
+        let resp = self
+            .http
+            .post(format!("{API_BASE_URL}/server/{id}/files/extract"))
+            .header(header::AUTHORIZATION, Self::bearer(token))
+            .header(header::ACCEPT, "application/json")
+            .json(body)
+            .send()
+            .await?;
+        Self::read_envelope(resp).await
     }
 
     /// Identifiants SFTP d'un serveur.

@@ -176,7 +176,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | GET | `/mybox/{id_mybox}/database/{id}/backups/{id}/download` | — | non testé |  |
 | POST | `/mybox/{id_mybox}/database/{id}/backups/{id}/restore` | — | écriture, non testé |  |
 | POST | `/mybox/{id_mybox}/database/{id}/pma-token` | — | écriture, non testé |  |
-| GET | `/mybox/{id_mybox}/disk` | — | ✓ GET |  |
+| GET | `/mybox/{id_mybox}/disk` | — | ✓ GET | `{ disk_servers, disk_servers_unit: "MB" }` : occupation de tous les serveurs de la MyBox, face au disque de l'offre. Utilisé par l'app. |
 | POST | `/mybox/{id_mybox}/free/renew` | — | écriture, non testé |  |
 | PATCH | `/mybox/{id_mybox}/name` | — | écriture, non testé |  |
 | POST | `/mybox/{id_mybox}/option` | — | écriture, non testé |  |
@@ -228,8 +228,8 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | Méthode | Chemin | Doc. | Clé API | Remarque |
 |---|---|---|---|---|
 | GET | `/server/{id_server}/files/bulk-upload-token` | — | non testé | Non testé : génère un jeton d'envoi. |
-| GET / POST | `/server/{id_server}/files/compress/jobs` | — | ✓ GET |  |
-| GET | `/server/{id_server}/files/compress/jobs/{id}` | — | non testé |  |
+| GET / POST | `/server/{id_server}/files/compress/jobs` | — | ✓ GET | Compression faite par le serveur. `POST` `{ path, files: [chemins depuis la racine, sans / initial], name: "x.zip", cwd, overwrite: false }` → job `{ id, status, progress: { queued, file_count, total_size, elapsed_s }, archive_path, partial, skipped_count, error_message, error_code }` ; refus `API_ZIP_EXISTS`, `API_ZIP_BUSY`. `GET ?limit=` : `{ jobs, count }`. Utilisé par l'app (`server_files.rs`). |
+| GET | `/server/{id_server}/files/compress/jobs/{id}` | — | non testé | Suivi d'un job en « long polling » : `?wait=20` (réponse au changement d'état ou après 20 s). `status` : `pending`, `running`, `completed`, `failed`. Utilisé par l'app. |
 | PATCH | `/server/{id_server}/files/content` | — | écriture, non testé | Écriture d'un fichier (corps non relevé). |
 | GET | `/server/{id_server}/files/content/{chemin}` | — | ✓ GET | Contenu d'un fichier : `{ content, encoding }`. |
 | POST | `/server/{id_server}/files/create/file` | — | écriture, non testé |  |
@@ -238,8 +238,8 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | POST | `/server/{id_server}/files/delete` | — | écriture, non testé |  |
 | GET | `/server/{id_server}/files/download/{chemin}` | — | non testé |  |
 | POST | `/server/{id_server}/files/exists` | — | ✓ POST | Corps `{ files: [chemins] }` → `{ exists: { chemin: bool } }`. |
-| POST | `/server/{id_server}/files/extract` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/files/gzread` | — | écriture, non testé |  |
+| POST | `/server/{id_server}/files/extract` | — | écriture, non testé | Corps `{ file: "dossier/a.zip", destination: "/dossier" }` → `{ destination, skipped }` (`skipped` : nombre ou objet de compteurs). Synchrone. Formats : zip, jar, tar.*, 7z, rar, mcworld… Utilisé par l'app (repli SFTP). |
+| POST | `/server/{id_server}/files/gzread` | — | écriture, non testé | Corps `{ file }` → `{ content, truncated }` : lecture décompressée d'un `.gz`. Non utilisé : l'app lit les `.gz` par SFTP. |
 | GET | `/server/{id_server}/files/list/{chemin}` | — | ✓ GET | API fichiers REST : liste d'un dossier (`{chemin}` vide = racine), sans SFTP. |
 | PUT | `/server/{id_server}/files/move` | — | écriture, non testé |  |
 | PATCH | `/server/{id_server}/files/rename` | — | écriture, non testé |  |
@@ -336,8 +336,8 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | Méthode | Chemin | Doc. | Clé API | Remarque |
 |---|---|---|---|---|
 | GET | `/server/{id_server}/activity` | — | ✓ GET |  |
-| GET | `/server/{id_server}/disk/total` | — | ✓ GET |  |
-| GET | `/server/{id_server}/disk/usage` | — | ✓ GET |  |
+| GET | `/server/{id_server}/disk/total` | — | ✓ GET | `total_bytes` = `raw_bytes` moins la franchise des fichiers du jeu (`base_game_bytes`, 500 Mo) quand `overhead_applied`. Utilisé par l'app ; la limite vient de `live/light` (`disk.limit`, Mio). |
+| GET | `/server/{id_server}/disk/usage` | — | ✓ GET | `?limit=` (20 par défaut) `&path=` (sans `/` initial ; racine si absent ; inexistant : `API_PATH_NOT_FOUND`) : plus grosses entrées du dossier, tailles récursives, triées par taille. Utilisé par l'app (« Espace disque », outil MCP `disk_usage`). |
 | GET | `/server/{id_server}/live` | ✓ | ✓ GET |  |
 | GET | `/server/{id_server}/live/light` | ✓ | ✓ GET |  |
 | GET | `/server/{id_server}/stats/{début}/{fin}` | — | ✓ GET | Historique sur une période : `{début}` et `{fin}` en ISO 8601 (`2026-11-18T15:00:04`). |

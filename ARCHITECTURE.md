@@ -136,6 +136,22 @@ Regroupés par domaine (liste réelle des fichiers).
 ### 3.2 Fichiers & monde Minecraft (au-dessus du SFTP)
 - **`archive`** — lecture **en mémoire** de `.zip`/`.tar`/`.tar.gz`/`.gz` (lister, extraire une entrée,
   extraction complète anti zip-slip / anti zip-bomb). Pur, synchrone, testable sans réseau.
+- **`server_files`** — opérations de fichiers **faites par le serveur** via l'API REST du panel
+  (endpoints non documentés, cf. §4.3). Principe : le **SFTP reste le transport** (session poolée,
+  flux binaire, reprise, pas de limite de débit de l'API) ; l'API ne sert qu'à ce que le SFTP ne sait
+  pas faire sur place. **Compression** : job asynchrone suivi en *long polling* (`follow_job`, borné,
+  annulable — seul le suivi s'arrête, l'API ne sait pas interrompre le job), archive conservée
+  (`server_compress`) ou **temporaire** pour un téléchargement (`run_sftp_download_zip` : archive
+  `minestrator-temp-<nom>-<horodatage>.zip` créée dans le dossier de la sélection, rapatriée par SFTP
+  avec reprise, puis supprimée — y compris après une annulation, une fois le job fini ; seules les
+  archives au préfixe temporaire sont supprimables). **Repli** sur l'archive construite par l'appareil
+  (`build_zip`, SFTP récursif) si l'API refuse ou si le job échoue (`fallback_on` : tout sauf une clé
+  refusée). **Extraction** (`extract_archive`) par le serveur (formats du panel : zip, tar.*, 7z, rar,
+  mcworld…), repli SFTP (`sftp_extract_archive`, `.zip`/`.tar`/`.tar.gz`, plafonné). **Espace disque**
+  (`disk_usage`, `disk_space`) : plus grosses entrées d'un dossier (tailles récursives calculées par le
+  serveur), occupation comptée face à la limite du serveur et au disque partagé de la MyBox. Le reste
+  du module est pur (chemins SFTP ↔ panel, corps de requête validés comme le panel, lecture tolérante,
+  choix serveur/repli) et testé sans réseau.
 - **`nbt`** — décodage NBT (`fastnbt`) `.dat`/`level.dat`/playerdata/`.schem` → arbre typé `NbtNode` + SNBT.
 - **`mca`** — validation/réparation des régions Anvil `.mca` (table de localisation, chunks corrompus).
 - **`world`** — outils monde de plus haut niveau (`inspect_region`, coordonnées de région, réparation).
@@ -311,6 +327,22 @@ les usages critiques gardent un **repli** sur le chemin éprouvé.
 en plus `history[]` (journal d'actions : date, IP, `is_staff`, `action`) et `ports[]` — pistes pour
 le « journal d'audit » du ROADMAP.
 
+### 4.3 Endpoints fichiers et disque du panel (non documentés)
+
+Format relevé dans le code public du panel web (2026-11-18) ; lectures vérifiées avec une clé API,
+écritures **non testées** contre l'API réelle (vrais serveurs de joueurs). Chemins du panel :
+relatifs à la racine du serveur, sans `/` initial (`world/region`), même racine que le SFTP.
+
+| Endpoint | Format | Usage dans le core |
+|---|---|---|
+| `POST /server/{id}/files/compress/jobs` | `{ path: dossier, files: [chemins depuis la racine], name: "x.zip", cwd: dossier, overwrite: false }` → job `{ id, status, progress: { queued, file_count, total_size, elapsed_s }, archive_path, partial, skipped_count, error_message, error_code }` ; refus `API_ZIP_EXISTS`, `API_ZIP_BUSY` | `server_files::compress_request`, `ApiClient::compress_start` |
+| `GET …/compress/jobs/{id}?wait=20` | même job ; le serveur ne répond qu'au changement d'état ou au bout de 20 s. `status` : `pending`, `running`, `completed`, `failed` | `follow_job` (90 appels ≈ 30 min, 10 échecs consécutifs tolérés) |
+| `GET …/compress/jobs?limit=5` | `{ jobs: [...], count }` (vérifié) | `Core::compress_jobs` (contrat surveillé) |
+| `POST /server/{id}/files/extract` | `{ file: "dossier/a.zip", destination: "/dossier" }` → `{ destination, skipped }` (`skipped` : nombre ou objet de compteurs) ; synchrone | `Core::extract_archive` (destination validée comme le panel : pas de `..`, noms réservés, 300 caractères) |
+| `GET /server/{id}/disk/usage?limit=&path=` | `{ analyzed_path: "/world", total_size, items_count, items: [{ path: "world/region", name, type: folder\|file, size }] }` trié par taille décroissante, tailles récursives (vérifié ; `path` sans `/` initial, racine si absent ; 20 entrées par défaut) | `Core::disk_usage` |
+| `GET /server/{id}/disk/total` | `{ total_bytes, raw_bytes, base_game_bytes, overhead_applied }` : `total = brut − franchise de 500 Mo` quand elle s'applique (vérifié) | `Core::disk_space` ; limite = `live/light` `disk.limit` (Mio, franchise comprise) |
+| `GET /mybox/{id}/disk` | `{ disk_servers, disk_servers_unit: "MB" }` : occupation de tous les serveurs (vérifié) | `Core::disk_space`, face au disque de l'offre (`disk_total`, Go) |
+
 **Séquence WebSocket (`console.rs`).** `get_server` → connexion `wss://…` avec `Origin` → `{"event":"auth","args":[token]}` → sur `auth success`, `send logs` (sauf mode monitor) + `send stats` → relais des events en `CoreEvent`. Sur `token expiring`/`token expired` : re-`get_server` et ré-`auth` avec le token frais. `Ping`→`Pong`. Sur close/erreur : **reconnexion à backoff** (1 s → ×2 → **30 s max**), remis à 1 s si la session a tenu ≥ 30 s (jugée saine). Une **connexion monitor** (superviseur) ne demande pas les logs et ne relaie pas `console output` : elle ne pousse que stats/status et repère les lignes WARN/ERROR pour le Copilote.
 
 **Envoi via REST, WS en lecture seule.** Commandes et power actions passent par les endpoints REST
@@ -336,7 +368,8 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Serveurs** | `list_servers`, `server_details`, `live_light`, `server_activity` (journal d'audit), `live_players_bulk` (joueurs de N serveurs en 1 appel), `list_eggs`, `metrics_history`, `get_startup`/… |
 | **Console / power** | `console_logs`, `power_action`, `send_command`, `console_connect`, `console_disconnect` |
 | **Joueurs** | `player_action` (kick / ban / unban / op_add·remove / whitelist_add·remove) |
-| **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |
+| **SFTP & fichiers** | `sftp_list/read_text/write_text/mkdir/delete/rename`, transferts `sftp_upload/download/download_zip` (archive construite par le serveur, repli local), `cancel_transfer`, archives/NBT/MCA `sftp_archive_*`, `sftp_gz_text`, `sftp_read_data_uri`, `sftp_nbt_tree/snbt`, `sftp_region_chunk*`, `sftp_inspect_region`, `sftp_search`, `sftp_disconnect` |
+| **Fichiers côté serveur** | `server_compress` (archive conservée, tâche de fond), `server_extract`, `disk_usage`, `disk_space` ; mobile en plus : `server_compress_temp` + `remove_temp_archive` (téléchargement d'un dossier) |
 | **Backups / snapshots** | `list_backups`, `restore_backup`, `list_snapshots`, `create_snapshot`, `restore_snapshot`, `delete_snapshot` |
 | **Marketplace** | `market_minecraft_versions`, `market_list`, `market_versions`, `install_mod`, `installed_mods`, `installed_plugins` |
 | **Copilote / chat** | `copilot_apply`, `copilot_diagnose_now`, `copilot_analyze`, `copilot_performance`, `chat_send`, `chat_reset`, `chat_warm`, `has/set/clear_copilot_key` |
@@ -368,7 +401,7 @@ observer le même serveur indépendamment.
 | `copilot://progress` | `{ id, phase }` | log de progression |
 | `copilot://diagnosis` | `Diagnosis` (cause, fix, actions proposées) | rapport + **notif native** |
 | `chat://delta` | `{ id = session_id, text }` | streaming des réponses assistant |
-| `sftp://progress` | `{ id = transferId, name, direction, done, total, status, error }` | gestionnaire de transferts |
+| `sftp://progress` | `{ id = transferId, name, direction, done, total, status, error, phase, files, skipped }` (`direction` : `up`, `down`, `server` ; `phase` : `queued`, `compressing`, `extracting`, `downloading`, `local_zip`, `cleanup`, en fin `still_running`) | gestionnaire de transferts (y compris compression et extraction faites par le serveur) |
 | `mods://install-progress` | `ModInstallProgress` (`{ id, phase, mod_name, done, total, status, error }`) | suivi d'une installation de mods par lot |
 | `account://switched` | `AccountSwitch` (`{ previous, current }`, `current = null` : plus aucun compte) | toutes les fenêtres ferment les onglets serveurs et se rechargent sur le nouveau compte |
 
@@ -439,7 +472,9 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   (`settings/AccountsSection.svelte`, section mémorisée par `settings/nav.svelte.ts`, partagé avec la palette).
 - **Vues** (`src/lib/components/views/`) — `ServerOverview` (jauges + graphes d'historique +
   `UptimeCard` : disponibilité 24 h / 7 j / 30 j et coupures), `ConsoleView`
-  (xterm + envoi de commandes), `SftpView` (+ `FileEditor` CodeMirror, archives, NBT, `.mca`), `PlayersView`,
+  (xterm + envoi de commandes), `SftpView` (+ `FileEditor` CodeMirror, archives, NBT, `.mca`,
+  compression/extraction par le serveur, `DiskUsagePanel` « Espace disque », ouvrable aussi depuis
+  l'Aperçu via `sftp/diskRequest.svelte.ts`), `PlayersView`,
   `MarketplaceView` (mods/plugins), `AssistantView` (chat Copilote streamé), `BackupsView`
   (backups + snapshots), `AutomationsView` (redémarrage automatique, tâches planifiées, historique
   d'exécution — en précisant qu'elles tournent sur cet ordinateur, pas sur le panel web),

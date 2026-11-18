@@ -41,6 +41,7 @@ mod perf;
 mod persist;
 mod redact;
 mod secrets;
+mod server_files;
 pub mod service;
 mod sftp;
 mod store;
@@ -92,6 +93,9 @@ pub use models::{
     ServerProperties, ServersOverview,
     SftpEntry, SftpHostKey,
     Snapshot, Startup, UserNotification, UserProfile,
+};
+pub use server_files::{
+    CompressJob, CompressOutcome, DiskSpace, DiskUsage, DiskUsageItem, ExtractOutcome, MyBoxDisk,
 };
 pub use service::{ServiceOverview, ServiceStatus};
 pub use store::{MetricSample, StoredAlert};
@@ -1482,6 +1486,7 @@ impl Core {
                     total,
                     status: "active".into(),
                     error: None,
+                    ..Default::default()
                 }));
             }
         };
@@ -1521,6 +1526,7 @@ impl Core {
                     total,
                     status: "active".into(),
                     error: None,
+                    ..Default::default()
                 }));
             }
         };
@@ -1561,6 +1567,61 @@ impl Core {
     pub fn cancel_transfer(&self, tid: &str) {
         if let Some(flag) = self.transfer_cancels.lock().unwrap().get(tid) {
             flag.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Publie le drapeau d'annulation d'un transfert le temps de son exécution.
+    fn register_cancel(&self, tid: &str) -> Arc<std::sync::atomic::AtomicBool> {
+        let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.transfer_cancels
+            .lock()
+            .unwrap()
+            .insert(tid.to_string(), cancel.clone());
+        cancel
+    }
+
+    fn unregister_cancel(&self, tid: &str) {
+        self.transfer_cancels.lock().unwrap().remove(tid);
+    }
+
+    /// Télécharge `remote` vers `local` en **reprenant à l'offset** si la session meurt en route
+    /// (pendant de [`Self::upload_with_resume`]). La source de vérité de la reprise est ce que le
+    /// fichier local contient réellement.
+    pub(crate) async fn download_with_resume(
+        &self,
+        id: i64,
+        remote: &str,
+        local: &str,
+        on: &mut impl FnMut(u64, u64),
+        cancel: &std::sync::atomic::AtomicBool,
+    ) -> Result<()> {
+        const MAX_RESUMES: u32 = 5;
+        let token = self.token()?;
+        let mut dst = tokio::fs::File::create(local)
+            .await
+            .map_err(|e| Error::Unexpected(format!("écriture locale: {e}")))?;
+        let mut start = 0u64;
+        let mut resumes = 0u32;
+        loop {
+            let conn = self.sftp.ensure(&self.api, &token, id).await?;
+            match sftp::download_from(&conn, remote, &mut dst, start, on, cancel).await {
+                Ok(_) => return Ok(()),
+                Err(e) if cancel.load(std::sync::atomic::Ordering::Relaxed) => return Err(e),
+                Err(e) if sftp::is_session_dead(&e) && resumes < MAX_RESUMES => {
+                    resumes += 1;
+                    self.sftp.drop_session(id);
+                    tracing::warn!(server = id, remote, resumes, "session SFTP perdue pendant le téléchargement : reprise à l'offset");
+                    use tokio::io::AsyncWriteExt;
+                    let _ = dst.flush().await;
+                    start = dst.metadata().await.map(|m| m.len()).unwrap_or(0);
+                }
+                Err(e) => {
+                    if sftp::is_session_dead(&e) {
+                        self.sftp.drop_session(id);
+                    }
+                    return Err(e);
+                }
+            }
         }
     }
 
@@ -1623,14 +1684,16 @@ impl Core {
         }
     }
 
-    /// Télécharge un fichier distant vers `local` (transfert suivi).
+    /// Télécharge un fichier distant vers `local` (transfert suivi, annulable, avec reprise).
     pub async fn run_sftp_download(&self, id: i64, remote: &str, local: &str, tid: &str) {
         let name = base_name(remote);
         let tx = self.events.clone();
         let (tid_s, name_s) = (tid.to_string(), name.clone());
         let mut last = 0u64;
         let mut on = move |done: u64, total: u64| {
-            if done == total || done - last >= PROGRESS_STEP {
+            // `saturating_sub` : après une reprise, l'avancement repart de ce que le fichier local
+            // contient réellement.
+            if done == total || done.saturating_sub(last) >= PROGRESS_STEP {
                 last = done;
                 let _ = tx.send(CoreEvent::SftpProgress(SftpProgress {
                     id: tid_s.clone(),
@@ -1640,35 +1703,18 @@ impl Core {
                     total,
                     status: "active".into(),
                     error: None,
+                    ..Default::default()
                 }));
             }
         };
-        let res = async {
-            let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
-            let r = sftp::download(&conn, remote, local, &mut on).await;
-            self.drop_on_err(id, r)
-        }
-        .await;
+        let cancel = self.register_cancel(tid);
+        let res = self.download_with_resume(id, remote, local, &mut on, &cancel).await;
+        self.unregister_cancel(tid);
         self.emit_transfer_end(tid, &name, "down", res.err());
     }
 
-    /// Télécharge une sélection (fichiers et/ou dossiers, frères sous un même parent) en UN `.zip`
-    /// local, construit côté client (SFTP récursif). Transfert suivi (progression par octets).
-    pub async fn run_sftp_download_zip(&self, id: i64, paths: Vec<String>, local_zip: &str, tid: &str) {
-        let name = base_name(local_zip);
-        let _ = self.events.send(CoreEvent::SftpProgress(SftpProgress {
-            id: tid.to_string(),
-            name: name.clone(),
-            direction: "down".into(),
-            done: 0,
-            total: 0,
-            status: "active".into(),
-            error: None,
-        }));
-        let res = self.build_zip(id, &paths, local_zip, tid, &name).await;
-        self.emit_transfer_end(tid, &name, "down", res.err());
-    }
-
+    /// Archive `.zip` construite **par l'appareil** (SFTP récursif) : repli du téléchargement
+    /// groupé quand le serveur ne peut pas compresser (voir `server_files`).
     async fn build_zip(
         &self,
         id: i64,
@@ -1676,8 +1722,17 @@ impl Core {
         local_zip: &str,
         tid: &str,
         name: &str,
+        cancel: &std::sync::atomic::AtomicBool,
     ) -> Result<()> {
         use std::io::Write;
+        let _ = self.events.send(CoreEvent::SftpProgress(SftpProgress {
+            id: tid.to_string(),
+            name: name.to_string(),
+            direction: "down".into(),
+            status: "active".into(),
+            phase: Some("local_zip".into()),
+            ..Default::default()
+        }));
         let conn = self.sftp.ensure(&self.api, &self.token()?, id).await?;
         let parent = paths.first().map(|p| parent_dir(p)).unwrap_or_else(|| "/".to_string());
         // Collecte des fichiers : (chemin distant complet, nom dans le zip, taille).
@@ -1702,6 +1757,9 @@ impl Core {
         let tx = self.events.clone();
         let mut done = 0u64;
         for (full, rel, size) in items {
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                return Err(Error::Unexpected("Transfert annulé.".into()));
+            }
             zip.start_file(&rel, opts).map_err(|e| Error::Unexpected(format!("zip: {e}")))?;
             let bytes = self.drop_on_err(id, sftp::read_bytes(&conn, &full, u64::MAX).await)?;
             zip.write_all(&bytes).map_err(|e| Error::Unexpected(format!("zip: {e}")))?;
@@ -1714,6 +1772,8 @@ impl Core {
                 total,
                 status: "active".into(),
                 error: None,
+                phase: Some("local_zip".into()),
+                ..Default::default()
             }));
         }
         zip.finish().map_err(|e| Error::Unexpected(format!("zip: {e}")))?;
@@ -1733,6 +1793,7 @@ impl Core {
             total: 0,
             status: status.to_string(),
             error,
+            ..Default::default()
         }));
     }
 
