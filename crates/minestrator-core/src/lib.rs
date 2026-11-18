@@ -25,6 +25,7 @@ mod error;
 mod events;
 mod factorio;
 mod ficsit;
+mod fleet;
 mod games;
 mod history;
 mod llm;
@@ -332,11 +333,12 @@ impl Core {
         tool: &str,
         args: serde_json::Value,
     ) -> Result<String> {
-        // Gestion de l'infrastructure (créer, redimensionner, supprimer des serveurs…) : jamais
-        // par le Copilote, qui lit du contenu non fiable (chat des joueurs). MCP local et app seulement.
+        // Gestion de l'infrastructure (créer, redimensionner, supprimer des serveurs…) et actions sur
+        // plusieurs serveurs (copie, commande groupée) : jamais par le Copilote, qui lit du contenu
+        // non fiable (chat des joueurs) et n'agit que sur un serveur. MCP local et app seulement.
         if mcp::INFRA_TOOLS.contains(&tool) {
             return Err(Error::Invalid(format!(
-                "« {tool} » gère l'infrastructure MyBox : action réservée à l'app et au serveur MCP local."
+                "« {tool} » agit sur l'infrastructure MyBox ou sur plusieurs serveurs : action réservée à l'app et au serveur MCP local."
             )));
         }
         let args = copilot::prepare_action_args(server_id, tool, args);

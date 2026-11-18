@@ -1427,8 +1427,9 @@ async fn chat_http(
                     .await
                     .unwrap_or_else(|e| format!("Erreur outil : {e}"))
             } else if crate::mcp::INFRA_TOOLS.contains(&call.name.as_str()) {
-                // Hors de son catalogue : le Copilote ne gère jamais l'infrastructure MyBox.
-                "Action refusée : la gestion des MyBox est réservée à l'app et au serveur MCP local.".to_string()
+                // Hors de son catalogue : le Copilote ne gère jamais l'infrastructure MyBox ni
+                // n'agit sur plusieurs serveurs.
+                "Action refusée : infrastructure MyBox et actions sur plusieurs serveurs réservées à l'app et au serveur MCP local.".to_string()
             } else if autonomous && is_write_tool(&call.name) {
                 let args = prepare_action_args(server_id, &call.name, call.input.clone());
                 mcp::dispatch(core, &call.name, args)

@@ -138,6 +138,9 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "parse_spark_report",
     "diagnose_startup",
     "inspect_region",
+    // Plusieurs serveurs (fleet.rs) : lectures qui peuvent déborder du serveur de la session.
+    "diff_files",
+    "find_player",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -176,6 +179,9 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "mybox_pause_server",
     "mybox_reorder_servers",
     "mybox_delete_server",
+    // Plusieurs serveurs (fleet.rs, voir INFRA_TOOLS) : jamais proposés au Copilote.
+    "copy_between_servers",
+    "broadcast_command",
 ];
 
 /// Outils modifiants qui gèrent l'**infrastructure** (création, redimensionnement, pause,
@@ -190,6 +196,10 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     "mybox_pause_server",
     "mybox_reorder_servers",
     "mybox_delete_server",
+    // Plusieurs serveurs (fleet.rs) : agissent au-delà du serveur du Copilote (copie entre
+    // serveurs, commande groupée) → réservés eux aussi à l'app et au MCP local.
+    "copy_between_servers",
+    "broadcast_command",
 ];
 
 /// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
@@ -275,6 +285,9 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "ficsit_search",
     "ficsit_versions",
     "install_ficsit_mod",
+    // Plusieurs serveurs (fleet.rs) : comparaison et recherche de joueur, hors catalogue de l'officiel.
+    "diff_files",
+    "find_player",
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -1126,6 +1139,12 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             ))
         }
 
+        // --- Plusieurs serveurs (fleet.rs) : validation et rendu dans le module ---------
+        "copy_between_servers" => crate::fleet::copy_tool(core, &args).await.map_err(es),
+        "diff_files" => crate::fleet::diff_tool(core, &args).await.map_err(es),
+        "find_player" => crate::fleet::find_player_tool(core, &args).await.map_err(es),
+        "broadcast_command" => crate::fleet::broadcast_tool(core, &args).await.map_err(es),
+
         _ => Err(format!("outil inconnu : {name}")),
     }
 }
@@ -1200,6 +1219,11 @@ fn build_tool_list() -> Value {
         tool("ficsit_search", "Cherche des mods SATISFACTORY dans le catalogue ficsit.app (SMR). `query` vide = parcours trié. `order_by` ∈ popularity|hotness|downloads|last_version_date|name (défaut popularity). Renvoie id, mod_reference, name, downloads. À réserver aux serveurs Satisfactory (pas Minecraft).", obj(&[("query", prop_str("Recherche par nom (optionnel, ≥ 3 car.)")), ("order_by", prop_str("Tri (défaut popularity)")), ("page", prop_int("Page (défaut 1)"))], &[])),
         tool("ficsit_versions", "Versions d'un mod Satisfactory (par son `mod_id` ficsit, renvoyé par ficsit_search) : `id` de version + contrainte SML + dépendances — nécessaires pour installer.", obj(&[("mod_id", prop_str("id ficsit du mod"))], &["mod_id"])),
         tool("install_ficsit_mod", "Installe un mod SATISFACTORY : télécharge le mod + SML + dépendances (cible LinuxServer) et les écrit dans Mods/ via SFTP, avec ARRÊT puis REDÉMARRAGE automatiques du serveur. `reference` = mod_reference, `version_id` via ficsit_versions. ✎ (modifiant — redémarre le serveur)", obj(&[("server_id", prop_int("ID du serveur")), ("reference", prop_str("mod_reference du mod")), ("version_id", prop_str("ID de la version à installer"))], &["server_id", "reference", "version_id"])),
+        // --- Plusieurs serveurs (fleet.rs) ---------------------------------------------------
+        tool("copy_between_servers", "COPIE des fichiers ou dossiers d'un serveur vers un autre (ou vers un autre dossier du même serveur) : récursif, en flux, rien d'entier en mémoire. Chaque source arrive dans `target_dir` sous son nom (`/plugins/Essentials` → `<target_dir>/Essentials`) ; le dossier cible est créé au besoin. N'écrase JAMAIS un fichier existant sans `overwrite=true` (il est ignoré et listé) ; ne remplace jamais un dossier par un fichier ni l'inverse ; refuse la racine `/` comme source et la copie d'un chemin sur lui-même ou dans lui-même. `strategy` : `files` = fichier par fichier (plafonds 5000 fichiers, 2 Gio), `archive` = compression par le serveur source, transfert de l'archive (8 Gio au plus), extraction par le serveur cible, puis suppression des archives temporaires des deux côtés même en cas d'échec (sources d'un même dossier ; destination existante seulement avec overwrite=true), `auto` (défaut) = archive au-delà de 300 fichiers ou 200 Mio quand c'est possible. Vérifie la place disque de la cible avant. Rapport : fichiers copiés, octets, fichiers ignorés et pourquoi, durée. Peut être long pour un gros monde. ✎ (modifiant)", obj(&[("source_server_id", prop_int("ID du serveur source")), ("source_paths", prop_str_array("Chemins absolus à copier (fichiers ou dossiers, 50 au plus), ex. [\"/world\"]")), ("target_server_id", prop_int("ID du serveur cible (peut être le même)")), ("target_dir", prop_str("Dossier cible, ex. `/` ou `/plugins`")), ("overwrite", prop_bool("Remplacer les fichiers déjà présents (défaut false)")), ("strategy", prop_str("auto (défaut) | files | archive"))], &["source_server_id", "source_paths", "target_server_id", "target_dir"])),
+        tool("diff_files", "COMPARE un fichier ou un dossier entre deux serveurs, ou deux chemins d'un même serveur (A = `server_id`/`path`, référence ; B = `other_server_id`/`other_path`, par défaut le même serveur ou le même chemin). Fichiers texte : diff unifié avec contexte (B par rapport à A, 400 lignes au plus). Binaires ou > 1 Mio : signalés sans diff. Dossiers : ajoutés, absents, modifiés (taille, date), type différent ; premier niveau, ou `recursive=true` (5000 entrées par côté au plus). Secrets des configs masqués ([SECRET]). Lecture seule ; peut lire un autre serveur que celui de la session.", obj(&[("server_id", prop_int("ID du serveur A (référence)")), ("path", prop_str("Chemin sur A")), ("other_server_id", prop_int("ID du serveur B (défaut : le même que A)")), ("other_path", prop_str("Chemin sur B (défaut : le même que sur A)")), ("recursive", prop_bool("Dossiers : descendre dans les sous-dossiers (défaut false)")), ("context_lines", prop_int("Lignes de contexte du diff (défaut 3, max 10)"))], &["server_id", "path"])),
+        tool("find_player", "RETROUVE un joueur Minecraft (Java) sur TOUS les serveurs du compte : pseudo exact, début de pseudo (2 caractères au moins), UUID, ou alias d'anonymisation (`joueur-xxxxxx`). Pour chaque serveur où il est déjà venu : connecté ou non, dernière venue, temps de jeu cumulé, op/whitelist/banni ; serveurs non fouillés (autres jeux, indisponibles) listés avec la raison. Pseudos remplacés par des alias stables si l'anonymisation IA est active (comme list_players). Lecture seule ; parcourt aussi d'autres serveurs que celui de la session.", obj(&[("query", prop_str("Pseudo, début de pseudo, UUID ou alias")), ("exact", prop_bool("Pseudo exact seulement (défaut false : début de pseudo)")), ("server_ids", json!({ "type": "array", "items": { "type": "integer" }, "description": "Restreindre à ces serveurs (défaut : tous)" })), ("limit", prop_int("Joueurs détaillés (défaut 10, max 25)"))], &["query"])),
+        tool("broadcast_command", "ENVOIE la même commande console à plusieurs serveurs par l'API (REST), avec un résultat serveur par serveur. Cibles : `server_ids` (20 au plus), OU `all_running=true` pour tous les serveurs démarrés — jamais déduit d'une liste vide. Par défaut seulement les serveurs démarrés (`only_running`, défaut true) ; un état illisible n'est pas envoyé. Commande non vide, sur une seule ligne. Sa sortie se lit ensuite avec read_console. ✎ (modifiant)", obj(&[("command", prop_str("Commande console (une ligne), ex. `say Redémarrage dans 5 min`")), ("server_ids", json!({ "type": "array", "items": { "type": "integer" }, "description": "Serveurs visés (20 au plus)" })), ("all_running", prop_bool("true = tous les serveurs démarrés (sans server_ids)")), ("only_running", prop_bool("Ignorer les serveurs non démarrés (défaut true)"))], &["command"])),
     ])
 }
 
@@ -1603,5 +1627,39 @@ mod tests {
         assert!(cache_ttl("analyze_performance").is_none());
         assert!(cache_ttl("install_mod").is_none());
         assert!(cache_ttl("server_metrics").is_none());
+    }
+
+    // --- Plusieurs serveurs (fleet.rs) ---
+
+    #[test]
+    fn fleet_tools_are_classified_and_kept_from_the_copilot() {
+        // Copie et commande groupée : modifiantes, et jamais au Copilote (INFRA_TOOLS).
+        for w in ["copy_between_servers", "broadcast_command"] {
+            assert!(is_write_tool(w) && WRITE_TOOLS.contains(&w), "{w} doit être modifiant");
+            assert!(INFRA_TOOLS.contains(&w), "{w} hors de portée du Copilote");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&w));
+        }
+        // Comparaison et recherche : lectures, exclusives (gardées face au MCP officiel).
+        for r in ["diff_files", "find_player"] {
+            assert!(!is_write_tool(r) && READ_TOOLS.contains(&r), "{r} doit être en lecture");
+            assert!(LOCAL_KEEP_TOOLS.contains(&r) && !INFRA_TOOLS.contains(&r));
+        }
+        for t in ["copy_between_servers", "broadcast_command", "diff_files", "find_player"] {
+            assert!(tool_for_game(t, "minecraft") && tool_for_game(t, "satisfactory"), "{t} universel");
+            assert!(cache_ttl(t).is_none(), "{t} jamais caché");
+        }
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        assert_eq!(
+            schema("copy_between_servers")["required"],
+            json!(["source_server_id", "source_paths", "target_server_id", "target_dir"])
+        );
+        assert_eq!(schema("copy_between_servers")["properties"]["source_paths"]["type"], "array");
+        assert_eq!(schema("diff_files")["required"], json!(["server_id", "path"]));
+        assert_eq!(schema("find_player")["required"], json!(["query"]));
+        // « Tous » n'est pas une valeur par défaut : seule la commande est requise, la cible est
+        // validée à part (server_ids OU all_running=true).
+        assert_eq!(schema("broadcast_command")["required"], json!(["command"]));
+        assert_eq!(schema("broadcast_command")["properties"]["server_ids"]["items"]["type"], "integer");
     }
 }

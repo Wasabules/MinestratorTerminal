@@ -242,6 +242,15 @@ Regroupés par domaine (liste réelle des fichiers).
   Streamable HTTP stateless, `Bearer <clé API>`) : une centaine d'outils de gestion (107 annoncés fin
   2026, cf. minestrator.com/connecter/votre/ia) délégués à l'hôte. Notre MCP local
   garde le SFTP fin + les outils exclusifs (`inspect_region`, Spark, docteur démarrage).
+- **`fleet`** — outils MCP **« Plusieurs serveurs »** : copie de serveur à serveur
+  (`copy_between_servers` : fichier par fichier en flux SFTP, ou archive compressée par le serveur
+  source, transférée, extraite par la cible dans un dossier de transit puis mise en place, avec
+  nettoyage des deux côtés même en cas d'échec), comparaison (`diff_files` : diff unifié via
+  `similar`, filtré par `redact` ligne par ligne ; listings de dossiers), recherche d'un joueur sur
+  tout le compte (`find_player` : `live_players_bulk` + listes de `players`), commande groupée
+  (`broadcast_command`, REST). Partie pure (validation, plan de copie et collisions, stratégie,
+  comparaison, fusion des joueurs, ciblage) testée sans réseau ; les deux outils modifiants sont
+  dans `INFRA_TOOLS` (jamais au Copilote).
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app
@@ -598,7 +607,7 @@ menu Afficher/Quitter + clic gauche = réafficher. Notifications natives pour al
 pas `aws-lc-rs`, qui exige CMake/NASM) **/ `russh-sftp` 3** ; **`rusqlite` 0.43 *bundled*** +
 `directories` ; **`chrono`** (`clock` : heure locale du planificateur d'automatisations, déjà
 présent via `russh-sftp`) ; **`prost` 0.13** (rapport Spark) ; `flate2`/`tar`/`zip` 9 (deflate **pur Rust**) ;
-**`fastnbt`** ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 4** par OS
+**`fastnbt`** ; `similar` (diff de `diff_files`, Apache-2.0) ; `thiserror` ; `tracing` + `tracing-subscriber`/`tracing-appender` (journaux). **`keyring` 4** par OS
 (`windows-native` / `apple-native` / `zbus-secret-service`), **`android-native-keyring-store`** +
 `keyring-core` sur Android (Keystore). **`ts-rs` 12** *optionnel* (feature `ts`,
 génération des bindings TypeScript uniquement).

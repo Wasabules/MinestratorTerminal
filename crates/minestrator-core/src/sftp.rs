@@ -781,6 +781,119 @@ pub async fn remove_recursive(conn: &SftpConn, dir: &str) -> Result<()> {
     conn.sftp.remove_dir(dir).await.map_err(sftp_err)
 }
 
+// --- Plusieurs serveurs (fleet.rs) : sonde, parcours typé, copie de serveur à serveur ----------
+
+/// Nature d'une entrée distante. Les liens symboliques et fichiers spéciaux (`Other`) ne sont
+/// jamais suivis par un parcours : il ne sort pas de l'arborescence demandée.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EntryKind {
+    File,
+    Dir,
+    Other,
+}
+
+/// Entrée d'une arborescence distante (chemin complet).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TreeEntry {
+    pub path: String,
+    pub kind: EntryKind,
+    pub size: u64,
+    /// Date de modification (secondes Unix), si le serveur la donne.
+    pub modified: Option<i64>,
+}
+
+/// Nature d'une entrée d'après ses bits de type (`S_IFMT`). Les assistants de `russh-sftp`
+/// (`is_regular`, `is_dir`) testent une inclusion de bits : un lien symbolique y passerait pour un
+/// fichier. Sans permissions renvoyées : fichier, comme le reste du module.
+fn entry_kind(permissions: Option<u32>) -> EntryKind {
+    match permissions.map(|p| p & 0o170_000) {
+        Some(0o040_000) => EntryKind::Dir,
+        Some(0o100_000) | None => EntryKind::File,
+        Some(_) => EntryKind::Other,
+    }
+}
+
+fn tree_entry(path: String, meta: &russh_sftp::protocol::FileAttributes) -> TreeEntry {
+    TreeEntry {
+        path,
+        kind: entry_kind(meta.permissions),
+        size: meta.size.unwrap_or(0),
+        modified: meta.mtime.map(|m| m as i64),
+    }
+}
+
+/// État d'un chemin distant ; `None` s'il n'existe pas (toute autre erreur remonte).
+pub async fn probe(conn: &SftpConn, path: &str) -> Result<Option<TreeEntry>> {
+    use russh_sftp::client::error::Error as SftpError;
+    match conn.sftp.metadata(path).await {
+        Ok(meta) => Ok(Some(tree_entry(path.to_string(), &meta))),
+        Err(SftpError::Status(s)) if s.status_code == russh_sftp::protocol::StatusCode::NoSuchFile => Ok(None),
+        Err(e) => Err(sftp_err(e)),
+    }
+}
+
+/// Entrées SOUS `root` (pas `root` lui-même), dossiers compris, sans suivre les liens ;
+/// récursif ou non. Borné à `max_entries` : renvoie `(entrées, tronqué)`. Un dossier illisible
+/// est une erreur : une copie ou une comparaison partielle passerait pour complète.
+pub async fn walk_tree(
+    conn: &SftpConn,
+    root: &str,
+    recursive: bool,
+    max_entries: usize,
+) -> Result<(Vec<TreeEntry>, bool)> {
+    let mut out = Vec::new();
+    let mut stack = vec![root.to_string()];
+    while let Some(dir) = stack.pop() {
+        for entry in conn.sftp.read_dir(&dir).await.map_err(sftp_err)? {
+            let name = entry.file_name();
+            if name == "." || name == ".." {
+                continue;
+            }
+            if out.len() >= max_entries {
+                return Ok((out, true));
+            }
+            let e = tree_entry(join(&dir, &name), &entry.metadata());
+            if recursive && e.kind == EntryKind::Dir {
+                stack.push(e.path.clone());
+            }
+            out.push(e);
+        }
+    }
+    Ok((out, false))
+}
+
+/// Bloc des copies de serveur à serveur (plus grand que [`CHUNK`] : le débit prime).
+const COPY_CHUNK: usize = 256 * 1024;
+
+/// Copie **en flux** un fichier d'une session SFTP vers une autre (ou la même) : un bloc à la
+/// fois, jamais tout le fichier en mémoire. Crée ou tronque `dst_path`. Renvoie les octets copiés.
+pub async fn copy_file(src: &SftpConn, src_path: &str, dst: &SftpConn, dst_path: &str) -> Result<u64> {
+    let mut input = src.sftp.open(src_path).await.map_err(sftp_err)?;
+    let mut output = dst.sftp.create(dst_path).await.map_err(sftp_err)?;
+    let mut buf = vec![0u8; COPY_CHUNK];
+    let mut done = 0u64;
+    loop {
+        let n = input
+            .read(&mut buf)
+            .await
+            .map_err(|e| Error::Unexpected(format!("lecture SFTP: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        output
+            .write_all(&buf[..n])
+            .await
+            .map_err(|e| Error::Unexpected(format!("écriture SFTP: {e}")))?;
+        done += n as u64;
+    }
+    output
+        .flush()
+        .await
+        .map_err(|e| Error::Unexpected(format!("flush SFTP: {e}")))?;
+    let _ = output.shutdown().await;
+    Ok(done)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -852,5 +965,15 @@ mod tests {
         assert!(!shown.contains("motdepasse-secret"), "{shown}");
         assert!(shown.contains("<masqué>"));
         assert!(format!("{:?}", creds("")).contains("<absent>"));
+    }
+
+    #[test]
+    fn entry_kind_reads_the_type_bits_not_an_inclusion() {
+        assert_eq!(entry_kind(Some(0o040_755)), EntryKind::Dir);
+        assert_eq!(entry_kind(Some(0o100_644)), EntryKind::File);
+        // Lien symbolique (0o120000) : contient les bits d'un fichier, mais n'en est pas un.
+        assert_eq!(entry_kind(Some(0o120_777)), EntryKind::Other);
+        assert_eq!(entry_kind(Some(0o060_644)), EntryKind::Other, "périphérique bloc");
+        assert_eq!(entry_kind(None), EntryKind::File);
     }
 }
