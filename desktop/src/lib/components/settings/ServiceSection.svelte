@@ -253,11 +253,9 @@
   }
   h2 {
     margin: 26px 0 12px;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .desc {
     font-size: 13px;
@@ -273,7 +271,7 @@
   }
   .label {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 700;
     flex-shrink: 0;
   }
   .val {
@@ -314,7 +312,7 @@
     margin: 4px 0 0;
   }
   .note-title {
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text);
   }
   .actions {

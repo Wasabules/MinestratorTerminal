@@ -207,18 +207,28 @@
   });
 
   async function init() {
+    // La police embarquée doit être chargée avant que xterm mesure ses cellules, sinon il
+    // les calcule sur la police de repli et le texte se décale une fois la vraie police prête.
+    try {
+      await document.fonts.load('13px "JetBrains Mono Variable"');
+    } catch {
+      /* police indisponible : xterm prend la police de repli */
+    }
+    if (destroyed) return;
     term = new Terminal({
       convertEol: true,
       cursorBlink: false,
       disableStdin: true,
-      fontFamily: 'ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, monospace',
+      fontFamily: '"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code", Consolas, monospace',
       fontSize: 13,
       scrollback: MAX_BUFFER,
+      // Canvas : les variables CSS n'y passent pas, d'où les valeurs de la charte en dur
+      // (fond de la barre d'onglets, texte, vert « en ligne »).
       theme: {
-        background: '#0b0f11',
-        foreground: '#d6e2e6',
-        cursor: '#009b72',
-        selectionBackground: '#264b40',
+        background: '#0d1113',
+        foreground: '#e4ebe8',
+        cursor: '#5fd68c',
+        selectionBackground: '#1f4a33',
       },
     });
     fit = new FitAddon();
@@ -405,7 +415,7 @@
   }
 </script>
 
-<div class="console">
+<div class="console force-dark">
   <div class="statusbar">
     <div class="sb-left">
       <span class="chip"><span class="dot" style="background: {phaseColor}"></span>{t(`console.${phase}`)}</span>
@@ -485,7 +495,7 @@
     height: 100%;
     display: flex;
     flex-direction: column;
-    background: #0b0f11;
+    background: var(--chrome);
     overflow: hidden;
   }
   .statusbar {
@@ -494,7 +504,7 @@
     justify-content: space-between;
     gap: 12px;
     padding: 8px 14px;
-    border-bottom: 1px solid #1c2429;
+    border-bottom: 1px solid var(--border);
     flex: none;
     flex-wrap: wrap;
   }
@@ -515,7 +525,7 @@
     gap: 8px;
     font-size: 12px;
     font-family: var(--font-mono);
-    color: #9fb0b5;
+    color: var(--text-muted);
     flex: none;
   }
   .dot {
@@ -525,7 +535,7 @@
   }
   .srv {
     font-size: 12px;
-    color: #6f8085;
+    color: var(--text-dim);
     font-family: var(--font-mono);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -538,7 +548,7 @@
   .lv {
     font-family: var(--font-mono);
     font-size: 10.5px;
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: 0.03em;
     border: 1px solid transparent;
     border-radius: 6px;
@@ -547,21 +557,21 @@
     background: transparent;
   }
   .lv.err {
-    color: #ff6b6b;
-    border-color: color-mix(in srgb, #ff6b6b 40%, transparent);
+    color: var(--state-danger);
+    border-color: color-mix(in srgb, var(--state-danger) 40%, transparent);
   }
   .lv.warn {
-    color: #f0b429;
-    border-color: color-mix(in srgb, #f0b429 40%, transparent);
+    color: var(--state-pending);
+    border-color: color-mix(in srgb, var(--state-pending) 40%, transparent);
   }
   .lv.info {
-    color: #56d4ac;
-    border-color: color-mix(in srgb, #56d4ac 40%, transparent);
+    color: var(--state-running);
+    border-color: color-mix(in srgb, var(--state-running) 40%, transparent);
   }
   .lv.off {
-    color: #55636a;
+    color: var(--state-offline);
     border-color: transparent;
-    background: #141b1e;
+    background: var(--inset);
   }
   .termwrap {
     flex: 1;
@@ -587,9 +597,9 @@
     width: 34px;
     height: 34px;
     border-radius: 50%;
-    border: 1px solid #2a343a;
-    background: #141b1e;
-    color: #d6e2e6;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--text);
     font-size: 16px;
     cursor: pointer;
     display: grid;
@@ -598,15 +608,15 @@
     z-index: 3;
   }
   .tobottom:hover {
-    background: #1e262a;
-    color: #fff;
+    background: var(--surface);
+    color: var(--text);
   }
   .cmdbar {
     display: flex;
     align-items: center;
     gap: 8px;
     padding: 8px 12px;
-    border-top: 1px solid #1c2429;
+    border-top: 1px solid var(--border);
     flex: none;
     position: relative;
   }
@@ -619,8 +629,8 @@
     min-width: 190px;
     max-height: 240px;
     overflow-y: auto;
-    background: #141b1e;
-    border: 1px solid #2a343a;
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
     border-radius: 9px;
     box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
     padding: 4px;
@@ -634,27 +644,27 @@
     font: inherit;
     font-family: var(--font-mono);
     font-size: 12.5px;
-    color: #d6e2e6;
+    color: var(--text);
     padding: 6px 10px;
     border-radius: 6px;
   }
   .sug:hover,
   .sug.on {
-    background: #1e262a;
-    color: #fff;
+    background: var(--surface);
+    color: var(--text);
   }
   .prompt {
     font-family: var(--font-mono);
     color: var(--brand-primary);
-    font-weight: 700;
+    font-weight: 800;
   }
   .cmd {
     flex: 1;
     min-width: 0;
-    background: #0f1417;
-    border: 1px solid #1c2429;
+    background: var(--inset);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: #d6e2e6;
+    color: var(--text);
     font-family: var(--font-mono);
     font-size: 13px;
     padding: 9px 12px;
@@ -664,13 +674,13 @@
     border-color: var(--brand-primary);
   }
   .send {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: 8px;
     padding: 9px 16px;
     font: inherit;
-    font-weight: 600;
+    font-weight: 800;
     cursor: pointer;
   }
   .send:disabled {
@@ -691,8 +701,8 @@
     position: fixed;
     z-index: 41;
     min-width: 190px;
-    background: #141b1e;
-    border: 1px solid #2a343a;
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
     border-radius: 10px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
     padding: 5px;
@@ -706,23 +716,23 @@
     cursor: pointer;
     font: inherit;
     font-size: 13px;
-    color: #d6e2e6;
+    color: var(--text);
     padding: 8px 11px;
     border-radius: 7px;
   }
   .cmi:hover {
-    background: #1e262a;
+    background: var(--surface);
   }
   .cmsep {
     height: 1px;
-    background: #2a343a;
+    background: var(--border-strong);
     margin: 5px 4px;
   }
   .cmlbl {
     font-size: 10.5px;
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    color: #6f8085;
+    color: var(--text-dim);
     padding: 6px 11px 3px;
     font-family: var(--font-mono);
   }
@@ -731,9 +741,9 @@
     left: 50%;
     bottom: 72px;
     transform: translateX(-50%);
-    background: #141b1e;
-    border: 1px solid #2a343a;
-    color: #d6e2e6;
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
     font-size: 12.5px;
     padding: 9px 16px;
     border-radius: 999px;

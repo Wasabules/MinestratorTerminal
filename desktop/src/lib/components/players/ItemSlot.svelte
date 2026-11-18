@@ -92,10 +92,10 @@
     flex: none;
   }
   .slot.ench {
-    border-color: color-mix(in srgb, var(--brand-tertiary) 70%, var(--border));
+    border-color: color-mix(in srgb, var(--state-hibernate) 70%, var(--border));
     box-shadow:
       inset 0 2px 4px rgba(0, 0, 0, 0.25),
-      0 0 0 1px color-mix(in srgb, var(--brand-tertiary) 35%, transparent);
+      0 0 0 1px color-mix(in srgb, var(--state-hibernate) 35%, transparent);
   }
   img {
     width: 30px;
@@ -105,7 +105,7 @@
   .ini {
     font-family: var(--font-mono);
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--text-muted);
   }
   .count {
@@ -113,7 +113,7 @@
     right: 3px;
     bottom: 1px;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 800;
     color: #fff;
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.9);
   }

@@ -255,7 +255,7 @@
     margin-bottom: 3px;
   }
   .kind {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13px;
   }
   .date {

@@ -632,7 +632,7 @@
     color: var(--brand-primary);
   }
   .ttl {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .srv {
@@ -660,9 +660,9 @@
     border-radius: 6px;
   }
   .seg button.on {
-    background: var(--brand-primary);
-    color: #fff;
-    font-weight: 600;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 800;
   }
   .filters {
     display: flex;
@@ -725,8 +725,8 @@
     margin: 10px 16px 0;
     padding: 8px 12px;
     border-radius: var(--radius);
-    background: color-mix(in srgb, var(--state-ok, #3fb950) 14%, transparent);
-    color: var(--state-ok, #3fb950);
+    background: color-mix(in srgb, var(--state-running) 14%, transparent);
+    color: var(--state-running);
     font-size: 13px;
   }
   .content {
@@ -745,7 +745,7 @@
     cursor: pointer;
     font: inherit;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--text);
     padding: 4px 0;
     text-align: left;
@@ -760,7 +760,7 @@
   }
   .count {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-dim);
     background: var(--surface);
     border: 1px solid var(--border);
@@ -795,12 +795,12 @@
   }
   .upd-meta {
     font-size: 11.5px;
-    font-weight: 500;
+    font-weight: 700;
   }
   .count.accent {
-    color: #fff;
-    background: var(--brand-primary);
-    border-color: var(--brand-primary);
+    color: var(--on-accent);
+    background: var(--accent);
+    border-color: var(--accent);
   }
   .btn.sm {
     font-size: 12px;
@@ -845,7 +845,7 @@
     border-radius: 999px;
     font: inherit;
     font-size: 10.5px;
-    font-weight: 600;
+    font-weight: 800;
     font-family: var(--font-mono);
     padding: 1px 8px;
     cursor: pointer;
@@ -862,7 +862,7 @@
   }
   .c-title {
     margin: 0 0 6px;
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13px;
   }
   .c-list {
@@ -879,7 +879,7 @@
     margin-top: 8px;
   }
   .btn.confirm-btn {
-    background: var(--state-ok, #3fb950);
+    background: var(--state-running);
   }
   .report {
     margin: 6px 0 8px;
@@ -891,7 +891,7 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    color: var(--state-ok, #3fb950);
+    color: var(--state-running);
   }
   .warn {
     color: var(--state-pending);
@@ -932,7 +932,7 @@
     opacity: 0.55;
   }
   .inm {
-    font-weight: 500;
+    font-weight: 700;
   }
   .iv,
   .il {
@@ -987,7 +987,7 @@
     flex: 1;
   }
   .nm {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
     display: flex;
     align-items: center;
@@ -995,9 +995,9 @@
   }
   .prem {
     font-size: 9.5px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
-    color: #fff;
+    color: var(--bg);
     background: var(--state-pending);
     border-radius: 4px;
     padding: 1px 5px;
@@ -1046,14 +1046,14 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: 7px;
     cursor: pointer;
     font: inherit;
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
     padding: 7px 12px;
     text-decoration: none;
   }
@@ -1079,15 +1079,15 @@
     background: none;
     border: 1px solid var(--border);
     color: var(--text-muted);
-    font-weight: 500;
+    font-weight: 700;
   }
   .done {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
-    font-weight: 600;
-    color: var(--state-ok, #3fb950);
+    font-weight: 800;
+    color: var(--state-running);
     padding: 7px 0;
   }
   .picker {
@@ -1104,7 +1104,7 @@
     min-width: 140px;
   }
   .btn.confirm {
-    background: var(--state-ok, #3fb950);
+    background: var(--state-running);
   }
   .small {
     font-size: 11.5px;

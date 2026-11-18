@@ -66,7 +66,7 @@
       <button type="button" class="btn btn--ghost" onclick={onclose} disabled={busy}>{t('common.cancel')}</button>
       <button
         type="button"
-        class="btn danger"
+        class="btn btn--danger"
         onclick={trust}
         disabled={busy || !info?.presented_fingerprint}
       >
@@ -144,8 +144,5 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
-  }
-  .btn.danger {
-    background: var(--state-danger);
   }
 </style>

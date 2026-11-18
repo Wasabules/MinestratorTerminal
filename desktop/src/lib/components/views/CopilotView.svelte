@@ -161,11 +161,9 @@
   }
   .sec h2 {
     margin: 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .empty {
     padding: 30px 0;
@@ -200,13 +198,13 @@
     align-items: center;
     gap: 5px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-muted);
     white-space: nowrap;
     flex: none;
   }
   .srv {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -230,7 +228,7 @@
     height: 100%;
     width: 35%;
     border-radius: 3px;
-    background: var(--brand-gradient, var(--brand-primary));
+    background: var(--accent);
     animation: slide 1.3s ease-in-out infinite;
   }
   @keyframes slide {

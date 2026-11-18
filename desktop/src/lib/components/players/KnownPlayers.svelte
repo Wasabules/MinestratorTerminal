@@ -248,11 +248,9 @@
   }
   h2 {
     margin: 4px 0 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .hint {
     margin: 4px 0 0;
@@ -274,7 +272,7 @@
   }
   .tile .v {
     font-size: 20px;
-    font-weight: 700;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
   .tile .k {
@@ -316,12 +314,12 @@
     height: 18px;
     border-radius: 50%;
     font-size: 11px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-primary);
+    font-weight: 800;
+    color: var(--on-accent);
+    background: var(--accent);
   }
   .top-name {
-    font-weight: 600;
+    font-weight: 800;
   }
   .note {
     margin: 0;
@@ -437,10 +435,10 @@
     display: grid;
     place-items: center;
     font-family: var(--font-mono);
-    font-weight: 700;
+    font-weight: 800;
     font-size: 13px;
-    color: #fff;
-    background: var(--brand-gradient);
+    color: var(--on-accent);
+    background: var(--accent);
   }
   .who {
     display: flex;
@@ -459,7 +457,7 @@
     color: var(--brand-primary);
   }
   .name {
-    font-weight: 600;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -471,7 +469,7 @@
   .tag {
     flex: none;
     font-size: 10.5px;
-    font-weight: 700;
+    font-weight: 800;
     padding: 1px 6px;
     border-radius: 999px;
     border: 1px solid currentColor;

@@ -237,9 +237,9 @@
     padding: 0 4px;
     border-radius: 999px;
     background: var(--state-danger);
-    color: #fff;
+    color: var(--bg);
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 800;
     display: grid;
     place-items: center;
     box-shadow: 0 0 0 2px var(--surface);
@@ -278,7 +278,7 @@
     flex: none;
   }
   .title {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .clear {
@@ -347,7 +347,7 @@
     gap: 8px;
   }
   .srv {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;

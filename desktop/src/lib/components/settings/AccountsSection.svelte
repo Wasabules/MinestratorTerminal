@@ -16,6 +16,7 @@
     refreshAccounts,
   } from '#lib/stores/accounts.svelte.ts';
   import type { Account } from '#lib/types.ts';
+  import { avatarStyle } from '#lib/servers/colors.svelte.ts';
 
   let busy = $state<number | null>(null);
   let message = $state<{ ok: boolean; text: string } | null>(null);
@@ -86,7 +87,7 @@
 <ul class="list">
   {#each accounts as a (a.id)}
     <li class="acc" class:active={a.active}>
-      <span class="avatar" aria-hidden="true">{a.pseudo.charAt(0).toUpperCase()}</span>
+      <span class="avatar" style={avatarStyle(a.pseudo)} aria-hidden="true">{a.pseudo.charAt(0).toUpperCase()}</span>
       <div class="who">
         <div class="name">
           {a.pseudo}
@@ -155,9 +156,7 @@
     display: grid;
     place-items: center;
     font-size: 14px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-gradient);
+    font-weight: 900;
     opacity: 0.75;
   }
   .acc.active .avatar {
@@ -169,7 +168,7 @@
   }
   .name {
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 800;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -182,16 +181,16 @@
   }
   .badge {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     padding: 2px 8px;
     border-radius: 999px;
     border: 1px solid var(--border);
     color: var(--text-muted);
   }
   .badge.on {
-    color: #fff;
+    color: var(--on-accent);
     border-color: transparent;
-    background: var(--brand-primary);
+    background: var(--accent);
   }
   .acts {
     flex: none;

@@ -278,10 +278,10 @@
     display: grid;
     place-items: center;
     font-family: var(--font-mono);
-    font-weight: 700;
+    font-weight: 800;
     font-size: 20px;
-    color: #fff;
-    background: var(--brand-gradient);
+    color: var(--on-accent);
+    background: var(--accent);
   }
   .who {
     flex: 1;
@@ -321,7 +321,7 @@
   }
   .tag {
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 800;
     padding: 2px 7px;
     border-radius: 999px;
     border: 1px solid currentColor;
@@ -370,11 +370,9 @@
   }
   h3 {
     margin: 0 0 10px;
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 14.5px;
+    color: var(--text);
+    font-weight: 900;
   }
   dl {
     display: grid;
@@ -389,7 +387,7 @@
   dd {
     margin: 0;
     text-align: right;
-    font-weight: 600;
+    font-weight: 800;
     font-variant-numeric: tabular-nums;
   }
   .small {

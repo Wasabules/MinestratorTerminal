@@ -472,7 +472,7 @@
             <button
               bind:this={confirmBtn}
               class="btn"
-              class:btn-danger={confirming.danger}
+              class:btn--danger={confirming.danger}
               onclick={() => confirming && void activate(confirming, true)}
             >
               {c.confirmLabel}
@@ -580,20 +580,31 @@
   .trigger {
     display: flex;
     align-items: center;
-    gap: 7px;
-    background: color-mix(in srgb, var(--text) 4%, transparent);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    gap: 8px;
+    height: 32px;
+    background: var(--surface);
+    border: 1px solid transparent;
+    border-radius: 8px;
     cursor: pointer;
     font: inherit;
-    font-size: 12.5px;
-    color: var(--text-dim);
-    padding: 4px 6px 4px 9px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    padding: 0 10px;
     flex: none;
   }
   .trigger:hover {
     color: var(--text);
-    border-color: color-mix(in srgb, var(--text) 18%, var(--border));
+    border-color: var(--border-strong);
+  }
+  /* Raccourci du déclencheur : en chiffres, sans cadre (comme sur les maquettes). */
+  .trigger kbd {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    padding: 0;
   }
   .tlabel {
     padding-right: 6px;
@@ -606,7 +617,7 @@
   kbd {
     font-family: var(--font-sans);
     font-size: 10.5px;
-    font-weight: 600;
+    font-weight: 800;
     line-height: 1;
     color: var(--text-dim);
     background: var(--surface);
@@ -633,7 +644,7 @@
     overflow: hidden;
   }
   :global(:root[data-theme='light']) .palette {
-    --pal-hit: var(--brand-primary-700);
+    --pal-hit: var(--brand-primary);
     --pal-active: color-mix(in srgb, var(--brand-primary) 10%, transparent);
     box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
   }
@@ -684,7 +695,7 @@
   }
   .crumb {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-muted);
     background: color-mix(in srgb, var(--text) 7%, transparent);
     border-radius: 6px;
@@ -723,7 +734,7 @@
   }
   .glabel {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--text-dim);
@@ -793,7 +804,7 @@
   }
   .otitle {
     font-size: 13.5px;
-    font-weight: 500;
+    font-weight: 700;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -809,7 +820,7 @@
   mark {
     background: none;
     color: var(--pal-hit);
-    font-weight: 700;
+    font-weight: 800;
   }
   .ohint {
     font-size: 11.5px;
@@ -882,9 +893,6 @@
   .cactions .btn {
     padding: 8px 14px;
     font-size: 13px;
-  }
-  .btn-danger {
-    background: var(--state-danger);
   }
 
   /* --- Statut + aide clavier --- */

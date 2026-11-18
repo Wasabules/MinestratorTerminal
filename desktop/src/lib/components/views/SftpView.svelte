@@ -1243,10 +1243,10 @@
     font-size: 12.5px;
   }
   .tb.primary {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
   }
   .crumbs {
     display: flex;
@@ -1520,7 +1520,7 @@
     background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
     display: grid;
     place-items: center;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--brand-primary);
     pointer-events: none;
     z-index: 5;
@@ -1594,7 +1594,7 @@
     font-size: 13px;
   }
   .selcount {
-    font-weight: 600;
+    font-weight: 800;
     margin-right: auto;
   }
   .btn.small {
@@ -1618,7 +1618,7 @@
     font-size: 11px;
     font-family: var(--font-mono);
     background: var(--brand-primary);
-    color: #fff;
+    color: var(--on-primary);
     border-radius: 999px;
     padding: 0 6px;
     line-height: 16px;
@@ -1778,7 +1778,7 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
   }
   .abar .close {
@@ -1795,7 +1795,7 @@
   }
   .robadge {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-muted);
     background: color-mix(in srgb, var(--text) 10%, transparent);
     border-radius: 6px;
@@ -1925,9 +1925,9 @@
     font-size: 12px;
   }
   .tb.small.on {
-    color: #fff;
-    background: var(--brand-primary);
-    border-color: var(--brand-primary);
+    color: var(--on-accent);
+    background: var(--accent);
+    border-color: var(--accent);
   }
   .collapse {
     font-size: 15px;

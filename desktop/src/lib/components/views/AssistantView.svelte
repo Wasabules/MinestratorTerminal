@@ -331,7 +331,7 @@
     color: var(--brand-primary);
   }
   .ttl {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .srv {
@@ -453,8 +453,8 @@
     line-height: 1.55;
   }
   .msg.user .bubble {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--accent-soft);
+    color: var(--text);
     border-bottom-right-radius: 4px;
   }
   .msg.assistant .bubble {
@@ -565,13 +565,13 @@
     border-color: var(--brand-primary);
   }
   .send {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: 10px;
     padding: 10px 18px;
     font: inherit;
-    font-weight: 600;
+    font-weight: 800;
     cursor: pointer;
     flex: none;
   }

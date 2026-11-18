@@ -456,11 +456,9 @@
   }
   h2 {
     margin: 0;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .sec-head {
     display: flex;
@@ -509,7 +507,7 @@
     margin: 0 12px 12px 40px;
   }
   .ed-title {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .ed-actions {
@@ -634,7 +632,7 @@
     gap: 2px;
   }
   .name {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
     display: inline-flex;
     align-items: center;
@@ -642,7 +640,7 @@
   }
   .badge {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--brand-primary);
   }
   .sub-line {
@@ -681,9 +679,9 @@
     cursor: default;
   }
   .mini.armed {
-    background: var(--state-danger);
-    border-color: var(--state-danger);
-    color: #fff;
+    background: var(--danger-bg);
+    border-color: var(--danger-bg);
+    color: var(--danger-ink);
   }
   .tasks {
     list-style: none;

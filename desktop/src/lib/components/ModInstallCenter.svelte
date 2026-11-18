@@ -127,9 +127,9 @@
     padding: 0 4px;
     border-radius: 999px;
     background: var(--brand-primary);
-    color: #fff;
+    color: var(--on-primary);
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 800;
     display: grid;
     place-items: center;
     box-shadow: 0 0 0 2px var(--surface);
@@ -165,7 +165,7 @@
     border-bottom: 1px solid var(--border);
   }
   .title {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .clear {
@@ -199,7 +199,7 @@
     align-items: baseline;
   }
   .lbl {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
