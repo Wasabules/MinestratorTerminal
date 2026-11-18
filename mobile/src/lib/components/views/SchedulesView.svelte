@@ -129,7 +129,7 @@
       {#each schedules as s (s.id)}
         <li class="card" class:off={!s.is_active}>
           <div class="top">
-            <Icon name="clock" size={18} />
+            <span class="tile"><Icon name="clock" size={18} /></span>
             <div class="meta">
               <span class="name selectable">
                 {s.name}
@@ -186,10 +186,14 @@
     color: var(--text-muted);
   }
   .ic {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 44px;
     background: transparent;
     border: none;
-    color: var(--text);
-    min-width: 44px;
+    border-radius: var(--radius);
+    color: var(--text-muted);
   }
   ul {
     list-style: none;
@@ -202,8 +206,8 @@
   .card {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px;
+    border-radius: var(--radius-lg);
+    padding: 12px 10px 12px 12px;
   }
   .card.off .meta {
     opacity: 0.55;
@@ -212,6 +216,21 @@
     display: flex;
     align-items: center;
     gap: 10px;
+    color: var(--text-dim);
+  }
+  /* Tuile d'icône teintée de l'accent du biome. */
+  .tile {
+    display: grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    flex: none;
+    border-radius: var(--radius);
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .card.off .tile {
+    background: var(--inset);
     color: var(--text-dim);
   }
   .meta {
@@ -223,12 +242,16 @@
     color: var(--text);
   }
   .name {
-    font-weight: 600;
+    font-weight: 800;
   }
   .badge {
     margin-left: 6px;
-    font-size: 12px;
-    color: var(--brand-primary);
+    padding: 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 800;
+    background: color-mix(in srgb, var(--state-pending) 16%, transparent);
+    color: var(--state-pending);
   }
   .small {
     font-size: 12.5px;
@@ -242,10 +265,11 @@
   .switch input {
     width: 22px;
     height: 22px;
+    accent-color: var(--accent);
   }
   ol {
     margin: 8px 0 0;
-    padding-left: 46px;
+    padding-left: 64px;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -255,7 +279,7 @@
     overflow-wrap: anywhere;
   }
   p.task {
-    margin: 6px 0 0 28px;
+    margin: 6px 0 0 46px;
   }
   .dim {
     color: var(--text-dim);

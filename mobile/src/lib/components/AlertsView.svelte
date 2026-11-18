@@ -13,6 +13,7 @@
   import { api } from "../ipc";
   import { alerts } from "../stores/alerts.svelte";
   import Icon from "./Icon.svelte";
+  import Masked from "./Masked.svelte";
 
   let { onBack, onNotifications }: { onBack: () => void; onNotifications: () => void } = $props();
 
@@ -77,7 +78,7 @@
 
 <div class="screen">
   <header>
-    <button class="ic" onclick={onBack} aria-label="Retour"><Icon name="back" size={20} /></button>
+    <button class="ic" onclick={onBack} aria-label={t("common.back")}><Icon name="back" size={20} /></button>
     <span class="title">{t("alerts.title")}</span>
     {#if alerts.items.length > 0}
       <button class="ic" onclick={() => (confirmClear = true)} aria-label={t("alerts.clear")}>
@@ -132,7 +133,8 @@
                 <span class="kind">{kindLabel(a.kind)}</span>
                 {#if fresh.has(a.id)}<span class="new" aria-hidden="true"></span>{/if}
               </div>
-              <p class="msg selectable">{a.message}</p>
+              <!-- Mode anonyme : IP et e-mails du message masqués à l'affichage. -->
+              <p class="msg selectable"><Masked value={a.message} /></p>
             </div>
           </li>
         {/each}
@@ -170,7 +172,7 @@
     align-items: center;
     gap: 8px;
     padding: calc(var(--safe-top) + 8px) 12px 8px;
-    background: var(--surface);
+    background: var(--chrome);
     border-bottom: 1px solid var(--border);
   }
   .ic {
@@ -180,12 +182,13 @@
     height: 44px;
     background: transparent;
     border: none;
+    border-radius: var(--radius);
     color: var(--text);
   }
   .title {
     flex: 1;
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 900;
   }
   .body {
     flex: 1;
@@ -202,10 +205,11 @@
     min-height: 48px;
     padding: 0 12px;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
     color: var(--text);
     font-size: 15px;
+    font-weight: 800;
     text-align: left;
   }
   .link > span:first-of-type {
@@ -214,8 +218,9 @@
   .hc {
     padding: 1px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--text) 8%, transparent);
+    background: var(--inset);
     color: var(--text-muted);
+    font-family: var(--font-mono);
     font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
@@ -247,17 +252,20 @@
     padding: 0 12px;
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: transparent;
+    background: var(--inset);
     color: var(--text-muted);
     font-size: 13px;
+    font-weight: 800;
   }
   .fchip.on {
-    border-color: color-mix(in srgb, var(--brand-primary) 60%, transparent);
-    background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
-    color: var(--text);
+    border-color: transparent;
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .fchip .n {
-    color: var(--text-dim);
+    opacity: 0.75;
+    font-family: var(--font-mono);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
   }
 
@@ -272,9 +280,9 @@
   .item {
     display: flex;
     gap: 10px;
-    padding: 12px;
+    padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--surface);
   }
   .item.fresh {
@@ -299,7 +307,7 @@
     gap: 10px;
   }
   .srv {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 15px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -307,7 +315,8 @@
   }
   .date {
     flex: none;
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     font-variant-numeric: tabular-nums;
   }
   .tags {
@@ -320,13 +329,14 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-weight: 600;
+    font-weight: 800;
   }
   .kind {
     padding: 1px 8px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--text) 8%, transparent);
+    background: var(--inset);
     color: var(--text-muted);
+    font-weight: 700;
   }
   .new {
     width: 8px;
@@ -349,7 +359,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim);
     z-index: 40;
   }
   .dialog {
@@ -365,12 +375,13 @@
     padding: 18px;
     background: var(--elevated);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
   }
   .dtitle {
     margin: 0;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 800;
     line-height: 1.4;
   }
   .dacts {
@@ -380,15 +391,14 @@
   }
   .dacts button {
     padding: 0 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text);
-    font-weight: 600;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-ink);
+    font-weight: 800;
   }
   .dacts button.danger {
-    border-color: transparent;
-    background: var(--state-danger);
-    color: #fff;
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
 </style>

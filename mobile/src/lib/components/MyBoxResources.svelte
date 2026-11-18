@@ -69,7 +69,7 @@
       }),
       p: pct(r.allocated, r.total),
       // Plus rien d'allouable : impossible d'ajouter ou de reprendre un serveur.
-      color: r.remaining <= 0 ? "var(--state-pending)" : "var(--brand-primary)",
+      color: r.remaining <= 0 ? "var(--state-pending)" : "var(--chart-cpu)",
     };
   }
 
@@ -85,7 +85,7 @@
     return {
       detail: tf("mybox.diskUsed", { used: gb(used_mb), total: total_gb }),
       p,
-      color: p >= 90 ? "var(--state-danger)" : p >= 75 ? "var(--state-pending)" : "var(--brand-primary)",
+      color: p >= 90 ? "var(--state-danger)" : p >= 75 ? "var(--state-pending)" : "var(--chart-cpu)",
     };
   });
 
@@ -106,7 +106,7 @@
         maxPaused: s.max_paused,
       }),
       p: pct(s.active, s.max_active),
-      color: s.active >= s.max_active ? "var(--state-pending)" : "var(--brand-primary)",
+      color: s.active >= s.max_active ? "var(--state-pending)" : "var(--chart-cpu)",
     };
   });
 
@@ -287,29 +287,31 @@
   }
   .mlabel {
     flex: none;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-muted);
+    font-size: 13.5px;
+    font-weight: 800;
+    color: var(--text);
   }
   .mdetail {
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     color: var(--text-dim);
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
   .bar {
-    height: 6px;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--text) 10%, transparent);
+    height: 8px;
+    border-radius: 4px;
+    background: var(--border-strong);
     overflow: hidden;
   }
   .bar span {
     display: block;
     height: 100%;
-    border-radius: 999px;
+    border-radius: 4px;
   }
   h4 {
     margin: 6px 0 0;
+    font-weight: 900;
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -322,7 +324,8 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
+    background: var(--inset);
   }
   .srvs li + li {
     border-top: 1px solid var(--border);
@@ -346,6 +349,7 @@
   }
   .sname strong {
     font-size: 14px;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -364,7 +368,7 @@
     align-items: center;
     gap: 5px;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 800;
   }
   .sdot {
     width: 7px;
@@ -375,10 +379,11 @@
     flex: none;
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     background: transparent;
     border: none;
+    border-radius: var(--radius);
     color: var(--text-muted);
   }
   .link {
@@ -391,6 +396,7 @@
     color: var(--brand-primary);
     padding: 0 2px;
     font-size: 14px;
+    font-weight: 800;
   }
   .rename {
     display: flex;
@@ -398,12 +404,17 @@
     gap: 8px;
   }
   .rename input {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
     color: var(--text);
     padding: 11px 12px;
     font-size: 15px;
+    outline: none;
+  }
+  .rename input:focus {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .ractions {
     display: flex;
@@ -411,21 +422,22 @@
     gap: 8px;
   }
   .ghost {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
+    background: var(--btn-secondary-bg);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--btn-secondary-ink);
     padding: 0 14px;
     font-size: 14px;
+    font-weight: 800;
   }
   .primary {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
     padding: 0 16px;
     font-size: 14px;
-    font-weight: 600;
+    font-weight: 900;
   }
   button:disabled {
     opacity: 0.6;
@@ -442,6 +454,6 @@
     color: var(--state-danger);
   }
   .msg.ok {
-    color: var(--brand-primary);
+    color: var(--state-running-text);
   }
 </style>

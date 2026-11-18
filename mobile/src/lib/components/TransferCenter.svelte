@@ -79,6 +79,7 @@
     onkeydown={() => {}}
   >
     <div class="panel" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+      <div class="sheet-handle"></div>
       <header>
         <span class="title">{t("transfers.title")}</span>
         {#if items.some((i) => i.status !== "active")}
@@ -158,12 +159,24 @@
 {/if}
 
 <style>
+  /* Bouton posé dans les barres d'outils des vues (Fichiers, Sauvegardes) : leurs styles,
+     scopés, ne l'atteignent pas, d'où une forme propre. */
   .tc-btn {
     position: relative;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    color: var(--text-muted);
   }
   /* Un transfert tourne : l'icône bat pour attirer l'œil sans bloquer l'interface. */
   .tc-btn.busy {
-    color: var(--brand-primary);
+    color: var(--accent-text);
     animation: tc-pulse 1.4s ease-in-out infinite;
   }
   @keyframes tc-pulse {
@@ -204,9 +217,11 @@
     height: 15px;
     padding: 0 3px;
     border-radius: 999px;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-family: var(--font-mono);
     font-size: 10px;
+    font-weight: 800;
     line-height: 15px;
     font-variant-numeric: tabular-nums;
   }
@@ -227,7 +242,7 @@
     z-index: 40;
     display: flex;
     align-items: flex-end;
-    background: rgb(0 0 0 / 45%);
+    background: var(--scrim);
     border: 0;
   }
   .panel {
@@ -235,9 +250,10 @@
     max-height: 70vh;
     display: flex;
     flex-direction: column;
-    border-radius: 16px 16px 0 0;
-    background: var(--surface);
-    padding-bottom: var(--safe-bottom);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--elevated);
+    box-shadow: var(--shadow);
+    padding: 8px 0 var(--safe-bottom);
     animation: slide-up 0.18s ease-out;
   }
   @keyframes slide-up {
@@ -255,20 +271,32 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 12px 14px;
+    padding: 0 8px 8px 16px;
     border-bottom: 1px solid var(--border);
   }
   .title {
     flex: 1;
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 16px;
+    font-weight: 900;
   }
   .clear {
     background: none;
     border: 0;
-    color: var(--text-dim);
+    color: var(--brand-primary);
     font: inherit;
-    font-size: 13px;
+    font-size: 13.5px;
+    font-weight: 800;
+    padding: 0 8px;
+  }
+  header .ic {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    color: var(--text-muted);
   }
   .empty {
     padding: 28px 14px;
@@ -288,21 +316,21 @@
     align-items: center;
   }
   .row + .row {
-    border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    border-top: 1px solid var(--border);
   }
   .dirico {
     display: grid;
     place-items: center;
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
     flex: none;
-    background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
-    color: var(--brand-primary);
+    background: var(--accent-soft);
+    color: var(--accent-text);
   }
   .row.err .dirico {
-    background: color-mix(in srgb, var(--state-danger) 18%, transparent);
-    color: var(--state-danger);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
   .body {
     flex: 1;
@@ -319,26 +347,28 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 14px;
+    font-weight: 800;
   }
   .state {
     flex: none;
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     font-variant-numeric: tabular-nums;
   }
   .speed {
     margin-left: 6px;
-    color: var(--brand-primary);
+    color: var(--accent-text);
   }
   .cancel {
     flex: none;
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    border: 1px solid var(--border);
-    background: transparent;
-    color: var(--text-muted);
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius);
+    border: none;
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-ink);
   }
   .msg {
     display: block;
@@ -356,9 +386,9 @@
   .bar {
     display: block;
     margin-top: 6px;
-    height: 3px;
+    height: 4px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--text) 10%, transparent);
+    background: var(--border-strong);
     overflow: hidden;
   }
   .fill {
@@ -366,7 +396,7 @@
     width: 35%;
     height: 100%;
     border-radius: 999px;
-    background: var(--brand-primary);
+    background: var(--accent);
     animation: sweep 1.1s ease-in-out infinite;
   }
   /* Progression connue : largeur pilotée, pas d'animation de balayage. */

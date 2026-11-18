@@ -4,6 +4,7 @@
   import { settings } from "../stores/settings.svelte";
   import { portal } from "../portal";
   import Icon from "./Icon.svelte";
+  import { avatarStyle } from "../servers/colors.svelte";
   import type { AppError, InventoryItem, KnownPlayer, PlayerInventory, PlayerProfile } from "../types";
 
   /**
@@ -128,6 +129,7 @@
 <div class="psheet" use:portal role="dialog" aria-modal="true" aria-label={name}>
   <header>
     <button class="ic" aria-label={t("players.sheet.close")} onclick={onClose}><Icon name="back" size={22} /></button>
+    <span class="avatar" style={avatarStyle(name)} aria-hidden="true">{name.charAt(0).toUpperCase()}</span>
     <div class="who">
       <span class="title selectable">{name}</span>
       <span class="uuid selectable">{player.uuid}</span>
@@ -211,7 +213,7 @@
     align-items: center;
     gap: 8px;
     padding: calc(var(--safe-top) + 8px) 12px 8px;
-    background: var(--surface);
+    background: var(--chrome);
     border-bottom: 1px solid var(--border);
   }
   .ic {
@@ -221,7 +223,20 @@
     height: 44px;
     background: transparent;
     border: none;
+    border-radius: var(--radius);
     color: var(--text);
+    flex: none;
+  }
+  /* Initiale sur l'accent d'un biome tiré du pseudo (encre sombre, lisible dans les deux thèmes). */
+  .avatar {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    display: grid;
+    place-items: center;
+    font-weight: 900;
+    font-size: 16px;
   }
   .who {
     display: flex;
@@ -229,8 +244,8 @@
     min-width: 0;
   }
   .title {
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 900;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -261,16 +276,16 @@
   }
   .tag {
     font-size: 12px;
-    font-weight: 700;
-    padding: 2px 8px;
+    font-weight: 800;
+    padding: 2px 9px;
     border-radius: 999px;
-    border: 1px solid currentColor;
+    background: color-mix(in srgb, currentColor 14%, transparent);
   }
   .tag.on {
-    color: var(--brand-primary);
+    color: var(--state-running-text);
   }
   .tag.op {
-    color: var(--brand-primary);
+    color: var(--state-hibernate);
   }
   .tag.wl {
     color: var(--state-pending);
@@ -285,7 +300,7 @@
   }
   h3 {
     margin: 0;
-    font-size: 14px;
+    font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--text-dim);
@@ -295,10 +310,10 @@
     grid-template-columns: auto 1fr;
     gap: 8px 14px;
     margin: 0;
-    padding: 12px;
+    padding: 14px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     font-size: 14px;
   }
   dt {
@@ -307,7 +322,8 @@
   dd {
     margin: 0;
     text-align: right;
-    font-weight: 600;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
   }
   ul {
     list-style: none;
@@ -316,7 +332,7 @@
     display: flex;
     flex-direction: column;
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     background: var(--surface);
   }
   li {
@@ -343,12 +359,12 @@
     flex-direction: column;
   }
   .iname {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 14px;
   }
   .ench {
     font-size: 12px;
-    color: color-mix(in srgb, var(--brand-tertiary) 55%, var(--text));
+    color: color-mix(in srgb, var(--state-hibernate) 55%, var(--text));
   }
   .slot {
     font-size: 12px;

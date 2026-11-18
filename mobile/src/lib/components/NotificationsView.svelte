@@ -9,6 +9,7 @@
   import { api, humanizeError } from "../ipc";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
+  import Masked from "./Masked.svelte";
   import type { UserNotification } from "../types";
 
   let { onBack }: { onBack: () => void } = $props();
@@ -69,7 +70,7 @@
 
 <div class="screen">
   <header>
-    <button class="ic" onclick={onBack} aria-label="Retour"><Icon name="back" size={20} /></button>
+    <button class="ic" onclick={onBack} aria-label={t("common.back")}><Icon name="back" size={20} /></button>
     <span class="title">{t("notifications.title")}</span>
     <button class="ic" onclick={load} aria-label={t("servers.refresh")} disabled={loading}>
       <Icon name="refresh" size={19} />
@@ -119,7 +120,8 @@
                   <span class="kind" style="color: {color(n.color)}">{n.kind}</span>
                   <span class="date dim">{n.date.slice(0, 16)}</span>
                 </div>
-                <p class="msg selectable">{n.message}</p>
+                <!-- Mode anonyme : IP et e-mails du message masqués à l'affichage. -->
+                <p class="msg selectable"><Masked value={n.message} /></p>
               </div>
             </li>
           {/each}
@@ -140,24 +142,25 @@
     align-items: center;
     gap: 8px;
     padding: calc(var(--safe-top) + 8px) 12px 8px;
-    background: var(--surface);
+    background: var(--chrome);
     border-bottom: 1px solid var(--border);
   }
   .ic {
     display: grid;
     place-items: center;
-    width: 40px;
-    height: 40px;
+    width: 44px;
+    height: 44px;
     background: transparent;
     border: none;
+    border-radius: var(--radius);
     color: var(--text);
   }
   .ic:disabled {
     opacity: 0.5;
   }
   .title {
-    font-size: 17px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 900;
     flex: 1;
   }
   .body {
@@ -177,12 +180,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 9px 12px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
+    min-height: 48px;
+    padding: 0 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--inset);
     color: var(--text-dim);
     margin-bottom: 10px;
+  }
+  .search:focus-within {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .search input {
     border: 0;
@@ -204,22 +212,25 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 12px;
+    padding: 0 12px;
     border: 1px solid var(--border);
     border-radius: 999px;
-    background: transparent;
+    background: var(--inset);
     color: var(--text-muted);
     font: inherit;
     font-size: 13px;
+    font-weight: 800;
   }
   .fchip.on {
-    border-color: color-mix(in srgb, var(--brand-primary) 60%, transparent);
-    background: color-mix(in srgb, var(--brand-primary) 16%, transparent);
-    color: var(--text);
+    border-color: transparent;
+    background: var(--accent);
+    color: var(--on-accent);
   }
   .fchip .n {
+    font-family: var(--font-mono);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
-    color: var(--text-dim);
+    opacity: 0.75;
   }
 
   .list {
@@ -233,9 +244,9 @@
   .item {
     display: flex;
     gap: 10px;
-    padding: 12px;
+    padding: 12px 14px;
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     background: var(--surface);
   }
   .bar {
@@ -255,11 +266,12 @@
     margin-bottom: 3px;
   }
   .kind {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 14px;
   }
   .date {
-    font-size: 12px;
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     font-variant-numeric: tabular-nums;
     flex: none;
   }

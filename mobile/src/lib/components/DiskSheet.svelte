@@ -79,6 +79,7 @@
 
 <div class="scrim" use:portal role="button" tabindex="-1" onclick={onClose} onkeydown={() => {}}>
   <div class="sheet" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+    <div class="sheet-handle"></div>
     <header class="obar">
       <button class="ic" disabled={path === "/"} onclick={() => load(parent(path))} aria-label={t("disk.up")}>
         <Icon name="back" size={18} />
@@ -153,7 +154,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim);
     z-index: 40;
   }
   .sheet {
@@ -165,9 +166,10 @@
     max-height: 85vh;
     overflow-y: auto;
     background: var(--elevated);
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    padding: 4px 8px calc(var(--safe-bottom) + 14px);
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    padding: 8px 8px calc(var(--safe-bottom) + 14px);
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -186,7 +188,8 @@
     flex-direction: column;
   }
   .title .name {
-    font-weight: 600;
+    font-weight: 900;
+    font-size: 16px;
   }
   .title small {
     font-family: var(--font-mono);
@@ -198,12 +201,12 @@
   .ic {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-muted);
+    width: 44px;
+    height: 44px;
+    background: var(--btn-secondary-bg);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--btn-secondary-ink);
     flex: none;
   }
   .ic:disabled {
@@ -213,11 +216,17 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 10px 12px;
+    padding: 12px 14px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     font-size: 14px;
+    font-weight: 800;
+  }
+  .summary .dim {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    font-weight: 600;
   }
   .line {
     display: flex;
@@ -228,13 +237,14 @@
     display: block;
     height: 6px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--text) 10%, transparent);
+    background: var(--border-strong);
     overflow: hidden;
   }
   .fill {
     display: block;
     height: 100%;
-    background: var(--brand-primary);
+    border-radius: 3px;
+    background: var(--accent);
   }
   .fill.warn {
     background: var(--state-danger);
@@ -251,12 +261,13 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    padding: 8px 12px;
+    background: var(--accent-soft);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--accent-text);
+    padding: 0 14px;
     font-size: 14px;
+    font-weight: 800;
   }
   ul {
     list-style: none;
@@ -273,7 +284,7 @@
   li {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
   }
   li.empty {
     padding: 14px;
@@ -303,6 +314,7 @@
     gap: 10px;
   }
   .nm {
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

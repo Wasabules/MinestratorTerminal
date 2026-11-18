@@ -427,7 +427,7 @@
         {#each results.entries as e (e.path)}
           <li>
             <button class="row" onclick={() => openEntry(e)}>
-              <Icon name={e.is_dir ? "folder" : "file"} size={20} />
+              <span class="fi" class:dir={e.is_dir}><Icon name={e.is_dir ? "folder" : "file"} size={20} /></span>
               <span class="meta">
                 <span class="name">{e.name}</span>
                 <!-- Le chemin compte plus que la taille ici : il situe le résultat. -->
@@ -448,7 +448,7 @@
       {#each entries as e (e.path)}
         <li>
           <button class="row" onclick={() => openEntry(e)}>
-            <Icon name={e.is_dir ? "folder" : "file"} size={20} />
+            <span class="fi" class:dir={e.is_dir}><Icon name={e.is_dir ? "folder" : "file"} size={20} /></span>
             <span class="meta">
               <span class="name">{e.name}</span>
               {#if !e.is_dir}<small class="dim">{fmtSize(e.size)}</small>{/if}
@@ -481,6 +481,7 @@
 {#if archive}
   <div class="scrim" use:portal role="button" tabindex="-1" onclick={() => (archive = null)} onkeydown={() => {}}>
     <div class="sheet tall" role="dialog" tabindex="-1" onclick={(e) => e.stopPropagation()} onkeydown={() => {}}>
+      <div class="sheet-handle"></div>
       <header class="obar">
         <span class="oname">{archive.name}</span>
         <button class="ic" onclick={() => (archive = null)} aria-label={t("files.close")}>
@@ -494,7 +495,7 @@
           {#each archive.entries.slice(0, 300) as a (a.name)}
             <li>
               <button class="row" onclick={() => openArchiveEntry(a.name)} disabled={a.is_dir}>
-                <Icon name={a.is_dir ? "folder" : "file"} size={18} />
+                <span class="fi" class:dir={a.is_dir}><Icon name={a.is_dir ? "folder" : "file"} size={18} /></span>
                 <span class="meta">
                   <span class="name">{a.name}</span>
                   {#if !a.is_dir}<small class="dim">{fmtSize(a.size)}</small>{/if}
@@ -519,6 +520,7 @@
     onkeydown={(e) => e.key === "Escape" && (actionFor = null)}
   ></div>
   <div class="sheet" use:portal>
+    <div class="sheet-handle"></div>
     <div class="sheet-title selectable">{actionFor.name}</div>
     {#if !actionFor.is_dir}
       <button onclick={() => downloadEntry(actionFor!)} disabled={busy}>
@@ -635,6 +637,7 @@
     onkeydown={(e) => e.key === "Escape" && (moreOpen = false)}
   ></div>
   <div class="sheet" use:portal>
+    <div class="sheet-handle"></div>
     <button
       onclick={() => {
         moreOpen = false;
@@ -661,9 +664,9 @@
 
 <!-- Éditeur de fichier -->
 {#if opened}
-  <div class="editor" use:portal>
+  <div class="editor force-dark" use:portal>
     <header>
-      <button class="ic" onclick={() => (opened = null)} aria-label="Fermer"><Icon name="back" size={20} /></button>
+      <button class="ic" onclick={() => (opened = null)} aria-label={t("files.close")}><Icon name="back" size={20} /></button>
       <span class="ename selectable">{opened.name}{opened.dirty ? " •" : ""}</span>
       {#if opened.readonly}<span class="ro">lecture seule</span>{/if}
       <button class="ic" onclick={() => editor?.openSearch()} aria-label="Rechercher">
@@ -693,19 +696,25 @@
 {/if}
 
 <style>
+  /* Bouton actif de la barre (recherche ouverte, menu) : accent du biome du serveur. */
   .ic.on {
-    color: var(--brand-primary);
+    background: var(--accent-soft);
+    color: var(--accent-text);
   }
   .searchbar {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 0 12px 8px;
-    padding: 6px 10px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--surface);
+    margin: 8px 12px;
+    padding: 0 4px 0 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--inset);
     color: var(--text-dim);
+  }
+  .searchbar:focus-within {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .searchbar input {
     flex: 1;
@@ -725,8 +734,9 @@
     max-height: 86vh;
     display: flex;
     flex-direction: column;
-    border-radius: 14px;
-    background: var(--surface);
+    border-radius: var(--radius-lg);
+    background: var(--elevated);
+    box-shadow: var(--shadow);
     overflow: hidden;
   }
   .imgbox img {
@@ -743,12 +753,12 @@
     align-items: center;
     justify-content: space-between;
     gap: 10px;
-    padding: 10px 12px;
+    padding: 6px 6px 6px 14px;
     border-bottom: 1px solid var(--border);
   }
   .oname {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 14.5px;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -766,12 +776,14 @@
     flex-direction: column;
     min-height: 100%;
   }
+  /* Barre d'outils collée en haut : sept boutons de 44 px, sans espacement, pour laisser au
+     chemin le plus de place possible sur un téléphone. */
   .pathbar {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    background: var(--surface);
+    gap: 0;
+    padding: 4px 4px;
+    background: var(--chrome);
     border-bottom: 1px solid var(--border);
     position: sticky;
     top: 0;
@@ -779,6 +791,8 @@
   }
   .path {
     flex: 1;
+    min-width: 0;
+    padding: 0 4px;
     font-family: var(--font-mono);
     font-size: 12px;
     color: var(--text-muted);
@@ -791,11 +805,12 @@
   .ic {
     display: grid;
     place-items: center;
-    width: 38px;
-    height: 38px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
     color: var(--text-muted);
     flex: none;
   }
@@ -817,6 +832,15 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
   }
+  /* Icônes de dossier à l'accent du biome, de fichier en discret. */
+  .fi {
+    display: inline-flex;
+    flex: none;
+    color: var(--text-dim);
+  }
+  .fi.dir {
+    color: var(--accent-text);
+  }
   .row {
     flex: 1;
     display: flex;
@@ -837,6 +861,14 @@
     min-width: 0;
   }
   .name {
+    font-weight: 700;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .meta small {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -846,7 +878,7 @@
     border: none;
     color: var(--text-dim);
     font-size: 20px;
-    width: 40px;
+    width: 44px;
     align-self: stretch;
   }
   .dim {
@@ -858,7 +890,7 @@
   .ok {
     margin: 0;
     padding: 8px 12px;
-    color: var(--brand-primary);
+    color: var(--state-running-text);
   }
   .err {
     margin: 0;
@@ -869,7 +901,7 @@
   .scrim {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--scrim);
     z-index: 40;
   }
   .sheet {
@@ -879,17 +911,19 @@
     bottom: 0;
     z-index: 41;
     background: var(--elevated);
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
-    padding: 10px 10px calc(var(--safe-bottom) + 14px);
+    border-top-left-radius: var(--radius-lg);
+    border-top-right-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    padding: 8px 10px calc(var(--safe-bottom) + 14px);
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
   .sheet-title {
-    padding: 10px 12px;
+    padding: 4px 12px 8px;
     color: var(--text-dim);
-    font-size: 13px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -901,10 +935,15 @@
     background: transparent;
     border: none;
     color: var(--text);
-    padding: 15px 12px;
+    min-height: 52px;
+    padding: 0 12px;
     font-size: 16px;
+    font-weight: 700;
     text-align: left;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius);
+  }
+  .sheet button:active:not(:disabled) {
+    background: var(--hover);
   }
   .sheet button.danger {
     color: var(--state-danger);
@@ -919,7 +958,8 @@
     width: min(90vw, 380px);
     background: var(--elevated);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
     padding: 18px;
     display: flex;
     flex-direction: column;
@@ -928,7 +968,8 @@
   .dlg-title {
     margin: 0;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 800;
+    overflow-wrap: anywhere;
   }
   .dlg-body {
     margin: 0;
@@ -938,13 +979,18 @@
     opacity: 0.5;
   }
   .dialog input {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    background: var(--inset);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
     color: var(--text);
     padding: 12px;
+    font-family: var(--font-mono);
     font-size: 16px;
     outline: none;
+  }
+  .dialog input:focus {
+    border-color: var(--brand-primary);
+    box-shadow: var(--ring);
   }
   .dlg-actions {
     display: flex;
@@ -952,27 +998,30 @@
     gap: 8px;
   }
   .dlg-actions button {
-    background: transparent;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text);
-    padding: 10px 16px;
-    font-weight: 600;
+    background: var(--btn-secondary-bg);
+    border: none;
+    border-radius: var(--radius);
+    color: var(--btn-secondary-ink);
+    padding: 0 16px;
+    font-weight: 800;
   }
   .dlg-actions button.primary {
-    background: var(--brand-primary);
-    border-color: transparent;
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
+    font-weight: 900;
   }
   .dlg-actions button.primary.danger {
-    background: var(--state-danger);
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+    font-weight: 800;
   }
 
+  /* Éditeur : zone toujours sombre (`.force-dark`), comme la console et l'éditeur desktop. */
   .editor {
     position: fixed;
     inset: 0;
     z-index: 50;
-    background: var(--bg);
+    background: var(--chrome);
     display: flex;
     flex-direction: column;
     padding-top: var(--safe-top);
@@ -980,14 +1029,15 @@
   .editor header {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 8px 10px;
-    background: var(--surface);
+    gap: 4px;
+    padding: 6px 6px;
+    background: var(--chrome);
     border-bottom: 1px solid var(--border);
   }
   .ename {
     flex: 1;
-    font-weight: 600;
+    min-width: 0;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -995,15 +1045,15 @@
   .ro {
     flex: none;
     font-size: 11px;
+    font-weight: 800;
     color: var(--text-dim);
-    border: 1px solid var(--border);
+    background: var(--inset);
     border-radius: 999px;
-    padding: 3px 8px;
+    padding: 3px 9px;
   }
   .save {
-    background: var(--brand-primary);
-    color: #fff;
-    border-color: transparent;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
   }
   .save:disabled {
     opacity: 0.5;
