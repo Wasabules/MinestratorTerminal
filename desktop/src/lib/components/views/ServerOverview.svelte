@@ -10,6 +10,7 @@
   import { tabs, type ServerTab, type ServerView } from '#lib/tabs/tabs.svelte.ts';
   import { serverCaps, availableViews } from '#lib/games/capabilities.svelte.ts';
   import { loadUpdates, updateCount } from '#lib/mods/updates.svelte.ts';
+  import { requestDiskView } from '#lib/sftp/diskRequest.svelte.ts';
   import type {
     ConsoleStats,
     LiveLight,
@@ -232,6 +233,12 @@
     else tabs.focusOrOpen(serverId, tab.serverName, view);
   }
 
+  /** Ouvre l'onglet Fichiers sur l'analyse de l'espace disque. */
+  function analyzeDisk() {
+    requestDiskView(serverId);
+    open('sftp');
+  }
+
   function fmtUptime(ms: number): string {
     const s = Math.floor(ms / 1000);
     const h = Math.floor(s / 3600);
@@ -321,6 +328,11 @@
         percent={diskPct}
         detail={stats ? `${fmtBytes(stats.disk_bytes)} / ${fmtBytes(diskLimitBytes)}` : '—'}
       />
+      {#if openable.some((v) => v.id === 'sftp')}
+        <button class="linklike analyze" onclick={analyzeDisk}>
+          <Icon name="hard-drive" size={13} /> {t('overview.analyzeDisk')}
+        </button>
+      {/if}
     </div>
   </section>
 
@@ -552,6 +564,10 @@
   }
   .linklike:hover {
     text-decoration: underline;
+  }
+  .linklike.analyze {
+    margin-top: 10px;
+    font-size: 12px;
   }
 
   .srvmeta {

@@ -15,7 +15,11 @@
     transferItems,
     activeCount,
     clearFinished,
+    markCancelled,
+    type Transfer,
   } from '#lib/transfers/transfers.svelte.ts';
+  import { isServerExtractable, defaultArchiveName } from '#lib/sftp/serverFiles.ts';
+  import { takeDiskRequest } from '#lib/sftp/diskRequest.svelte.ts';
   import type { ArchiveEntry, NbtNode, RegionChunk, SftpEntry } from '#lib/types.ts';
   import {
     isColVisible,
@@ -32,6 +36,7 @@
   import SftpPasswordDialog from './SftpPasswordDialog.svelte';
   import SftpHostKeyDialog from './SftpHostKeyDialog.svelte';
   import NbtTree from '../NbtTree.svelte';
+  import DiskUsagePanel from './DiskUsagePanel.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
@@ -74,6 +79,17 @@
   // Rapport d'inspection de corruption (`text === null` = chargement).
   let report = $state<{ name: string; text: string | null } | null>(null);
   let xfersOpen = $state(false);
+  // Opérations faites par le serveur : analyse du disque, compression (nom à confirmer),
+  // extraction (destination à confirmer), et message de réussite.
+  let diskOpen = $state(false);
+  let compressPrompt = $state<{ paths: string[]; name: string } | null>(null);
+  let extractPrompt = $state<{ path: string; name: string; dest: string } | null>(null);
+  let notice = $state<string | null>(null);
+
+  // « Analyser l'espace disque » depuis l'aperçu du serveur : l'onglet Fichiers actif l'ouvre.
+  $effect(() => {
+    if (tabs.activeId === tab.id && takeDiskRequest(serverId)) diskOpen = true;
+  });
 
   let dropUnlisten: UnlistenFn | undefined;
   let progressUnlisten: UnlistenFn | undefined;
@@ -116,9 +132,12 @@
       }
     });
     if (destroyed) dropUnlisten?.(); // démonté pendant l'enregistrement → détacher aussitôt
-    // Rafraîchit la liste quand un TÉLÉVERSEMENT se termine (le store global, lui, suit la progression).
+    // Rafraîchit la liste quand un TÉLÉVERSEMENT ou une opération sur le serveur (archive créée,
+    // extraite) se termine — le store global, lui, suit la progression.
     progressUnlisten = await sftpEvents.progress((p) => {
-      if (!destroyed && p.status === 'done' && p.direction === 'up') void refreshSilently();
+      if (!destroyed && p.status === 'done' && (p.direction === 'up' || p.direction === 'server')) {
+        void refreshSilently();
+      }
     });
     if (destroyed) progressUnlisten?.();
   });
@@ -527,6 +546,95 @@
     clearSel();
   }
 
+  // --- Opérations faites par le serveur (API) : compression, extraction ---
+
+  /** Propose le nom de l'archive (format du panel) avant de lancer la compression sur le serveur. */
+  function openCompress(paths: string[]) {
+    if (paths.length === 0) return;
+    const dirs = new Map(entries.map((e) => [e.path, e.is_dir]));
+    compressPrompt = { paths, name: defaultArchiveName(paths, (p) => dirs.get(p) ?? false) };
+  }
+
+  /** Lance la compression sur le serveur ; l'avancement s'affiche dans les transferts. */
+  function submitCompress() {
+    if (!compressPrompt) return;
+    const name = compressPrompt.name.trim();
+    if (!name) return;
+    const { paths } = compressPrompt;
+    compressPrompt = null;
+    const id = uid();
+    startTransfer(id, name.toLowerCase().endsWith('.zip') ? name : `${name}.zip`, 'server');
+    xfersOpen = true;
+    void api.serverCompress(serverId, paths, name, id);
+    clearSel();
+  }
+
+  function openExtract(target: { path: string; name: string }) {
+    extractPrompt = { path: target.path, name: target.name, dest: parent(target.path) };
+  }
+
+  /** Extraction par le serveur (repli : par l'ordinateur), puis rafraîchissement de la liste. */
+  async function submitExtract() {
+    const ex = extractPrompt;
+    if (!ex) return;
+    extractPrompt = null;
+    archive = null;
+    const dest = ex.dest.trim() || '/';
+    const id = uid();
+    startTransfer(id, ex.name, 'server');
+    try {
+      const out = await api.serverExtract(serverId, ex.path, dest, id);
+      notice = !out.on_server
+        ? t('sftp.extractedLocal', { dest: out.destination, n: out.files ?? 0 })
+        : out.skipped > 0
+          ? t('sftp.extractedPartial', { dest: out.destination, n: out.skipped })
+          : t('sftp.extracted', { dest: out.destination });
+      await load(cwd);
+    } catch (e) {
+      fail(e);
+    }
+  }
+
+  /** Arrête un transfert (ou le suivi d'une compression : elle continue sur le serveur). */
+  function cancelXfer(id: string) {
+    void api.cancelTransfer(id).catch(() => {});
+    markCancelled(id, t('sftp.cancelled'));
+  }
+
+  /** Ligne d'état d'un transfert : étape en cours, remarque finale, ou erreur. */
+  function xferNote(x: Transfer): string | null {
+    if (x.status === 'error') return x.error;
+    if (x.status === 'done') {
+      if (x.phase === 'still_running') return t('sftp.phase.stillRunning');
+      if (x.skipped > 0) return t('sftp.phase.skipped', { n: x.skipped });
+      return null;
+    }
+    switch (x.phase) {
+      case 'queued':
+        return t('sftp.phase.queued');
+      case 'compressing':
+        return x.files > 0
+          ? t('sftp.phase.compressingCount', { n: x.files, size: fmtSize(x.done) })
+          : t('sftp.phase.compressing');
+      case 'extracting':
+        return t('sftp.phase.extracting');
+      case 'downloading':
+        return t('sftp.phase.downloading');
+      case 'local_zip':
+        return t('sftp.phase.localZip');
+      case 'cleanup':
+        return t('sftp.phase.cleanup');
+      default:
+        return null;
+    }
+  }
+
+  /** Ouvre un dossier signalé par l'analyse du disque. */
+  function openFromDisk(path: string) {
+    diskOpen = false;
+    void load(path);
+  }
+
   function openPrompt(kind: 'mkdir' | 'newfile' | 'rename', target?: SftpEntry) {
     prompt = { kind, value: target?.name ?? '', target };
   }
@@ -592,6 +700,9 @@
       {/each}
     </nav>
     <div class="grow"></div>
+    <button class="tb ghost ico-btn" title={t('sftp.disk.hint')} onclick={() => (diskOpen = true)}>
+      <Icon name="hard-drive" size={14} /> {t('sftp.disk.button')}
+    </button>
     <div class="xfers">
       <button
         class="tb ghost ico-btn"
@@ -616,8 +727,11 @@
             <div class="xempty dim">{t('sftp.noTransfers')}</div>
           {:else}
             {#each transferItems() as x (x.id)}
+              {@const note = xferNote(x)}
               <div class="xrow">
-                <span class="xdir"><Icon name={x.direction === 'up' ? 'upload' : 'download'} size={14} /></span>
+                <span class="xdir">
+                  <Icon name={x.direction === 'up' ? 'upload' : x.direction === 'server' ? 'archive' : 'download'} size={14} />
+                </span>
                 <div class="xinfo">
                   <div class="xname" title={x.name}>{x.name}</div>
                   <div class="xbar">
@@ -625,6 +739,7 @@
                       class="xfill"
                       class:err={x.status === 'error'}
                       class:done={x.status === 'done'}
+                      class:indet={x.status === 'active' && x.total === 0}
                       style="width: {x.total > 0
                         ? Math.round((x.done / x.total) * 100)
                         : x.status === 'active'
@@ -632,6 +747,9 @@
                           : 100}%"
                     ></div>
                   </div>
+                  {#if note}
+                    <div class="xnote" class:err={x.status === 'error'} title={note}>{note}</div>
+                  {/if}
                 </div>
                 <span class="xstate" class:err={x.status === 'error'}>
                   {x.status === 'error'
@@ -642,6 +760,11 @@
                         ? Math.round((x.done / x.total) * 100) + '%'
                         : '…'}
                 </span>
+                {#if x.status === 'active'}
+                  <button class="xcancel" title={t('sftp.cancel')} aria-label={t('sftp.cancel')} onclick={() => cancelXfer(x.id)}>
+                    <Icon name="x" size={12} />
+                  </button>
+                {/if}
               </div>
             {/each}
           {/if}
@@ -670,11 +793,21 @@
     </div>
   {/if}
 
+  {#if notice}
+    <div class="bar ok">
+      {notice}
+      <button class="dismiss" onclick={() => (notice = null)} aria-label={t('common.close')}><Icon name="x" size={13} /></button>
+    </div>
+  {/if}
+
   {#if selected.size > 0}
     <div class="selbar">
       <span class="selcount">{t('sftp.selectedCount', { n: selected.size })}</span>
-      <button class="btn small" onclick={downloadSelected}>
+      <button class="btn small" onclick={downloadSelected} title={t('sftp.downloadZipHint')}>
         <Icon name="download" size={14} /> {t('sftp.downloadZip')}
+      </button>
+      <button class="btn small" onclick={() => openCompress([...selected])}>
+        <Icon name="archive" size={14} /> {t('sftp.compressServer')}
       </button>
       <button class="btn danger-btn small" onclick={() => (confirmDelSel = true)}>
         <Icon name="trash" size={14} /> {t('sftp.delete')}
@@ -749,6 +882,11 @@
           </button>
           <div class="rowacts">
             <button class="ra ico-btn" title={t('sftp.download')} onclick={() => doDownload(entry)}><Icon name="download" size={15} /></button>
+            {#if !entry.is_dir && isServerExtractable(entry.name)}
+              <button class="ra ico-btn" title={t('sftp.extractHere')} onclick={() => openExtract(entry)}><Icon name="package-open" size={15} /></button>
+            {:else}
+              <button class="ra ico-btn" title={t('sftp.compressServer')} onclick={() => openCompress([entry.path])}><Icon name="archive" size={15} /></button>
+            {/if}
             <button class="ra ico-btn" title={t('sftp.rename')} onclick={() => openPrompt('rename', entry)}><Icon name="pencil" size={15} /></button>
             <button class="ra danger ico-btn" title={t('sftp.delete')} onclick={() => (confirmDel = entry)}><Icon name="trash" size={15} /></button>
           </div>
@@ -765,6 +903,50 @@
     <SftpHostKeyDialog {serverId} ontrusted={hostKeyTrusted} onclose={() => (hostKeyDialog = false)} />
   {/if}
 </div>
+
+{#if diskOpen}
+  <div class="overlay">
+    <DiskUsagePanel {serverId} startPath={cwd} onOpen={openFromDisk} onClose={() => (diskOpen = false)} />
+  </div>
+{/if}
+
+{#if compressPrompt}
+  {@const cp = compressPrompt}
+  <div class="overlay center top">
+    <form class="modal card" onsubmit={(e) => { e.preventDefault(); submitCompress(); }}>
+      <h3>{t('sftp.compressTitle')}</h3>
+      <p class="ow-body">{t('sftp.compressBody', { n: cp.paths.length })}</p>
+      <label class="field">
+        <span>{t('sftp.compressName')}</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input" bind:value={cp.name} autofocus />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn--ghost" onclick={() => (compressPrompt = null)}>{t('common.cancel')}</button>
+        <button type="submit" class="btn" disabled={!cp.name.trim()}>{t('sftp.compress')}</button>
+      </div>
+    </form>
+  </div>
+{/if}
+
+{#if extractPrompt}
+  {@const ep = extractPrompt}
+  <div class="overlay center top">
+    <form class="modal card" onsubmit={(e) => { e.preventDefault(); void submitExtract(); }}>
+      <h3>{t('sftp.extractTitle', { name: ep.name })}</h3>
+      <p class="ow-body">{t('sftp.extractBody')}</p>
+      <label class="field">
+        <span>{t('sftp.extractDest')}</span>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input class="input mono" bind:value={ep.dest} autofocus />
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn--ghost" onclick={() => (extractPrompt = null)}>{t('common.cancel')}</button>
+        <button type="submit" class="btn">{t('sftp.extract')}</button>
+      </div>
+    </form>
+  </div>
+{/if}
 
 {#if editor}
   {@const ed = editor}
@@ -789,6 +971,9 @@
         <span class="fname"><Icon name="archive" size={15} /> {ar.name}</span>
         <span class="robadge">{t('sftp.readonly')}</span>
         <div class="grow"></div>
+        <button class="btn small" onclick={() => openExtract(ar)}>
+          <Icon name="package-open" size={14} /> {t('sftp.extractHere')}
+        </button>
         <button class="close" onclick={closeArchive} title={t('common.close')}><Icon name="x" size={16} /></button>
       </div>
       <div class="alist">
@@ -1101,12 +1286,41 @@
     color: color-mix(in srgb, var(--state-danger) 70%, var(--text));
     font-size: 13px;
   }
+  .bar.ok {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    background: color-mix(in srgb, var(--state-running) 12%, transparent);
+    color: color-mix(in srgb, var(--state-running) 60%, var(--text));
+    font-size: 13px;
+  }
+  .dismiss {
+    margin-left: auto;
+    display: inline-flex;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 5px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+  .input.mono {
+    font-family: var(--font-mono);
+  }
 
   .thead {
     display: grid;
     align-items: center;
     position: relative;
-    padding: 0 90px 0 14px;
+    padding: 0 132px 0 14px;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
     flex: none;
@@ -1235,7 +1449,7 @@
     font: inherit;
     color: var(--text);
     text-align: left;
-    padding: 0 90px 0 14px;
+    padding: 0 132px 0 14px;
   }
   .cell {
     padding: 9px 4px;
@@ -1490,6 +1704,44 @@
   }
   .xfill.err {
     background: var(--state-danger);
+  }
+  /* Avancement inconnu (opération sur le serveur) : segment qui glisse. */
+  .xfill.indet {
+    width: 30% !important;
+    animation: xslide 1.4s ease-in-out infinite;
+  }
+  @keyframes xslide {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(340%);
+    }
+  }
+  .xnote {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .xnote.err {
+    color: var(--state-danger);
+  }
+  .xcancel {
+    flex: none;
+    display: inline-flex;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: 5px;
+  }
+  .xcancel:hover {
+    color: var(--state-danger);
+    background: color-mix(in srgb, var(--text) 8%, transparent);
   }
   .xstate {
     flex: none;

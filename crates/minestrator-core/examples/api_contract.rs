@@ -82,6 +82,22 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
             "api.data.stats[].players",
         ],
     ),
+    // Non documentés (panel web) : espace disque (vue « Espace disque », outil `disk_usage`).
+    (
+        "/server/{id}/disk/usage",
+        &[
+            "api.data.analyzed_path",
+            "api.data.total_size",
+            "api.data.items[].path",
+            "api.data.items[].name",
+            "api.data.items[].type",
+            "api.data.items[].size",
+        ],
+    ),
+    ("/server/{id}/disk/total", &["api.data.total_bytes", "api.data.raw_bytes"]),
+    ("/mybox/{id}/disk", &["api.data.disk_servers", "api.data.disk_servers_unit"]),
+    // Non documenté (panel web) : suivi des compressions faites par le serveur.
+    ("/server/{id}/files/compress/jobs", &["api.data.jobs"]),
     // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
     (
         "/server/{id}/sftp",
@@ -328,6 +344,8 @@ async fn main() {
         for (i, mybox) in overview.myboxes.iter().enumerate() {
             let label = format!("GET /mybox/{{id}} (MyBox {})", i + 1);
             report.call(&label, core.mybox_details(mybox.id)).await;
+            let tag = format!(" (MyBox {})", i + 1);
+            raw_checks(&mut report, &http, &key, "/mybox/{id}/disk", &format!("/mybox/{}/disk", mybox.id), &tag).await;
         }
         let mut examined = 0;
         for server in &overview.servers {
@@ -408,6 +426,21 @@ async fn main() {
                             }
                         })
                         .await;
+                    report.call(&label("GET /server/{id}/disk/usage"), core.disk_usage(server.id, "/", 5)).await;
+                    report.call(&label("GET /server/{id}/disk/total (espace)"), core.disk_space(server.id)).await;
+                    report
+                        .call(&label("GET /server/{id}/files/compress/jobs"), core.compress_jobs(server.id))
+                        .await;
+                    for (template, path) in [
+                        ("/server/{id}/disk/usage", format!("/server/{}/disk/usage?limit=5", server.id)),
+                        ("/server/{id}/disk/total", format!("/server/{}/disk/total", server.id)),
+                        (
+                            "/server/{id}/files/compress/jobs",
+                            format!("/server/{}/files/compress/jobs?limit=5", server.id),
+                        ),
+                    ] {
+                        raw_checks(&mut report, &http, &key, template, &path, &tag).await;
+                    }
                     report.call(&label("GET /server/{id}/live"), core.server_live(server.id)).await;
                     report.call(&label("GET /server/{id}/activity"), core.server_activity(server.id, 5, 0)).await;
                     report.call(&label("GET /server/{id}/backups"), core.list_backups(server.id)).await;

@@ -687,6 +687,9 @@ fn friendly_tool(name: &str, input: Option<&Value>) -> String {
         "mybox_info" => "Infos MyBox".into(),
         "list_schedules" => "Tâches planifiées du panel".into(),
         "list_players" => "Joueurs du serveur".into(),
+        "disk_usage" => format!("Espace disque : {}", if path.is_empty() { "/" } else { path }),
+        "compress_files" => "Compression sur le serveur".into(),
+        "extract_archive" => format!("Extraction : {}", if path.is_empty() { "archive" } else { path }),
         other => format!("Outil : {other}"),
     }
 }

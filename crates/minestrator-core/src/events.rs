@@ -148,15 +148,18 @@ pub struct Diagnosis {
     pub ts: i64,
 }
 
-/// Progression d'un transfert SFTP (upload / download / zip), pour le gestionnaire de transferts.
-/// `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets.
-#[derive(Debug, Clone, Serialize)]
+/// Progression d'un transfert SFTP (upload / download / zip) ou d'une opération de fichiers sur le
+/// serveur (compression, extraction), pour le gestionnaire de transferts.
+/// `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets
+/// (`total = 0` : avancement indéterminé, `done` = octets déjà traités s'il est connu).
+#[derive(Debug, Clone, Default, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct SftpProgress {
     pub id: String,
     /// Nom lisible (fichier, ou nom du .zip pour un téléchargement groupé).
     pub name: String,
-    /// `up` (téléversement) | `down` (téléchargement).
+    /// `up` (téléversement) | `down` (téléchargement) | `server` (opération sur le serveur, sans
+    /// transfert : compression, extraction).
     pub direction: String,
     pub done: u64,
     pub total: u64,
@@ -164,6 +167,15 @@ pub struct SftpProgress {
     pub status: String,
     /// Message si `status = error`.
     pub error: Option<String>,
+    /// Étape d'une opération en plusieurs temps (`None` pour un transfert simple) : `queued`
+    /// (en attente d'une autre compression), `compressing` (archive en cours de création sur le
+    /// serveur), `extracting` (extraction sur le serveur), `downloading`, `local_zip` (repli :
+    /// archive construite par l'appareil), `cleanup` (suppression de l'archive temporaire).
+    pub phase: Option<String>,
+    /// Fichiers déjà traités par le serveur (compression) ; 0 sinon.
+    pub files: u64,
+    /// Fichiers ignorés par le serveur (archive ou extraction partielle), publié avec la fin.
+    pub skipped: u64,
 }
 
 /// Progression d'une installation de mod Satisfactory (ficsit → SFTP). `id` = id de transfert

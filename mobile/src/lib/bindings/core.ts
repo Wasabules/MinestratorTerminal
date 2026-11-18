@@ -980,6 +980,131 @@ export type RegionChunk = {
   corrupt: boolean,
 };
 
+// --- Fichiers côté serveur : compression, extraction, espace disque (server_files.rs) ---
+
+/**
+ * Résultat d'une compression côté serveur.
+ */
+export type CompressOutcome = {
+  /**
+   * Chemin SFTP absolu de l'archive.
+   */
+  archive_path: string,
+  /**
+   * `true` : la compression continue sur le serveur (suivi arrêté) ; l'archive n'est pas
+   * encore complète.
+   */
+  still_running: boolean,
+  /**
+   * Fichiers compressés.
+   */
+  file_count: number,
+  /**
+   * Taille de l'archive (octets, lue par SFTP ; 0 si inconnue).
+   */
+  size: number,
+  /**
+   * Fichiers ignorés (archive partielle).
+   */
+  skipped: number,
+};
+
+/**
+ * Résultat d'une extraction.
+ */
+export type ExtractOutcome = {
+  /**
+   * Dossier où l'archive a été extraite (chemin SFTP absolu).
+   */
+  destination: string,
+  /**
+   * `true` : extraite par le serveur ; `false` : repli par l'appareil (SFTP).
+   */
+  on_server: boolean,
+  /**
+   * Fichiers écrits (connu seulement pour le repli par l'appareil).
+   */
+  files: number | null,
+  /**
+   * Fichiers ignorés par le serveur (extraction partielle).
+   */
+  skipped: number,
+};
+
+/**
+ * Ce qui occupe le plus de place dans un dossier, du plus gros au plus petit.
+ */
+export type DiskUsage = {
+  /**
+   * Dossier analysé (chemin SFTP absolu, `/` pour la racine).
+   */
+  path: string,
+  /**
+   * Taille totale du dossier (octets, récursif).
+   */
+  total_size: number,
+  /**
+   * Plus grosses entrées directes du dossier, triées par taille décroissante (bornées par
+   * `limit` : la somme peut être inférieure au total).
+   */
+  items: Array<DiskUsageItem>,
+};
+
+/**
+ * Une entrée de l'analyse du disque (taille récursive pour un dossier).
+ */
+export type DiskUsageItem = {
+  /**
+   * Chemin SFTP absolu.
+   */
+  path: string,
+  name: string,
+  is_dir: boolean,
+  /**
+   * Octets (récursif pour un dossier).
+   */
+  size: number,
+};
+
+/**
+ * Espace disque d'un serveur : occupation comptée par l'hébergeur et limite de l'offre.
+ */
+export type DiskSpace = {
+  /**
+   * Occupation **comptée** (octets) : le disque brut, moins la franchise des fichiers de base
+   * du jeu quand elle s'applique (`GET /server/{id}/disk/total`).
+   */
+  used_bytes: number,
+  /**
+   * Occupation brute du disque (octets).
+   */
+  raw_bytes: number,
+  /**
+   * Franchise des fichiers de base du jeu (octets), déduite si `allowance_applied`.
+   */
+  base_game_bytes: number,
+  allowance_applied: boolean,
+  /**
+   * Limite du serveur (octets ; franchise comprise). 0 si inconnue.
+   */
+  limit_bytes: number,
+  /**
+   * Espace de la MyBox, partagé par ses serveurs (absent si indisponible).
+   */
+  mybox: MyBoxDisk | null,
+};
+
+/**
+ * Espace disque d'une MyBox : occupation de tous ses serveurs face au disque de l'offre.
+ */
+export type MyBoxDisk = {
+  used_bytes: number,
+  /**
+   * Disque de l'offre, extensions comprises (octets). 0 si inconnu.
+   */
+  limit_bytes: number,
+};
+
 // --- Events temps réel (events.rs) ---
 
 export type ConsoleOutput = {
@@ -1012,8 +1137,10 @@ export type ConsoleStats = {
 };
 
 /**
- * Progression d'un transfert SFTP (upload / download / zip), pour le gestionnaire de transferts.
- * `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets.
+ * Progression d'un transfert SFTP (upload / download / zip) ou d'une opération de fichiers sur le
+ * serveur (compression, extraction), pour le gestionnaire de transferts.
+ * `id` = identifiant du transfert (généré côté front pour corréler). `done`/`total` en octets
+ * (`total = 0` : avancement indéterminé, `done` = octets déjà traités s'il est connu).
  */
 export type SftpProgress = {
   id: string,
@@ -1022,7 +1149,8 @@ export type SftpProgress = {
    */
   name: string,
   /**
-   * `up` (téléversement) | `down` (téléchargement).
+   * `up` (téléversement) | `down` (téléchargement) | `server` (opération sur le serveur, sans
+   * transfert : compression, extraction).
    */
   direction: string,
   done: number,
@@ -1035,6 +1163,21 @@ export type SftpProgress = {
    * Message si `status = error`.
    */
   error: string | null,
+  /**
+   * Étape d'une opération en plusieurs temps (`None` pour un transfert simple) : `queued`
+   * (en attente d'une autre compression), `compressing` (archive en cours de création sur le
+   * serveur), `extracting` (extraction sur le serveur), `downloading`, `local_zip` (repli :
+   * archive construite par l'appareil), `cleanup` (suppression de l'archive temporaire).
+   */
+  phase: string | null,
+  /**
+   * Fichiers déjà traités par le serveur (compression) ; 0 sinon.
+   */
+  files: number,
+  /**
+   * Fichiers ignorés par le serveur (archive ou extraction partielle), publié avec la fin.
+   */
+  skipped: number,
 };
 
 /**

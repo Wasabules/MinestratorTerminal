@@ -111,6 +111,7 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "list_archive",
     "read_archive_entry",
     "search_files",
+    "disk_usage",
     "download_file",
     "file_stat",
     "read_startup",
@@ -150,6 +151,9 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "delete_path",
     "rename_path",
     "extract_archive",
+    // Compression côté serveur : crée une archive sur le serveur (fichier en plus, sans risque
+    // pour l'existant, mais elle occupe du disque) → modifiant.
+    "compress_files",
     "set_startup_params",
     "set_property",
     "install_mod",
@@ -224,6 +228,8 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "delete_path",
     "rename_path",
     "extract_archive",
+    "compress_files",
+    "disk_usage",
     "inspect_region",
     "diagnose_startup",
     "analyze_performance",
@@ -426,6 +432,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "list_archive" | "read_archive_entry" | "read_gz" => 30,
         // Config / fichiers / arborescence : purgés après toute écriture, donc sûrs à cacher un instant.
         "list_files" | "read_file" | "read_startup" | "read_properties" | "search_files" => 15,
+        // Analyse du disque : calculée par le serveur sur tout un arbre, change lentement.
+        "disk_usage" => 30,
         "mybox_info" => 30,
         "list_schedules" => 15,
         // Liste des joueurs : déjà gardée une minute par le cœur (purgée par une action joueur).
@@ -622,8 +630,64 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             let id = req_i64(&args, "server_id")?;
             let path = req_str(&args, "path")?;
             let dest = req_str(&args, "dest_dir")?;
-            let n = core.sftp_extract_archive(id, &path, &dest).await.map_err(es)?;
-            Ok(format!("{n} fichier(s) extrait(s) dans « {dest} »."))
+            let out = core.extract_archive(id, &path, &dest).await.map_err(es)?;
+            Ok(match (out.on_server, out.files) {
+                (true, _) if out.skipped > 0 => format!(
+                    "Archive extraite par le serveur dans « {} » ; {} fichier(s) ignoré(s).",
+                    out.destination, out.skipped
+                ),
+                (true, _) => format!("Archive extraite par le serveur dans « {} ».", out.destination),
+                (false, n) => format!(
+                    "{} fichier(s) extrait(s) dans « {} » (extraction par l'appareil : le serveur n'a pas pu le faire).",
+                    n.unwrap_or(0),
+                    out.destination
+                ),
+            })
+        }
+
+        "compress_files" => {
+            let id = req_i64(&args, "server_id")?;
+            let paths = req_str_array(&args, "paths")?;
+            let name = args.get("name").and_then(|v| v.as_str()).map(str::to_string);
+            // Identifiant unique : deux compressions simultanées ne partagent pas leur annulation.
+            let nanos = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or_default();
+            let tid = format!("mcp-compress-{nanos}");
+            let out = core.server_compress(id, paths, name, &tid).await.map_err(es)?;
+            Ok(if out.still_running {
+                format!(
+                    "Compression toujours en cours sur le serveur après 30 min : « {} » sera complète à la fin (vérifie avec list_files).",
+                    out.archive_path
+                )
+            } else {
+                let skipped = if out.skipped > 0 {
+                    format!(" ; {} fichier(s) illisible(s) ignoré(s) (archive partielle)", out.skipped)
+                } else {
+                    String::new()
+                };
+                format!(
+                    "Archive « {} » créée sur le serveur : {} fichier(s), {}{skipped}.",
+                    out.archive_path,
+                    out.file_count,
+                    crate::server_files::human_bytes(out.size)
+                )
+            })
+        }
+
+        "disk_usage" => {
+            let id = req_i64(&args, "server_id")?;
+            let path = opt_str(&args, "path", "/");
+            let limit = opt_i64(&args, "limit", 20).clamp(1, 100) as u32;
+            let usage = core.disk_usage(id, &path, limit).await.map_err(es)?;
+            // À la racine : occupation face aux limites (serveur et MyBox), si disponible.
+            let space = if crate::server_files::panel_path(&path).is_empty() {
+                core.disk_space(id).await.ok()
+            } else {
+                None
+            };
+            Ok(crate::server_files::disk_usage_report(&usage, space.as_ref()))
         }
 
         "write_file" => {
@@ -921,7 +985,9 @@ fn build_tool_list() -> Value {
         tool("list_archive", "Liste les entrées d'une archive distante (`.zip` / `.tar` / `.tar.gz`) SANS l'extraire — pour repérer un fichier à inspecter dans un backup, un modpack, etc.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant de l'archive"))], &["server_id", "path"])),
         tool("read_archive_entry", "Lit le contenu TEXTE d'UNE entrée d'archive (`.zip`/`.tar`/`.tar.gz`) sans l'extraire sur disque. `entry` = nom exact renvoyé par list_archive.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive")), ("entry", prop_str("Nom de l'entrée dans l'archive"))], &["server_id", "path", "entry"])),
         tool("search_files", "Recherche RÉCURSIVE des fichiers/dossiers dont le nom contient `query` (insensible à la casse) sous `root` (défaut `/`). Renvoie les chemins (dossiers suffixés `/`). Résultats et exploration plafonnés (« tronqué » → affine `query`/`root`). Idéal pour localiser une config sans connaître le chemin exact.", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Sous-chaîne du nom à chercher")), ("root", prop_str("Dossier de départ (défaut /)"))], &["server_id", "query"])),
-        tool("extract_archive", "Extrait une archive (`.zip`/`.tar`/`.tar.gz`) présente sur le serveur DANS `dest_dir` (via SFTP) — p. ex. installer un modpack/monde/backup en place. Crée les dossiers manquants, refuse les chemins dangereux, plafonné (anti zip-bomb). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive sur le serveur")), ("dest_dir", prop_str("Dossier cible d'extraction"))], &["server_id", "path", "dest_dir"])),
+        tool("extract_archive", "Extrait une archive présente sur le serveur DANS `dest_dir` — p. ex. installer un modpack/monde/backup en place. Extraction faite PAR LE SERVEUR (rien ne transite par la machine ; formats .zip, .jar, .tar, .tar.gz/.bz2/.xz/.zst, .7z, .rar, .mcworld/.mcpack), avec repli automatique par SFTP pour .zip/.tar/.tar.gz si l'API échoue (plafonné, anti zip-slip). Les fichiers existants du même nom sont écrasés : vérifie la destination (list_files) avant. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive sur le serveur")), ("dest_dir", prop_str("Dossier cible d'extraction (`/` = racine du serveur)"))], &["server_id", "path", "dest_dir"])),
+        tool("compress_files", "Compresse des fichiers/dossiers EN .zip SUR LE SERVEUR (rapide même pour un monde de plusieurs Go : rien ne transite par la machine) — sauvegarde ponctuelle d'un monde ou d'une config AVANT une intervention risquée, ou archive à télécharger ensuite. Tous les `paths` doivent être dans le MÊME dossier : l'archive y est créée. Attend la fin (jusqu'à ~30 min) et renvoie son chemin, sa taille et le nombre de fichiers. Occupe de l'espace disque (vérifie avec disk_usage si le serveur est presque plein). N'écrase jamais une archive existante. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("paths", prop_str_array("Chemins absolus à inclure, tous dans le même dossier (ex. [\"/world\", \"/world_nether\"])")), ("name", prop_str("Nom de l'archive (optionnel ; `.zip` ajouté ; défaut : <nom>_<date>.zip)"))], &["server_id", "paths"])),
+        tool("disk_usage", "Analyse de l'ESPACE DISQUE calculée par le serveur : ce qui occupe le plus de place dans un dossier (tailles récursives, du plus gros au plus petit, avec leur part en %). À la racine, ajoute l'occupation comptée face à la limite du serveur et à celle de la MyBox. Idéal pour un serveur plein (« disk full ») : descends dans les plus gros dossiers (`path`) pour trouver logs, backups, mondes ou dumps à nettoyer.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Dossier à analyser (défaut `/`)")), ("limit", prop_int("Nombre d'entrées (défaut 20, max 100)"))], &["server_id"])),
         tool("write_file", "Écrit/écrase un fichier de config via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant")), ("content", prop_str("Nouveau contenu"))], &["server_id", "path", "content"])),
         tool("create_dir", "Crée un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin du nouveau dossier"))], &["server_id", "path"])),
         tool("delete_path", "Supprime un fichier ou un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin à supprimer")), ("is_dir", prop_bool("true si c'est un dossier"))], &["server_id", "path"])),
@@ -1062,6 +1128,18 @@ fn resolve_update_keys(
     Ok(items)
 }
 
+/// Tableau de chaînes requis (non vide).
+fn req_str_array(args: &Value, key: &str) -> Result<Vec<String>, String> {
+    let list: Vec<String> = args
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+    if list.is_empty() {
+        return Err(format!("paramètre `{key}` (tableau de chemins, non vide) requis"));
+    }
+    Ok(list)
+}
 fn opt_i64(args: &Value, key: &str, default: i64) -> i64 {
     args.get(key).and_then(|v| v.as_i64()).unwrap_or(default)
 }
@@ -1092,6 +1170,9 @@ fn prop_int(desc: &str) -> Value {
 }
 fn prop_str(desc: &str) -> Value {
     json!({ "type": "string", "description": desc })
+}
+fn prop_str_array(desc: &str) -> Value {
+    json!({ "type": "array", "items": { "type": "string" }, "description": desc })
 }
 fn prop_bool(desc: &str) -> Value {
     json!({ "type": "boolean", "description": desc })
@@ -1158,6 +1239,37 @@ mod tests {
             enabled,
             loader: "neoforge".into(),
         }
+    }
+
+    #[test]
+    fn server_side_file_tools_are_classified_and_exposed() {
+        // Compresser/extraire créent des fichiers sur le serveur → modifiants ; l'analyse du
+        // disque ne fait que lire → autorisée en lecture seule. Tous exposés et gardés par le MCP
+        // local quand le MCP officiel prend la main (outils de fichiers).
+        for w in ["compress_files", "extract_archive"] {
+            assert!(is_write_tool(w), "{w} doit être modifiant");
+            assert!(WRITE_TOOLS.contains(&w), "{w} doit être exposé");
+        }
+        assert!(!is_write_tool("disk_usage") && READ_TOOLS.contains(&"disk_usage"));
+        for t in ["compress_files", "extract_archive", "disk_usage"] {
+            assert!(LOCAL_KEEP_TOOLS.contains(&t), "{t} doit rester local");
+            assert!(tool_for_game(t, "satisfactory") && tool_for_game(t, "generic"), "{t} est universel");
+        }
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| {
+            tools
+                .iter()
+                .find(|t| t["name"] == n)
+                .unwrap_or_else(|| panic!("{n} absent"))["inputSchema"]
+                .clone()
+        };
+        assert_eq!(schema("compress_files")["properties"]["paths"]["type"], "array");
+        assert_eq!(schema("compress_files")["required"], json!(["server_id", "paths"]));
+        assert_eq!(schema("disk_usage")["required"], json!(["server_id"]));
+        assert!(cache_ttl("disk_usage").is_some() && cache_ttl("compress_files").is_none());
+        assert_eq!(req_str_array(&json!({ "paths": ["/a", 3, "/b"] }), "paths").unwrap(), ["/a", "/b"]);
+        assert!(req_str_array(&json!({ "paths": [] }), "paths").is_err());
+        assert!(req_str_array(&json!({ "paths": "/a" }), "paths").is_err());
     }
 
     #[test]

@@ -653,6 +653,50 @@ pub async fn download(
     Ok(())
 }
 
+/// Télécharge `remote` dans un fichier local déjà ouvert **à partir de `start`** (reprise après
+/// une coupure), par blocs ; `on_progress(done, total)`. Le fichier local est repositionné (et
+/// tronqué) à `start` : ce qui a déjà été reçu n'est ni redemandé ni dupliqué. Arrêt coopératif
+/// entre deux blocs via `cancel`. Renvoie le nombre d'octets du fichier une fois fini.
+pub async fn download_from(
+    conn: &SftpConn,
+    remote: &str,
+    dst: &mut tokio::fs::File,
+    start: u64,
+    on_progress: &mut impl FnMut(u64, u64),
+    cancel: &std::sync::atomic::AtomicBool,
+) -> Result<u64> {
+    use tokio::io::AsyncSeekExt;
+    let local_err = |e: std::io::Error| Error::Unexpected(format!("écriture locale: {e}"));
+    let total = conn.sftp.metadata(remote).await.map_err(sftp_err)?.size.unwrap_or(0);
+    let mut src = conn.sftp.open(remote).await.map_err(sftp_err)?;
+    if start > 0 {
+        src.seek(std::io::SeekFrom::Start(start))
+            .await
+            .map_err(|e| Error::Unexpected(format!("positionnement SFTP: {e}")))?;
+    }
+    dst.set_len(start).await.map_err(local_err)?;
+    dst.seek(std::io::SeekFrom::Start(start)).await.map_err(local_err)?;
+    let mut buf = vec![0u8; CHUNK];
+    let mut done = start;
+    loop {
+        if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            return Err(Error::Unexpected("Transfert annulé.".into()));
+        }
+        let n = src
+            .read(&mut buf)
+            .await
+            .map_err(|e| Error::Unexpected(format!("lecture SFTP: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n]).await.map_err(local_err)?;
+        done += n as u64;
+        on_progress(done, total);
+    }
+    dst.flush().await.map_err(local_err)?;
+    Ok(done)
+}
+
 pub async fn mkdir(conn: &SftpConn, path: &str) -> Result<()> {
     conn.sftp.create_dir(path).await.map_err(sftp_err)
 }

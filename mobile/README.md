@@ -140,6 +140,12 @@ Console live**. À étoffer ensuite :
   1 h, 6 h ou 24 h, lue dans le SQLite local du superviseur (aucun réseau). Graphique SVG maison
   (`MetricsChart`), balayage au doigt, trous visibles quand l'app ne surveillait pas, palette
   vérifiée en clair, en sombre et en daltonisme.
+- ✅ **Fichiers, opérations faites par le serveur** : téléchargement d'un **dossier en `.zip`**
+  (archive temporaire préparée par le serveur, rapatriée par blocs, puis retirée), **compression**
+  sur place (sauvegarde rapide d'un monde) et **extraction** d'une archive sans rien faire transiter
+  par le téléphone, suivies dans le centre de transferts. **Espace disque** (menu « plus » de la
+  barre des fichiers) : plus gros dossiers, navigation, occupation face à la limite du serveur et
+  de la MyBox.
 - ✅ **Mods & plugins** (Minecraft Java) : catalogues Modrinth / CurseForge / SpigotMC via l'API
   MineStrator, filtres source / loader / version, liste des installés, installation directe
   (Modrinth, SpigotMC) avec choix de version. Pas de SFTP en jeu. Les marketplaces des autres jeux

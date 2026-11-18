@@ -32,7 +32,10 @@ import type {
   CliStatus,
   ContentUpdates,
   CopilotConfig,
+  DiskSpace,
+  DiskUsage,
   Egg,
+  ExtractOutcome,
   FicsitInstallItem,
   FicsitInstalledMod,
   FicsitModPage,
@@ -505,6 +508,17 @@ export const api = {
     invoke<void>('sftp_download', { serverId, remotePath, localPath, transferId }),
   sftpDownloadZip: (serverId: number, paths: string[], localZip: string, transferId: string) =>
     invoke<void>('sftp_download_zip', { serverId, paths, localZip, transferId }),
+  cancelTransfer: (transferId: string) => invoke<void>('cancel_transfer', { transferId }),
+  // Fichiers côté serveur (API REST) : le SFTP reste le transport, l'API fait sur place ce qu'il
+  // ne sait pas faire. Noms et tailles de fichiers : rien d'identifiant (pas de mode démo).
+  /** Compression sur le serveur en tâche de fond, suivie par sftp://progress (direction `server`). */
+  serverCompress: (serverId: number, paths: string[], name: string | null, transferId: string) =>
+    invoke<void>('server_compress', { serverId, paths, name, transferId }),
+  serverExtract: (serverId: number, path: string, destDir: string, transferId: string) =>
+    invoke<ExtractOutcome>('server_extract', { serverId, path, destDir, transferId }),
+  diskUsage: (serverId: number, path: string, limit?: number) =>
+    invoke<DiskUsage>('disk_usage', { serverId, path, limit: limit ?? null }),
+  diskSpace: (serverId: number) => invoke<DiskSpace>('disk_space', { serverId }),
   // Archives (lecture seule) : .zip / .tar / .tar.gz / .gz
   sftpArchiveList: (serverId: number, path: string) =>
     invoke<ArchiveEntry[]>('sftp_archive_list', { serverId, path }),
