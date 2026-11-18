@@ -14,7 +14,7 @@
 
   let { history, cpuLimit }: { history: MetricsHistory | null; cpuLimit: number } = $props();
 
-  const H = 150;
+  const H = 170;
   const PAD_L = 30;
   const PAD_R = 10;
   const PAD_T = 10;
@@ -206,7 +206,7 @@
     position: relative;
   }
   .empty {
-    height: 150px;
+    height: 170px;
     display: grid;
     place-items: center;
     font-size: 13px;
@@ -266,7 +266,7 @@
     font-size: 10.5px;
   }
   .grid {
-    stroke: var(--border);
+    stroke: var(--border-strong);
     stroke-width: 1;
   }
   .axis {
@@ -276,23 +276,23 @@
   }
   .serie {
     fill: none;
-    stroke-width: 1.75;
+    stroke-width: 2;
     stroke-linejoin: round;
     stroke-linecap: round;
   }
   /* Mesures de l'hébergeur : pointillé discret, même couleur. */
   .serie.host {
-    stroke-dasharray: 4 3;
+    stroke-dasharray: 5 4;
     stroke-linecap: butt;
     opacity: 0.85;
   }
   .serie.cpu,
   .dot.cpu {
-    stroke: var(--brand-primary);
+    stroke: var(--chart-cpu);
   }
   .serie.ram,
   .dot.ram {
-    stroke: var(--brand-accent);
+    stroke: var(--chart-ram);
   }
   .dot {
     fill: var(--surface);
@@ -301,10 +301,10 @@
   .legend {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px 18px;
-    margin-top: 6px;
+    gap: 6px 18px;
+    margin-top: 8px;
     padding-left: 30px;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-muted);
   }
   .item {
@@ -315,6 +315,7 @@
   .item b {
     color: var(--text);
     font-family: var(--font-mono);
+    font-weight: 500;
   }
   .srcs {
     display: inline-flex;
@@ -335,10 +336,10 @@
     display: inline-block;
   }
   .sw.cpu {
-    background: var(--brand-primary);
+    background: var(--chart-cpu);
   }
   .sw.ram {
-    background: var(--brand-accent);
+    background: var(--chart-ram);
   }
   .sw.dash {
     height: 0;

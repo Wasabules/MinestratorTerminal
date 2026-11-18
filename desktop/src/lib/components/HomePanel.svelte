@@ -162,17 +162,16 @@
 
 <style>
   .home {
-    max-width: 980px;
-    margin: 0 auto;
-    padding: 28px 24px 48px;
+    padding: 30px 40px 48px;
     display: flex;
     flex-direction: column;
-    gap: 26px;
+    gap: 30px;
   }
   .head {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
+    flex-wrap: wrap;
     gap: 16px;
   }
   .head-actions {
@@ -181,12 +180,12 @@
   }
   .head h1 {
     margin: 0;
-    font-size: 24px;
-    letter-spacing: -0.02em;
+    font-size: 34px;
+    line-height: 1.05;
   }
   .head p {
-    margin: 4px 0 0;
-    font-size: 13px;
+    margin: 6px 0 0;
+    font-size: 14px;
   }
   .state {
     display: flex;
@@ -203,53 +202,62 @@
   }
   .group-head {
     display: flex;
-    align-items: flex-start;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 8px 12px;
   }
   .group-head h2 {
     margin: 0;
-    font-size: 16px;
+    font-size: 20px;
+    line-height: 1.2;
   }
   .g-sub {
-    font-size: 12.5px;
+    font-size: 13px;
   }
   .g-badges {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
-    flex: none;
   }
   .chip {
-    font-size: 11.5px;
+    font-size: 12px;
+    font-weight: 800;
     color: var(--text-muted);
-    background: var(--elevated);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 999px;
     padding: 3px 10px;
     white-space: nowrap;
   }
   .chip.pro {
-    color: #fff;
-    background: var(--brand-pro);
+    color: var(--state-hibernate);
+    background: color-mix(in srgb, var(--state-hibernate) 14%, var(--surface));
     border-color: transparent;
   }
   .chip.ok {
-    color: var(--state-running);
-    border-color: color-mix(in srgb, var(--state-running) 40%, var(--border));
+    color: var(--state-running-text);
+    background: color-mix(in srgb, var(--state-running) 12%, var(--surface));
+    border-color: transparent;
   }
   .chip.danger {
-    color: var(--state-danger);
-    border-color: color-mix(in srgb, var(--state-danger) 40%, var(--border));
+    color: var(--danger-ink);
+    background: var(--danger-bg);
+    border-color: transparent;
   }
   .grid {
     display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   }
   .empty {
-    font-size: 13px;
-    font-style: italic;
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--text-dim);
+  }
+  @media (max-width: 760px) {
+    .home {
+      padding: 22px 16px 40px;
+    }
   }
 </style>

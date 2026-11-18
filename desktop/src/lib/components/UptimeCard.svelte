@@ -10,7 +10,8 @@
   import { api } from '#lib/ipc.ts';
   import { t } from '#lib/i18n/index.ts';
   import { fmtDate, fmtDateTime, fmtDuration } from '#lib/automations/format.ts';
-  import type { UptimeReport } from '#lib/types.ts';
+  import type { UptimeReport, UptimeWindow } from '#lib/types.ts';
+  import Icon from './Icon.svelte';
 
   let { serverId }: { serverId: number } = $props();
 
@@ -20,6 +21,10 @@
 
   const PREVIEW = 4;
   const outages = $derived(report ? (showAll ? report.outages : report.outages.slice(0, PREVIEW)) : []);
+  /** Fenêtre la plus large qui a des mesures : son taux de surveillance résume la carte. */
+  const widest = $derived(
+    [...(report?.windows ?? [])].reverse().find((w) => w.percent != null) ?? null
+  );
 
   onMount(() => {
     void load();
@@ -37,7 +42,7 @@
 
   /** Couleur d'un pourcentage : vert ≥ 99,5 %, ambre ≥ 95 %, rouge sinon (charte : jauges). */
   function color(pct: number): string {
-    if (pct >= 99.5) return 'var(--state-running)';
+    if (pct >= 99.5) return 'var(--state-running-text)';
     if (pct >= 95) return 'var(--state-pending)';
     return 'var(--state-danger)';
   }
@@ -48,38 +53,43 @@
 
   function causeColor(cause: string): string {
     if (cause === 'crash') return 'var(--state-danger)';
-    if (cause === 'stop') return 'var(--state-offline)';
+    if (cause === 'stop') return 'var(--text-muted)';
     return 'var(--state-pending)';
+  }
+
+  /** Part surveillée d'une fenêtre (et part mesurée par l'hébergeur), en une phrase. */
+  function coverage(w: UptimeWindow): string {
+    const parts = [t('uptime.monitored', { pct: Math.round((w.monitored_s / w.seconds) * 100) })];
+    if (w.host_s > 0) parts.push(t('uptime.viaHost', { pct: Math.round((w.host_s / w.seconds) * 100) }));
+    return parts.join(', ');
   }
 </script>
 
-<section class="block">
-  <h2 title={t('uptime.hint')}>{t('uptime.title')}</h2>
+<section class="card up">
+  <h2>
+    {t('uptime.title')}
+    <span class="info" title={t('uptime.hint')}><Icon name="info" size={14} /></span>
+  </h2>
   <div class="tiles">
     {#each report?.windows ?? [] as w (w.seconds)}
-      <div class="card tile">
+      <div class="tile" title={w.percent != null ? coverage(w) : t('uptime.noData')}>
         <span class="k">{t(`uptime.window.${w.seconds}`)}</span>
         {#if w.percent != null}
           <span class="v" style="color: {color(w.percent)}">{fmtPct(w.percent)} %</span>
-          <span class="s dim">
-            {t('uptime.monitored', { pct: Math.round((w.monitored_s / w.seconds) * 100) })}
-          </span>
-          {#if w.host_s > 0}
-            <span class="s dim" title={t('uptime.viaHostHint')}>
-              {t('uptime.viaHost', { pct: Math.round((w.host_s / w.seconds) * 100) })}
-            </span>
-          {/if}
         {:else}
           <span class="v dim">—</span>
-          <span class="s dim">{t('uptime.noData')}</span>
         {/if}
       </div>
     {/each}
   </div>
-  <p class="dim hint">
-    {t('uptime.hint')}
-    {#if report?.since != null}· {t('uptime.since', { date: fmtDate(report.since) })}{/if}
-  </p>
+  {#if widest}
+    <p class="sum">
+      <span title={t('uptime.viaHostHint')}>{t(`uptime.window.${widest.seconds}`)} : {coverage(widest)}.</span>
+      {#if report?.since != null}{t('uptime.since', { date: fmtDate(report.since) })}.{/if}
+    </p>
+  {:else if report}
+    <p class="sum">{t('uptime.noData')}</p>
+  {/if}
 
   {#if report}
     <div class="out-head">
@@ -91,19 +101,19 @@
       {/if}
     </div>
     {#if report.outages.length === 0}
-      <p class="dim empty">{t('uptime.noOutage')}</p>
+      <p class="empty">{t('uptime.noOutage')}</p>
     {:else}
       <div class="outs">
         {#each outages as o (o.start)}
           <div class="out">
             <span class="cause" style="color: {causeColor(o.cause)}">{t(`uptime.cause.${o.cause}`)}</span>
-            <span class="when dim">{fmtDateTime(o.start)}</span>
             <span class="dur">{fmtDuration(o.duration_s)}</span>
-            <span class="end dim">
+            <span class="when">
+              {fmtDateTime(o.start)}
               {#if o.end == null}
-                {t('uptime.ongoing')}
+                · {t('uptime.ongoing')}
               {:else if !o.end_known}
-                {t('uptime.endUnknown')}
+                · {t('uptime.endUnknown')}
               {/if}
             </span>
           </div>
@@ -114,89 +124,93 @@
 </section>
 
 <style>
-  .block {
+  .up {
+    padding: 20px 22px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
   }
   h2 {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     margin: 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 18px;
+  }
+  .info {
+    display: inline-flex;
+    color: var(--text-dim);
+    cursor: help;
   }
   .tiles {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    gap: 8px;
   }
   .tile {
-    padding: 12px 14px;
     display: flex;
     flex-direction: column;
-    gap: 3px;
+    gap: 2px;
+    cursor: default;
   }
   .k {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-muted);
-    font-weight: 600;
+    font-weight: 700;
   }
   .v {
     font-size: 22px;
-    font-weight: 700;
+    font-weight: 900;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -0.01em;
+    white-space: nowrap;
   }
-  .s {
-    font-size: 11.5px;
-  }
-  .hint {
+  .sum {
     margin: 0;
-    font-size: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
   }
   .out-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-top: 4px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
   }
   .out-title {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 800;
   }
   .empty {
-    font-size: 12.5px;
-    font-style: italic;
+    font-size: 13px;
+    color: var(--text-dim);
     margin: 0;
   }
   .outs {
     display: flex;
     flex-direction: column;
-    gap: 2px;
   }
   .out {
     display: grid;
-    grid-template-columns: 110px 150px 90px 1fr;
-    align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    font-size: 13px;
+    grid-template-columns: 1fr auto;
+    gap: 0 10px;
+    padding: 7px 0;
+    font-size: 13.5px;
   }
-  .out:nth-child(odd) {
-    background: color-mix(in srgb, var(--text) 3%, transparent);
+  .out + .out {
+    border-top: 1px solid var(--border);
   }
   .cause {
-    font-weight: 600;
+    font-weight: 800;
   }
-  .when,
   .dur {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
     font-variant-numeric: tabular-nums;
   }
-  .end {
-    font-size: 12px;
+  .when {
+    grid-column: 1 / -1;
+    font-size: 12.5px;
+    color: var(--text-dim);
   }
   .linkbtn {
     background: none;
@@ -204,7 +218,11 @@
     color: var(--brand-primary);
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: 12.5px;
+    font-weight: 800;
     padding: 0;
+  }
+  .linkbtn:hover {
+    text-decoration: underline;
   }
 </style>
