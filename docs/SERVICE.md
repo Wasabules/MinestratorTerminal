@@ -130,12 +130,15 @@ aujourd'hui (`secrets.json.tmp`).
 
 `MINESTRATOR_DAEMON_SOCKET` remplace le point de contact (dev, tests, daemon au premier plan).
 
-**Protocole** (`core::service`) : une requête JSON par ligne (`{"op": …}`), une réponse JSON par
-ligne (`{"type": …, "data": …}`). Requêtes : `ping`, `status`, `history`, `alerts`,
-`get_config`, `set_config`, `set_key`, `clear_key`, `restart`. Requête ≤ 64 Kio, réponse
-≤ 64 Mio, connexion fermée après 30 s d'inactivité, 16 connexions simultanées au plus. Une
-version de protocole (`PROTOCOL_VERSION`) protège contre une app et un service désaccordés.
-Le `Debug` des requêtes masque la clé.
+**Protocole** (`core::service`, version **2**) : une requête JSON par ligne (`{"op": …}`), une
+réponse JSON par ligne (`{"type": …, "data": …}`). Requêtes : `ping`, `status`, `history`,
+`alerts`, `get_config`, `set_config`, `set_key`, `clear_key`, `restart`, et depuis la version 2
+`set_automations`, `set_webhooks`, `uptime`, `automation_runs` (§7). Requête ≤ 1 Mio (une liste
+de tâches et leurs commandes), réponse ≤ 64 Mio, connexion fermée après 30 s d'inactivité,
+16 connexions simultanées au plus. Une version de protocole (`PROTOCOL_VERSION`) protège contre
+une app et un service désaccordés : l'app ne délègue jamais la supervision à un service d'une
+autre version (elle garde la sienne et l'affiche « à mettre à jour »). Le `Debug` des requêtes
+masque la clé et les URL de webhook.
 
 **Propriétaires.** La liste des comptes autorisés est écrite **dans la définition du service**
 (arguments `--owner` de l'unité systemd, du plist, ou de la ligne de commande SCM), donc gérée
@@ -170,8 +173,12 @@ pas ses connexions monitor pour rien. La mise en veille ferme les connexions mon
 de veille les rouvre aussitôt.
 
 Quand le service supervise :
-- **historique** : `metrics_history` fusionne l'historique local et celui du service ;
+- **historique** : `metrics_history` fusionne l'historique local et celui du service ; de même
+  pour la disponibilité (`uptime`) et le journal des automatisations (`automation_runs`) ;
 - **réglages** du superviseur : enregistrés localement et transmis au service (`set_config`) ;
+- **automatisations et destinations d'alertes** : transmises au service (`set_automations`,
+  `set_webhooks`) à chaque modification, à l'activation et **à chaque prise de main** ; c'est lui
+  qui les exécute (§7) ;
 - **alertes** : voir §3.
 
 **Pilotage** : l'état côté OS (installé / arrêté / démarré) est lu sans privilège (SCM,
@@ -351,12 +358,58 @@ En mode utilisateur (Windows, app dans le profil), la section explique le foncti
 
 ---
 
+## 7. Automatisations, alertes externes, disponibilité
+
+Code : `core::automation` (redémarrage automatique, planificateur), `core::webhook` (Discord,
+JSON), `core::uptime` (disponibilité). Le service les démarre comme l'app
+(`Core::start_automations`, après le superviseur).
+
+**Une seule exécution.** Elles tournent dans le **superviseur actif** :
+- l'app ne les exécute que si son superviseur n'est pas en veille, et, juste avant chaque action
+  (étape d'un redémarrage programmé, commande, redémarrage automatique), refait la décision
+  « qui supervise » auprès du service (`is_active_supervisor`) : si le service vient de prendre la
+  main, l'app s'efface (exécution consignée « reprise par le service ») ;
+- au retour de veille, le planificateur de l'app repart de l'instant présent : ce que le service a
+  traité n'est ni rejoué ni signalé manqué ;
+- le répartiteur de webhooks de l'app ignore les alertes relayées depuis le service (il les a
+  déjà envoyées) ;
+- un service resté en protocole 1 ne sait pas les exécuter : l'app ne lui délègue pas la
+  supervision (protocole 2), elle les exécute donc elle-même.
+
+Fenêtre résiduelle connue : un service qui (re)démarre pendant le compte à rebours d'un
+redémarrage programmé lancé par l'app peut envoyer ses propres annonces avant que l'app ne s'efface
+— le redémarrage, lui, n'est fait qu'une fois.
+
+**Compte.** Règles et tâches portent l'`account_id` du compte qui les a créées ; un processus
+n'exécute que celles du compte dont il détient la clé. La liste transmise au service est celle de
+l'app (source de vérité) : plusieurs utilisateurs de la machine, propriétaires du service et sur le
+même compte, se l'écraseraient mutuellement.
+
+**Secrets.** Les URL de webhook sont des secrets (`webhook-url-<id>`) : trousseau de l'utilisateur
+côté app, fichier de secrets du service (chiffré DPAPI sous Windows) côté service. Elles ne
+transitent que par `set_webhooks` (IPC local, `Debug` masqué) ; celles des destinations retirées
+sont effacées. `webhooks.json` et `automations.json` ne contiennent aucun secret.
+
+**Données.** `automations.json`, `webhooks.json` dans le dossier de données ; journal des
+exécutions (`automation_runs`) et observations d'état (`uptime`) dans `metrics.db`, gardés
+32 jours. Pas de migration : fichiers et tables créés au premier lancement ; la colonne
+`alerts.details` (logs du crash) est ajoutée par migration à l'ouverture de la base.
+
+---
+
 ## Vérification
 
 Testé automatiquement (sans privilège) :
-- protocole IPC (sérialisation, trames bornées, masquage de la clé), décision « qui supervise »,
-  fusion d'historique, validation des uid/SID, citations shell/AppleScript/Windows
-  (`minestrator-core`, module `service`) ;
+- protocole IPC (sérialisation, trames bornées, masquage de la clé et des URL de webhook),
+  décision « qui supervise » (dont le refus d'un service en protocole 1), fusion d'historique,
+  validation des uid/SID, citations shell/AppleScript/Windows (`minestrator-core`, module
+  `service`) ;
+- automatisations (occurrences, changements d'heure, tolérance, délais et plafond du redémarrage
+  automatique), webhooks (formats, anonymisation, filtrage, regroupement), disponibilité
+  (périodes, trous de surveillance, fusion app/service) — modules `automation`, `webhook`,
+  `uptime` ;
+- bout en bout : `set_automations` (validation), `set_webhooks` (URL dans le fichier de secrets du
+  test, jamais dans `webhooks.json`), `uptime`, `automation_runs` ;
 - journal d'alertes SQLite et curseur (`store`) ;
 - génération **et relecture** de l'unité systemd et du plist launchd, ligne de commande SCM,
   ligne de commande du daemon, chaînes SDDL (`minestrator-daemon`) ;

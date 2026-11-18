@@ -165,6 +165,11 @@ résumé · cause probable justifiée · correctif détaillé · **0 à 3 action
   prolongée** (voir §10).
 - **Manuel** : bouton « Diagnostiquer » (Réglages → Copilote → Tester).
 
+Les alertes des **automatisations** (`auto_restart` : redémarrage automatique ou abandon, `task` :
+échec d'une tâche planifiée — voir `ARCHITECTURE.md`) ne déclenchent **pas** de diagnostic. Une
+alerte de crash arrive désormais avec les dernières lignes de console (`Alert.details`, déjà
+anonymisées) ; le Copilote garde sa propre collecte de contexte.
+
 **Cooldowns séparés, par serveur** : incidents (crash/seuil) et logs (error/warn) ont chacun leur
 compteur à **5 min** (`DIAGNOSE_COOLDOWN_S`) pour ne pas se priver mutuellement ; les analyses de
 **performance** ont un cooldown **dédié de 30 min** (`PERF_COOLDOWN_S`) — une surcharge peut durer
