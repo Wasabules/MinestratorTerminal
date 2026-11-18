@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, ensureNotificationPermission } from "#lib/ipc.ts";
   import { auth } from "#lib/stores/auth.svelte.ts";
+  import { alerts } from "#lib/stores/alerts.svelte.ts";
   import { settings } from "#lib/stores/settings.svelte.ts";
   import { initFake, isFake } from "#lib/fake.svelte.ts";
   import { t } from "#lib/i18n.ts";
@@ -9,12 +10,14 @@
   import ServerView from "#lib/components/ServerView.svelte";
   import SettingsView from "#lib/components/SettingsView.svelte";
   import NotificationsView from "#lib/components/NotificationsView.svelte";
+  import AlertsView from "#lib/components/AlertsView.svelte";
   import UpdateBanner from "#lib/components/UpdateBanner.svelte";
   import type { MyBoxSummary, ServerListItem } from "#lib/types.ts";
 
   let selected = $state<{ server: ServerListItem; box: MyBoxSummary | null } | null>(null);
   let showSettings = $state(false);
   let showNotifications = $state(false);
+  let showAlerts = $state(false);
 
   /**
    * Écran courant mémorisé, pour le retrouver après un rechargement du webview.
@@ -99,6 +102,13 @@
     ensureNotificationPermission();
     if (settings.bgMonitoring) api.setBackgroundMonitoring(true).catch(() => {});
   });
+
+  // Centre d'alertes : relit le journal local et suit les nouvelles alertes (pastille de la liste,
+  // alertes récentes de l'Aperçu). Une seule souscription pour toute la vie de la page.
+  $effect(() => {
+    if (!auth.isAuthed) return;
+    void alerts.start();
+  });
 </script>
 
 {#if auth.isAuthed}
@@ -118,6 +128,11 @@
   <SettingsView onBack={() => (showSettings = false)} />
 {:else if showNotifications}
   <NotificationsView onBack={() => (showNotifications = false)} />
+{:else if showAlerts}
+  <AlertsView
+    onBack={() => (showAlerts = false)}
+    onNotifications={() => (showNotifications = true)}
+  />
 {:else if selected}
   <ServerView
     server={selected.server}
@@ -134,7 +149,7 @@
       rememberServer(s.id);
     }}
     onSettings={() => (showSettings = true)}
-    onNotifications={() => (showNotifications = true)}
+    onAlerts={() => (showAlerts = true)}
   />
 {/if}
 

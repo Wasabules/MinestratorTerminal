@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, humanizeError } from "../ipc";
   import { auth } from "../stores/auth.svelte";
+  import { alerts } from "../stores/alerts.svelte";
   import { t } from "../i18n";
   import Icon from "./Icon.svelte";
   import GameIcon from "./GameIcon.svelte";
@@ -9,11 +10,12 @@
   let {
     onOpen,
     onSettings,
-    onNotifications,
+    onAlerts,
   }: {
     onOpen: (server: ServerListItem, box: MyBoxSummary | null) => void;
     onSettings: () => void;
-    onNotifications: () => void;
+    /** Centre d'alertes (qui mène aussi aux notifications de l'hébergeur), comme la cloche desktop. */
+    onAlerts: () => void;
   } = $props();
 
   let myboxes = $state<MyBoxSummary[]>([]);
@@ -111,8 +113,11 @@
     {#if auth.user}<span class="who selectable">{auth.user.pseudo}</span>{/if}
   </div>
   <div class="actions">
-    <button class="ic" onclick={onNotifications} aria-label={t("notifications.title")}>
-      <Icon name="alert" size={20} />
+    <button class="ic bell" onclick={onAlerts} aria-label={t("alerts.title")}>
+      <Icon name="bell" size={20} />
+      {#if alerts.unread > 0}
+        <span class="badge">{alerts.unread > 9 ? "9+" : alerts.unread}</span>
+      {/if}
     </button>
     <button class="ic" onclick={onSettings} aria-label={t("settings.title")}>
       <Icon name="settings" size={20} />
@@ -214,6 +219,26 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     color: var(--text-muted);
+  }
+  .bell {
+    position: relative;
+  }
+  /* Alertes non lues : même pastille que la cloche desktop. */
+  .badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--state-danger);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    box-shadow: 0 0 0 2px var(--bg);
   }
   .body {
     padding: 4px 12px 20px;
