@@ -8,6 +8,109 @@ unique des notes de version. Format inspiré de [Keep a Changelog](https://keepa
 
 ---
 
+## v0.7.0
+
+### Nouvelle apparence « Biome »
+
+- **L'application change de visage, sur ordinateur comme sur téléphone.** Chaque serveur a
+  désormais un biome — forêt, océan, désert, neige, Nether ou End — qui colore ses onglets et
+  l'en-tête de son tableau de bord, où s'affiche un paysage en pixels propre à ce serveur. Le
+  biome se choisit d'un clic droit sur l'onglet (ordinateur) ou depuis la vue du serveur
+  (téléphone) ; les couleurs déjà attribuées à vos serveurs sont converties vers le biome le plus
+  proche.
+- Les onglets d'un même serveur sont réunis en un seul bloc à sa couleur, et l'onglet actif se
+  fond dans la page.
+- Le tableau de bord d'un serveur occupe toute la largeur de la fenêtre : état, adresse et boutons
+  d'alimentation en tête, raccourcis vers chaque vue, puis historique, ressources, joueurs et
+  disponibilité.
+- Les polices de l'application sont intégrées : l'affichage est le même quel que soit le système.
+
+### Mode anonyme pour les captures d'écran
+
+- **Un bouton en forme d'œil masque instantanément les adresses IP, adresses de connexion, hôte
+  SFTP et e-mail du compte**, partout dans l'application, console comprise. Raccourci
+  Ctrl+Maj+H sur ordinateur. Les noms de serveurs et les pseudos restent visibles ; les boutons
+  « Copier » copient toujours la vraie valeur.
+
+### Joueurs
+
+- **La vue Joueurs liste tous les joueurs déjà venus**, pas seulement ceux connectés : temps de
+  jeu, dernière venue, opérateur, liste blanche ou banni, avec recherche, tri et statistiques
+  (actifs sur 7 et 30 jours, meilleurs temps de jeu).
+- Chaque joueur a sa fiche : santé, morts, distances parcourues et inventaire illustré. Sur
+  téléphone, la liste et la fiche sont consultables.
+
+### Historique et disponibilité
+
+- Les graphiques remontent jusqu'à 30 jours et montrent les joueurs connectés. Quand votre
+  ordinateur était éteint, les statistiques de l'hébergeur prennent le relais (en pointillés).
+- La disponibilité de chaque serveur est suivie sur 24 heures, 7 jours et 30 jours, avec la
+  liste des coupures.
+
+### Mods, plugins et fichiers
+
+- **Les mises à jour des mods, plugins et datapacks sont signalées** sur l'aperçu et dans le
+  Marketplace : mise à jour d'un élément ou de tous, puis proposition de redémarrer. Une version
+  prévue pour une autre plateforme (par exemple un plugin pour proxy proposé à un serveur Paper)
+  n'est jamais proposée.
+- Compresser et extraire des archives se fait désormais directement sur le serveur, et
+  télécharger un dossier en .zip est bien plus rapide.
+- Une vue « Espace disque » montre ce qui occupe le plus de place, dossier par dossier.
+- Le mot de passe SFTP est de nouveau récupéré automatiquement : plus besoin de le saisir.
+- L'application vérifie l'identité du serveur SFTP à chaque connexion et prévient si elle change.
+
+### MyBox
+
+- **Un onglet MyBox permet de gérer vos ressources et vos serveurs** : créer un serveur
+  (catalogue des jeux, processeur et mémoire limités à ce qui reste disponible, suggestion de
+  MyBox), le redimensionner, le renommer, réordonner, mettre en pause ou supprimer — avec une
+  sauvegarde proposée avant suppression et le nom à retaper. Sur téléphone, les ressources sont
+  consultables et les noms modifiables.
+
+### Automatisations et alertes
+
+- **Redémarrage automatique en cas de crash**, tâches planifiées exécutées par l'application et
+  historique de leurs exécutions.
+- Les tâches planifiées du panel MineStrator, exécutées par l'hébergeur même ordinateur éteint,
+  sont visibles et modifiables depuis l'application et le téléphone.
+- Les alertes peuvent être envoyées sur Discord ou vers n'importe quel webhook.
+
+### Navigation et comptes
+
+- **Palette de commandes** (Ctrl+K) : aller à un serveur, ouvrir une vue, lancer une action.
+- **Plusieurs comptes MineStrator** : ajoutez-les et passez de l'un à l'autre sans ressaisir de
+  clé.
+- Sur téléphone : vues Paramètres du serveur, Mods et plugins, centre d'alertes, historique des
+  ressources et tâches planifiées.
+
+### Copilote et serveur MCP
+
+- Le serveur MCP intégré passe à 77 outils : recherche dans les journaux (y compris archivés),
+  regroupement des erreurs par cause, audit de configuration et de sécurité, contrôle des
+  dépendances des plugins et mods, informations sur le monde, outils sur plusieurs serveurs
+  (copie, comparaison, recherche d'un joueur, annonce groupée), gestion des MyBox et des tâches
+  planifiées.
+- Il peut aussi relayer, sur option, les outils du MCP officiel de MineStrator : une seule
+  connexion pour votre assistant, et la clé API reste dans le trousseau de l'ordinateur. Toute
+  suppression ou restauration relayée exige de confirmer le nom de la ressource.
+- **Le Copilote est mieux cloisonné** : en mode autonome, il ne peut plus supprimer, restaurer,
+  réinstaller ni gérer l'infrastructure, n'agit que sur le serveur de la conversation et ne
+  touche plus à la commande de démarrage. Les assistants en ligne de commande n'ont plus accès à
+  la clé API.
+
+### Corrections
+
+- Certains secrets des fichiers de configuration (comme `management-server-secret`) et les
+  identifiants des joueurs pouvaient être transmis en clair à l'IA : ils sont désormais masqués.
+- Le journal d'activité de l'aperçu affichait des libellés vides : chaque action est maintenant
+  décrite en toutes lettres.
+- Dans la console, les filtres d'erreurs, d'avertissements et d'informations ne s'appliquaient
+  pas aux lignes déjà affichées.
+- Le mode « données de démo » laissait apparaître l'hôte SFTP réel dans la confirmation
+  d'identité du serveur.
+
+---
+
 ## v0.6.1
 
 ### Fichiers (SFTP)
