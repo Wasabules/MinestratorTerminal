@@ -46,6 +46,11 @@ export function serverItem(id: number): ServerListItem | undefined {
   return store.items[id];
 }
 
+/** Tous les serveurs déjà chargés (réactif ; vide tant que la liste n'a pas été lue). */
+export function knownServers(): ServerListItem[] {
+  return Object.values(store.items);
+}
+
 /**
  * Garantit la présence des capacités d'un serveur : si absentes (onglet « froid » ou fenêtre
  * détachée ouverte avant le chargement de l'accueil), interroge l'API une fois. Retombe sur

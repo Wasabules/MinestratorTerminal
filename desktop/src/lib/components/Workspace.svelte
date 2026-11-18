@@ -16,6 +16,7 @@
   import CopilotCenter from './CopilotCenter.svelte';
   import ModInstallCenter from './ModInstallCenter.svelte';
   import CopilotContextMenu from './CopilotContextMenu.svelte';
+  import CommandPalette from './CommandPalette.svelte';
   import HomePanel from './HomePanel.svelte';
   import ServerPanel from './ServerPanel.svelte';
   import SettingsView from './views/SettingsView.svelte';
@@ -104,6 +105,8 @@
     </button>
     <TabBar />
     <div class="controls">
+      <!-- Bouton + palette de commandes (Ctrl+K / ⌘K), dialog modal en couche supérieure. -->
+      <CommandPalette />
       <ModInstallCenter />
       <CopilotCenter />
       <AlertCenter />

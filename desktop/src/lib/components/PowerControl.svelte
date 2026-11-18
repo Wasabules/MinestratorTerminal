@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api, humanizeError } from '#lib/ipc.ts';
   import { t } from '#lib/i18n/index.ts';
+  import { primaryPowerAction, powerWarning, secondaryPowerActions } from '#lib/servers/power.ts';
   import type { PowerAction } from '#lib/types.ts';
 
   let {
@@ -29,17 +30,12 @@
   /** Action retenue en attente de confirmation (avertissement de l'hébergeur à lire). */
   let pending = $state<PowerAction | null>(null);
 
-  const RUNNING_ACTIONS: PowerAction[] = ['restart', 'restart10', 'stop10', 'kill'];
-  const STOPPED_ACTIONS: PowerAction[] = ['restart'];
-
-  // Actions secondaires regroupées dans le menu « ⋯ ».
-  const secondary = $derived(running ? RUNNING_ACTIONS : STOPPED_ACTIONS);
+  // Actions secondaires regroupées dans le menu « ⋯ » (logique partagée avec la palette).
+  const secondary = $derived(secondaryPowerActions(running));
 
   /** Avertissement associé à une action, ou `null` si l'hébergeur n'en a pas défini. */
   function warningFor(action: PowerAction): string | null {
-    if (action === 'restart' || action === 'restart10') return restartWarning || null;
-    if (action === 'stop' || action === 'stop10' || action === 'kill') return stopWarning || null;
-    return null;
+    return powerWarning(action, { restartWarning, stopWarning });
   }
 
   /** Demande confirmation si l'hébergeur a posé un avertissement, sinon exécute directement. */
@@ -66,7 +62,7 @@
     }
   }
 
-  const primary = $derived(running ? 'stop' : 'start');
+  const primary = $derived(primaryPowerAction(running));
 </script>
 
 <div class="power">
