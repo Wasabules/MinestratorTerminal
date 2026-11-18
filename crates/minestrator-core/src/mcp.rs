@@ -117,6 +117,11 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "read_startup",
     "read_properties",
     "mybox_info",
+    // Architecture des MyBox (mybox.rs) : lectures et calcul pur, sans effet.
+    "mybox_capacity",
+    "server_catalog",
+    "plan_placement",
+    "mybox_smartscan",
     "list_schedules",
     "list_players",
     "list_installed_mods",
@@ -163,7 +168,32 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     // NB : restore_snapshot / restore_backup / delete_snapshot sont DESTRUCTIFS et volontairement
     // ABSENTS d'ici → jamais auto-exécutés par l'agent ; uniquement via « Appliquer » (intent user).
     "create_snapshot",
+    // Infrastructure MyBox (voir INFRA_TOOLS) : jamais proposés au Copilote.
+    "mybox_create_server",
+    "mybox_resize_server",
+    "rename_server",
+    "rename_mybox",
+    "mybox_pause_server",
+    "mybox_reorder_servers",
+    "mybox_delete_server",
 ];
+
+/// Outils modifiants qui gèrent l'**infrastructure** (création, redimensionnement, pause,
+/// suppression de serveurs, noms, ordre). Exposés au serveur MCP local (soumis à `allow_writes`),
+/// mais **jamais** au Copilote : il lit du contenu non fiable (chat des joueurs), et une injection
+/// ne doit pas pouvoir supprimer ou créer des serveurs. Voir `copilot.rs` et `Core::copilot_apply`.
+pub(crate) const INFRA_TOOLS: &[&str] = &[
+    "mybox_create_server",
+    "mybox_resize_server",
+    "rename_server",
+    "rename_mybox",
+    "mybox_pause_server",
+    "mybox_reorder_servers",
+    "mybox_delete_server",
+];
+
+/// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
+const MYBOX_UNITS: &str = "CPU en cœurs entiers (1 = un cœur, pas un pourcentage) ; RAM en Go entiers (pas en Mo) ; disque total en Go, occupation en Mo. Le disque est partagé par toute la MyBox ; seuls les serveurs actifs consomment CPU et RAM (un serveur en pause les rend) ; FlexCore = cœurs de rafale partagés, non allouables.";
 
 /// Un outil est-il modifiant ? Default-deny : tout ce qui n'est PAS un outil de lecture connu.
 pub(crate) fn is_write_tool(name: &str) -> bool {
@@ -435,6 +465,9 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // Analyse du disque : calculée par le serveur sur tout un arbre, change lentement.
         "disk_usage" => 30,
         "mybox_info" => 30,
+        "mybox_capacity" => 10,
+        "server_catalog" => 300,
+        "mybox_smartscan" => 60,
         "list_schedules" => 15,
         // Liste des joueurs : déjà gardée une minute par le cœur (purgée par une action joueur).
         "list_players" => 30,
@@ -498,6 +531,145 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "mybox_info" => {
             let id = req_i64(&args, "mybox_id")?;
             json_pretty(&core.mybox_details(id).await.map_err(es)?)
+        }
+
+        // --- Architecture des MyBox (mybox.rs) ---------------------------------------
+        "mybox_capacity" => {
+            let caps = match args.get("mybox_id").and_then(Value::as_i64) {
+                Some(id) => vec![core.mybox_capacity(id).await.map_err(mybox_es)?],
+                None => core.mybox_capacities().await.map_err(mybox_es)?,
+            };
+            json_pretty(&json!({ "units": MYBOX_UNITS, "myboxes": caps }))
+        }
+
+        "server_catalog" => {
+            const CAP: usize = 80;
+            let query = opt_str(&args, "query", "").trim().to_lowercase();
+            let experimental = args.get("include_experimental").and_then(Value::as_bool).unwrap_or(false);
+            let catalog = core.server_catalog().await.map_err(mybox_es)?;
+            let eggs: Vec<Value> = catalog
+                .eggs
+                .iter()
+                .filter(|e| (experimental || !e.experimental) && (query.is_empty() || e.name.to_lowercase().contains(&query)))
+                .map(|e| {
+                    json!({
+                        "egg_id": e.id, "name": e.name, "category": e.category, "experimental": e.experimental,
+                        "recommended": { "cpu": e.cpu, "ram": e.ram, "disk_gb": e.disk },
+                        "install_disk_gb": e.install_disk,
+                        "required_fields": e.required_fields.iter().map(|f| json!({ "key": f.key, "label": f.label })).collect::<Vec<_>>(),
+                    })
+                })
+                .collect();
+            let total = eggs.len();
+            json_pretty(&json!({
+                "units": "recommended : cœurs et Go (0 = non précisé)",
+                "eggs": eggs.into_iter().take(CAP).collect::<Vec<_>>(),
+                "truncated": total > CAP,
+                "locations": catalog.locations,
+            }))
+        }
+
+        "plan_placement" => {
+            let requests: Vec<crate::PlacementRequest> =
+                serde_json::from_value(args.get("servers").cloned().unwrap_or_else(|| json!([])))
+                    .map_err(|e| format!("paramètre `servers` invalide : {e}"))?;
+            let strategy = opt_str(&args, "strategy", "pack");
+            let plan = core.mybox_plan_placement(requests, &strategy).await.map_err(mybox_es)?;
+            json_pretty(&json!({ "units": MYBOX_UNITS, "plan": plan }))
+        }
+
+        "mybox_smartscan" => {
+            let id = req_i64(&args, "mybox_id")?;
+            json_pretty(&core.mybox_smartscan(id).await.map_err(mybox_es)?)
+        }
+
+        "mybox_create_server" => {
+            let fields = match args.get("required_fields") {
+                None | Some(Value::Null) => Vec::new(),
+                Some(Value::Object(map)) => map
+                    .iter()
+                    .map(|(k, v)| crate::FieldValue {
+                        key: k.clone(),
+                        value: v.as_str().map(str::to_string).unwrap_or_else(|| v.to_string()),
+                    })
+                    .collect(),
+                Some(_) => return Err("`required_fields` doit être un objet { CLÉ: valeur }".into()),
+            };
+            let input = crate::CreateServerInput {
+                mybox_id: req_i64(&args, "mybox_id")?,
+                name: req_str(&args, "name")?,
+                egg_id: req_i64(&args, "egg_id")?,
+                experimental: args.get("experimental").and_then(Value::as_bool).unwrap_or(false),
+                location_id: args.get("location_id").and_then(Value::as_i64),
+                cpu: req_i64(&args, "cpu")?,
+                ram: req_i64(&args, "ram")?,
+                fields,
+            };
+            let created = core.mybox_create_server(input).await.map_err(mybox_es)?;
+            Ok(core.redact_ai(&format!(
+                "Serveur {} créé dans la MyBox {} (adresse : {}). L'hébergeur l'installe maintenant : suis-le avec server_status.",
+                created.server_id,
+                created.mybox_id,
+                if created.ip.is_empty() { "attribuée à l'installation" } else { &created.ip }
+            )))
+        }
+
+        "mybox_resize_server" => {
+            let (mybox, server) = (req_i64(&args, "mybox_id")?, req_i64(&args, "server_id")?);
+            let (cpu, ram) = (req_i64(&args, "cpu")?, req_i64(&args, "ram")?);
+            core.mybox_resize_server(mybox, server, cpu, ram).await.map_err(mybox_es)?;
+            Ok(format!("Serveur {server} : désormais {cpu} cœur(s) et {ram} Go de RAM."))
+        }
+
+        "rename_server" => {
+            let id = req_i64(&args, "server_id")?;
+            core.rename_server(id, &req_str(&args, "name")?).await.map_err(mybox_es)?;
+            Ok(format!("Serveur {id} renommé."))
+        }
+
+        "rename_mybox" => {
+            let id = req_i64(&args, "mybox_id")?;
+            core.rename_mybox(id, &req_str(&args, "name")?).await.map_err(mybox_es)?;
+            Ok(format!("MyBox {id} renommée."))
+        }
+
+        "mybox_pause_server" => {
+            let (mybox, server) = (req_i64(&args, "mybox_id")?, req_i64(&args, "server_id")?);
+            let paused = args
+                .get("paused")
+                .and_then(Value::as_bool)
+                .ok_or("paramètre `paused` (booléen) requis : true = mettre en pause, false = reprendre")?;
+            let out = core.mybox_set_server_paused(mybox, server, paused).await.map_err(mybox_es)?;
+            Ok(match (paused, out.job_id) {
+                (true, _) => format!("Serveur {server} mis en pause : ses ressources sont rendues à la MyBox, ses fichiers gardés."),
+                (false, Some(job)) if out.resuming => format!("Reprise du serveur {server} lancée (job {job}) : ses fichiers sont remis en place, cela peut prendre quelques minutes."),
+                (false, _) => format!("Serveur {server} de nouveau actif."),
+            })
+        }
+
+        "mybox_reorder_servers" => {
+            let mybox = req_i64(&args, "mybox_id")?;
+            let ids: Vec<i64> = args
+                .get("server_ids")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_i64).collect())
+                .ok_or("paramètre `server_ids` (tableau d'entiers) requis")?;
+            core.mybox_reorder_servers(mybox, ids).await.map_err(mybox_es)?;
+            Ok(format!("Ordre des serveurs de la MyBox {mybox} enregistré."))
+        }
+
+        "mybox_delete_server" => {
+            let (mybox, server) = (req_i64(&args, "mybox_id")?, req_i64(&args, "server_id")?);
+            let confirm = req_str(&args, "confirm_name")?;
+            let snapshot_first = args.get("snapshot_first").and_then(Value::as_bool).unwrap_or(true);
+            let snapshot = core
+                .mybox_delete_server_guarded(mybox, server, &confirm, snapshot_first)
+                .await
+                .map_err(mybox_es)?;
+            Ok(match snapshot {
+                Some(name) => format!("Snapshot « {name} » créée, puis serveur {server} supprimé définitivement."),
+                None => format!("Serveur {server} supprimé définitivement (sans snapshot préalable)."),
+            })
         }
 
         "list_schedules" => {
@@ -973,7 +1145,18 @@ fn build_tool_list() -> Value {
         tool("server_status", "État temps réel d'un serveur : état, consommation instantanée (CPU en centièmes de cœur dont FlexCore/`is_bursting`, RAM et disque en Mo), réseau cumulé, uptime, joueurs, version, MOTD.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_schedules", "Tâches planifiées du panel MineStrator d'un serveur, exécutées par l'hébergeur même ordinateur éteint (à distinguer des automatisations de l'app) : nom, planification cron, active, seulement si en ligne, prochaine et dernière exécution, actions dans l'ordre (commande ou alimentation, délai en secondes).", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_players", "Joueurs Minecraft (Java) déjà venus sur un serveur, pas seulement les connectés : statistiques (joueurs uniques, connectés, actifs sur 24 h / 7 j / 30 j, temps de jeu total) puis liste triée avec temps de jeu CUMULÉ (heures), dernière venue, op/whitelist/banni. Pour « qui a le plus joué cette semaine » : sort=play_time et active_days=7 (le temps de jeu reste cumulé depuis la première venue). Pseudos remplacés par des alias stables si l'anonymisation IA est active.", obj(&[("server_id", prop_int("ID du serveur")), ("sort", prop_str("play_time (défaut) | last_seen | name")), ("active_days", prop_int("Seulement les joueurs venus dans les N derniers jours (0 = tous)")), ("search", prop_str("Filtre sur le pseudo (sous-chaîne)")), ("limit", prop_int("Joueurs listés (défaut 25, max 100)"))], &["server_id"])),
-        tool("mybox_info", "Détail d'une MyBox (`mybox_id` via list_servers) : échéance, renouvellement automatique, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
+        tool("mybox_info", "Détail d'une MyBox (`mybox_id` via list_servers) : échéance, renouvellement automatique, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, nombre maximal de serveurs actifs), serveurs et ressources allouées.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
+        tool("mybox_capacity", "Capacité des MyBox (toutes, ou une seule avec `mybox_id`) — POINT D'ENTRÉE pour architecturer : pour chaque MyBox, CPU et RAM totaux / alloués / restants (CPU en CŒURS entiers, RAM en GO entiers), disque PARTAGÉ (total en Go, occupé en Mo), emplacements de serveurs actifs et en pause (`max_active` 0 = sans limite), FlexCore, état (expirée, suspendue, Pro), serveurs (id, nom, jeu, cœurs, Go, en pause, localisation, ordre) et `blockers` (ce qui empêche d'y créer un serveur). Seuls les serveurs ACTIFS consomment CPU/RAM.", obj(&[("mybox_id", prop_int("ID d'une MyBox (optionnel : toutes par défaut)"))], &[])),
+        tool("server_catalog", "Catalogue de création : jeux (`egg_id`, catégorie, ressources RECOMMANDÉES en cœurs et Go, champs requis à fournir) et localisations (`location_id`, ville, en stock). `query` filtre par nom ; les types expérimentaux (non testés, sans support) ne sont inclus qu'avec `include_experimental`.", obj(&[("query", prop_str("Filtre optionnel sur le nom du jeu")), ("include_experimental", prop_bool("Inclure les types expérimentaux (défaut false)"))], &[])),
+        tool("plan_placement", "Calcule OÙ placer un ou plusieurs serveurs à créer selon les ressources LIBRES de toutes les MyBox — calcul pur, NE MODIFIE RIEN. Chaque demande : `cpu` en cœurs entiers, `ram` en Go entiers, `disk_gb` facultatif (disque libre souhaité, Go), `label`. `strategy` : `pack` (défaut : remplir la MyBox la plus juste, garder de grands blocs libres ailleurs) ou `spread` (répartir la charge). Renvoie la MyBox retenue par demande (et ce qu'il y restera), les raisons d'un refus et des pistes (serveurs à mettre en pause). Pour réduire des serveurs surdimensionnés, voir mybox_smartscan.", obj(&[("servers", json!({ "type": "array", "description": "Serveurs à placer", "items": { "type": "object", "properties": { "label": { "type": "string", "description": "Libellé libre" }, "cpu": { "type": "integer", "description": "Cœurs (entier ≥ 1)" }, "ram": { "type": "integer", "description": "Go de RAM (entier ≥ 1)" }, "disk_gb": { "type": "integer", "description": "Disque libre souhaité en Go (optionnel)" } }, "required": ["cpu", "ram"] } })), ("strategy", prop_str("pack (défaut) ou spread"))], &["servers"])),
+        tool("mybox_smartscan", "Analyse SmartScan de l'hébergeur pour une MyBox (usage p95 sur 14 à 30 jours) : serveurs surdimensionnés et allocation suggérée (`shrink`), rééquilibrage possible entre serveurs (`balance`), conseil d'évolution (`scale`). Lecture seule : appliquer une suggestion = mybox_resize_server, avec l'accord de l'utilisateur.", obj(&[("mybox_id", prop_int("ID de la MyBox"))], &["mybox_id"])),
+        tool("mybox_create_server", "CRÉE un serveur dans une MyBox. Vérifie AVANT envoi : ressources restantes de CETTE MyBox, emplacement actif libre, jeu du catalogue, champs requis, localisation en stock. `cpu` en CŒURS entiers (1 = un cœur, pas un %), `ram` en GO entiers (4 = 4 Go, pas 4096). `egg_id` et `location_id` viennent de server_catalog ; `mybox_id` de mybox_capacity (ou plan_placement). `location_id` est ignoré sur une MyBox Pro. Peut consommer toute la capacité restante : confirme le plan avec l'utilisateur d'abord. ✎ (modifiant)", obj(&[("mybox_id", prop_int("ID de la MyBox d'accueil")), ("name", prop_str("Nom du serveur (1 à 50 caractères)")), ("egg_id", prop_int("ID du jeu (server_catalog)")), ("experimental", prop_bool("true si egg_id vient du catalogue expérimental (défaut false)")), ("location_id", prop_int("ID de localisation (server_catalog) ; requis sauf MyBox Pro")), ("cpu", prop_int("Cœurs alloués (entier ≥ 1)")), ("ram", prop_int("Go de RAM alloués (entier ≥ 1)")), ("required_fields", json!({ "type": "object", "description": "Champs requis du jeu : { CLÉ: valeur } (clés de server_catalog)", "additionalProperties": { "type": "string" } }))], &["mybox_id", "name", "egg_id", "cpu", "ram"])),
+        tool("mybox_resize_server", "Change le CPU et la RAM ALLOUÉS à un serveur (valeurs FINALES, pas des différences) : `cpu` en cœurs entiers, `ram` en Go entiers. Vérifie que la MyBox a de quoi (le serveur rend d'abord ce qu'il occupe). L'API peut exiger le serveur ARRÊTÉ (erreur API_MYBOX_NEED_OFFLINE_SERVER) : demander à l'utilisateur avant de l'arrêter. ✎ (modifiant)", obj(&[("mybox_id", prop_int("ID de la MyBox du serveur")), ("server_id", prop_int("ID du serveur")), ("cpu", prop_int("Nouveau total de cœurs (entier ≥ 1)")), ("ram", prop_int("Nouveau total de Go de RAM (entier ≥ 1)"))], &["mybox_id", "server_id", "cpu", "ram"])),
+        tool("rename_server", "Renomme un serveur (1 à 50 caractères). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("name", prop_str("Nouveau nom"))], &["server_id", "name"])),
+        tool("rename_mybox", "Renomme une MyBox (1 à 50 caractères). ✎ (modifiant)", obj(&[("mybox_id", prop_int("ID de la MyBox")), ("name", prop_str("Nouveau nom"))], &["mybox_id", "name"])),
+        tool("mybox_pause_server", "Met en PAUSE (`paused`: true) ou REPREND (`paused`: false) un serveur. En pause : arrêté, CPU/RAM rendus à la MyBox, fichiers conservés. Reprendre exige un emplacement actif libre et ses ressources disponibles ; la reprise peut durer quelques minutes (fichiers remis en place). ✎ (modifiant)", obj(&[("mybox_id", prop_int("ID de la MyBox du serveur")), ("server_id", prop_int("ID du serveur")), ("paused", prop_bool("true = mettre en pause, false = reprendre"))], &["mybox_id", "server_id", "paused"])),
+        tool("mybox_reorder_servers", "Réordonne les serveurs d'une MyBox (affichage du panel) : `server_ids` dans l'ordre voulu ; ceux non cités suivent dans leur ordre actuel. ✎ (modifiant)", obj(&[("mybox_id", prop_int("ID de la MyBox")), ("server_ids", json!({ "type": "array", "description": "IDs des serveurs, dans l'ordre", "items": { "type": "integer" } }))], &["mybox_id", "server_ids"])),
+        tool("mybox_delete_server", "SUPPRIME DÉFINITIVEMENT un serveur (fichiers, mondes et sauvegardes automatiques perdus). `confirm_name` doit reprendre EXACTEMENT le nom actuel du serveur (casse comprise), sinon refus. Par défaut (`snapshot_first` true), une snapshot est d'abord créée et attendue (jusqu'à 15 min) : la suppression est annulée si elle échoue. N'utiliser que sur demande EXPLICITE de l'utilisateur. ✎ (modifiant, irréversible)", obj(&[("mybox_id", prop_int("ID de la MyBox du serveur")), ("server_id", prop_int("ID du serveur à supprimer")), ("confirm_name", prop_str("Nom EXACT du serveur, en confirmation")), ("snapshot_first", prop_bool("Snapshot préalable (défaut true)"))], &["mybox_id", "server_id", "confirm_name"])),
         tool("server_metrics", "Historique de consommation (CPU en % d'un cœur, RAM et disque en octets) + résumé (moyennes/max, pic de joueurs) — pour analyser la charge et optimiser. Croise la surveillance de l'app (`source: local`, toutes les 10 s) et les statistiques de l'hébergeur (`source: host`, à la minute) qui comblent les périodes non surveillées ; `players` : joueurs connectés (hébergeur).", obj(&[("server_id", prop_int("ID du serveur")), ("since_secs", prop_int("Fenêtre en secondes (défaut 3600, max 30 j)"))], &["server_id"])),
         tool("power_action", "Démarre/redémarre/arrête un serveur. `action` ∈ start|restart|restart10|stop|stop10|kill.", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start|restart|restart10|stop|stop10|kill"))], &["server_id", "action"])),
         tool("send_command", "Envoie une commande à la console (n'a d'effet que serveur en ligne).", obj(&[("server_id", prop_int("ID du serveur")), ("command", prop_str("Commande console"))], &["server_id", "command"])),
@@ -1152,6 +1335,16 @@ fn opt_str(args: &Value, key: &str, default: &str) -> String {
 fn es<E: std::fmt::Display>(e: E) -> String {
     e.to_string()
 }
+/// Erreur d'un outil MyBox : le code MineStrator est suivi de son explication quand on la connaît.
+fn mybox_es(e: crate::Error) -> String {
+    match &e {
+        crate::Error::Api { code } => match crate::mybox::explain_api_code(code) {
+            Some(why) => format!("{e} — {why}"),
+            None => e.to_string(),
+        },
+        _ => e.to_string(),
+    }
+}
 fn json_pretty<T: serde::Serialize>(v: &T) -> Result<String, String> {
     serde_json::to_string_pretty(v).map_err(es)
 }
@@ -1229,6 +1422,55 @@ mod tests {
         for t in ["upload_file", "download_file", "edit_file", "file_stat"] {
             assert!(names.contains(&t), "{t} absent du catalogue");
         }
+    }
+
+    #[test]
+    fn every_listed_tool_is_classified_and_every_classified_tool_is_listed() {
+        let names: Vec<&str> = tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|n| n.as_str()))
+            .collect();
+        for n in &names {
+            assert!(READ_TOOLS.contains(n) ^ WRITE_TOOLS.contains(n), "{n} : lecture XOR écriture");
+        }
+        for n in READ_TOOLS.iter().chain(WRITE_TOOLS) {
+            assert!(names.contains(n), "{n} sans schéma dans tool_list()");
+        }
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), names.len(), "noms d'outils en double");
+    }
+
+    #[test]
+    fn mybox_infrastructure_tools_are_writes_and_reads_stay_reads() {
+        for t in INFRA_TOOLS {
+            assert!(is_write_tool(t) && WRITE_TOOLS.contains(t), "{t} doit être modifiant");
+        }
+        for t in ["mybox_capacity", "server_catalog", "plan_placement", "mybox_smartscan"] {
+            assert!(!is_write_tool(t), "{t} doit être en lecture");
+        }
+        // La suppression exige une confirmation explicite dans son schéma.
+        let delete = tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == "mybox_delete_server")
+            .unwrap();
+        assert!(delete["inputSchema"]["required"].as_array().unwrap().contains(&json!("confirm_name")));
+        // Les schémas rappellent les unités.
+        let create = tool_list().as_array().unwrap().iter().find(|t| t["name"] == "mybox_create_server").unwrap();
+        let d = create["description"].as_str().unwrap();
+        assert!(d.contains("CŒURS") && d.contains("GO"), "{d}");
+    }
+
+    #[test]
+    fn mybox_api_errors_carry_an_explanation() {
+        let e = mybox_es(crate::Error::Api { code: "API_MYBOX_NOT_ENOUGH_RAM".into() });
+        assert!(e.contains("API_MYBOX_NOT_ENOUGH_RAM") && e.contains("RAM"), "{e}");
+        assert_eq!(mybox_es(crate::Error::Invalid("x".into())), "x");
     }
 
     fn item(name: &str, version: &str, enabled: bool) -> InstalledItem {

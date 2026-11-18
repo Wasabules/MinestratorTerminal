@@ -142,7 +142,9 @@
             ? t('copilot.title')
             : tab.kind === 'notifications'
               ? t('notifications.title')
-              : t('common.home')}
+              : tab.kind === 'myboxes'
+                ? t('mybox.title')
+                : t('common.home')}
     >
       {#if tab.kind === 'home'}
         <span class="glyph"><Icon name="home" size={15} /></span>
@@ -156,6 +158,9 @@
       {:else if tab.kind === 'notifications'}
         <span class="glyph"><Icon name="bell" size={15} /></span>
         {#if !compact}<span class="name">{t('notifications.title')}</span>{/if}
+      {:else if tab.kind === 'myboxes'}
+        <span class="glyph"><Icon name="cpu" size={15} /></span>
+        {#if !compact}<span class="name">{t('mybox.title')}</span>{/if}
       {:else}
         {@const rt = serverRuntime(tab.serverId)}
         <span class="glyph">

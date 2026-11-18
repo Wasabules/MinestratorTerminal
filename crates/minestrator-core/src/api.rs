@@ -343,6 +343,32 @@ impl ApiClient {
         self.get(token, &format!("/mybox/{id}")).await
     }
 
+    /// Lecture brute : le champ `data` tel quel, pour un module qui interprète lui-même la réponse
+    /// avec tolérance (`mybox.rs`).
+    pub(crate) async fn get_data(&self, token: &str, path: &str) -> Result<Value> {
+        self.get(token, path).await
+    }
+
+    /// Écriture brute : méthode, chemin et corps construits (et testés) par l'appelant
+    /// (`mybox::WriteRequest`). Renvoie le champ `data` s'il y en a un.
+    pub(crate) async fn send_raw(
+        &self,
+        method: reqwest::Method,
+        token: &str,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<Option<Value>> {
+        let mut req = self
+            .http
+            .request(method, format!("{API_BASE_URL}{path}"))
+            .header(header::AUTHORIZATION, Self::bearer(token))
+            .header(header::ACCEPT, "application/json");
+        if let Some(body) = body {
+            req = req.json(body);
+        }
+        Self::read_envelope(req.send().await?).await
+    }
+
     /// Identifiants WebSocket seuls — réponse ~1 Kio, contre plusieurs Kio pour `get_server`
     /// (qui embarque SFTP, historique, ports…). À préférer partout où seul le couple url/token
     /// compte, en particulier au rafraîchissement sur `token expiring`.

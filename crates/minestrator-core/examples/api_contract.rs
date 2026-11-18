@@ -98,6 +98,32 @@ const RAW_FIELDS: &[(&str, &[&str])] = &[
     ("/mybox/{id}/disk", &["api.data.disk_servers", "api.data.disk_servers_unit"]),
     // Non documenté (panel web) : suivi des compressions faites par le serveur.
     ("/server/{id}/files/compress/jobs", &["api.data.jobs"]),
+    // Gestion des MyBox (`mybox.rs`) : champs lus avec tolérance mais indispensables aux calculs de
+    // capacité (un champ disparu donnerait des ressources à zéro, sans erreur).
+    (
+        "/mybox/{id}",
+        &[
+            "api.data.mybox.cpu_remaining",
+            "api.data.mybox.ram_remaining",
+            "api.data.offer.cpu",
+            "api.data.offer.ram",
+            "api.data.offer.disk",
+            "api.data.offer.pods",
+        ],
+    ),
+    // Non documenté (panel web) : occupation disque de la MyBox (partagée par ses serveurs).
+    ("/mybox/{id}/disk", &["api.data.disk_servers", "api.data.disk_servers_unit"]),
+    // Non documenté (panel web) : catalogue de création, ressources recommandées par jeu.
+    (
+        "/site/eggs",
+        &[
+            "api.data.eggs[].id",
+            "api.data.eggs[].resources.cpu",
+            "api.data.eggs[].resources.ram",
+            "api.data.eggs_categories[].category",
+        ],
+    ),
+    ("/server/catalog/locations", &["api.data.locations[].id", "api.data.locations[].city"]),
     // Non documenté (panel web) : seule source du mot de passe SFTP pour une clé API.
     (
         "/server/{id}/sftp",
@@ -346,6 +372,9 @@ async fn main() {
             report.call(&label, core.mybox_details(mybox.id)).await;
             let tag = format!(" (MyBox {})", i + 1);
             raw_checks(&mut report, &http, &key, "/mybox/{id}/disk", &format!("/mybox/{}/disk", mybox.id), &tag).await;
+            raw_checks(&mut report, &http, &key, "/mybox/{id}", &format!("/mybox/{}", mybox.id), &tag).await;
+            raw_checks(&mut report, &http, &key, "/mybox/{id}/disk", &format!("/mybox/{}/disk", mybox.id), &tag).await;
+            report.call(&format!("capacité de la MyBox {}", i + 1), core.mybox_capacity(mybox.id)).await;
         }
         let mut examined = 0;
         for server in &overview.servers {
@@ -476,6 +505,9 @@ async fn main() {
     report.call("GET /user/{id}/snapshots", core.list_snapshots()).await;
     report.call("GET /user (notifications)", core.user_notifications()).await;
     report.call("GET /site/eggs", core.list_eggs()).await;
+    raw_checks(&mut report, &http, &key, "/site/eggs", "/site/eggs", "").await;
+    raw_checks(&mut report, &http, &key, "/server/catalog/locations", "/server/catalog/locations", "").await;
+    report.call("catalogue de création (jeux, localisations)", core.server_catalog()).await;
 
     let markdown = report.markdown();
     if let Ok(path) = std::env::var("API_CONTRACT_REPORT") {

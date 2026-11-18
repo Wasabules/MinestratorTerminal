@@ -59,6 +59,11 @@ pub enum Error {
     /// (`unreachable`, `forbidden`, `elevation_cancelled`…) que l'UI traduit via `service.errors.*`.
     #[error("Service d'arrière-plan ({code}) : {detail}")]
     Service { code: String, detail: String },
+
+    /// Saisie refusée **avant** tout envoi à l'API (validation locale : ressources qui dépassent
+    /// ce qui reste, champ requis manquant, nom trop long…). Le message dit quoi corriger.
+    #[error("{0}")]
+    Invalid(String),
 }
 
 impl Error {
@@ -92,6 +97,8 @@ pub enum ErrorKind {
     AccountNotFound,
     /// Service d'arrière-plan : le sous-cas est dans `code` (cf. [`ErrorPayload::code`]).
     Service,
+    /// Saisie refusée par une validation locale, avant envoi.
+    Invalid,
 }
 
 impl ErrorKind {
@@ -112,6 +119,7 @@ impl ErrorKind {
             ErrorKind::AccountExists => "account_exists",
             ErrorKind::AccountNotFound => "account_not_found",
             ErrorKind::Service => "service",
+            ErrorKind::Invalid => "invalid",
         }
     }
 }
@@ -124,8 +132,10 @@ pub struct ErrorPayload {
     pub kind: ErrorKind,
     /// Message lisible (français), affiché quand le frontend n'a pas de traduction pour `kind`.
     pub message: String,
-    /// Sous-cas stable d'une erreur `service` (`unreachable`, `forbidden`, `elevation_cancelled`…),
-    /// traduit par l'UI via `service.errors.*`. Absent du JSON pour les autres erreurs.
+    /// Sous-cas stable : pour une erreur `service` (`unreachable`, `forbidden`,
+    /// `elevation_cancelled`…), traduit par l'UI via `service.errors.*` ; pour une erreur `api`, le
+    /// code renvoyé par MineStrator (`API_MYBOX_NOT_ENOUGH_CPU`…), que l'UI peut traduire. Absent
+    /// du JSON pour les autres erreurs.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub code: Option<String>,
@@ -149,6 +159,7 @@ impl Error {
             Error::AccountExists => ErrorKind::AccountExists,
             Error::AccountNotFound => ErrorKind::AccountNotFound,
             Error::Service { .. } => ErrorKind::Service,
+            Error::Invalid(_) => ErrorKind::Invalid,
         }
     }
 
@@ -164,7 +175,7 @@ impl From<&Error> for ErrorPayload {
             kind: e.error_kind(),
             message: e.to_string(),
             code: match e {
-                Error::Service { code, .. } => Some(code.clone()),
+                Error::Service { code, .. } | Error::Api { code } => Some(code.clone()),
                 _ => None,
             },
         }
@@ -217,6 +228,7 @@ mod tests {
                 "Erreur du trousseau système : accès refusé",
             ),
             (Error::Api { code: "SERVER_NOT_FOUND".into() }, "api", "Erreur API (SERVER_NOT_FOUND)."),
+            (Error::Invalid("Nom trop long.".into()), "invalid", "Nom trop long."),
             (
                 Error::SftpAuth,
                 "sftp_auth",
@@ -256,10 +268,12 @@ mod tests {
     #[test]
     fn serializes_as_kind_and_message() {
         for (err, kind, message) in cases() {
-            assert_eq!(
-                serde_json::to_value(&err).unwrap(),
-                json!({ "kind": kind, "message": message })
-            );
+            let mut expected = json!({ "kind": kind, "message": message });
+            // Une erreur de l'API porte en plus son code, que l'UI peut traduire.
+            if let Error::Api { code } = &err {
+                expected["code"] = json!(code);
+            }
+            assert_eq!(serde_json::to_value(&err).unwrap(), expected);
         }
         // Forme exacte attendue par le front (ordre des champs compris).
         assert_eq!(
@@ -295,7 +309,8 @@ mod tests {
     }
 
     /// Le `kind` sérialisé (source du type TS `AppErrorKind`) et la chaîne de [`Error::kind`]
-    /// doivent rester identiques, et la forme JSON rester `{ kind, message }`.
+    /// doivent rester identiques, et la forme JSON rester `{ kind, message }` — plus `code` pour
+    /// une erreur de l'API (code MineStrator) ou du service.
     #[test]
     fn kind_serialise_comme_sa_chaine() {
         let cas = [
@@ -306,13 +321,17 @@ mod tests {
             Error::Network("x".into()),
             Error::Unexpected("x".into()),
             Error::Keyring("x".into()),
+            Error::Invalid("x".into()),
             Error::Api { code: "x".into() },
         ];
         for e in cas {
             let json = serde_json::to_value(&e).expect("sérialisation");
             assert_eq!(json["kind"], e.kind(), "{e:?}");
             assert_eq!(json["message"], e.to_string(), "{e:?}");
-            assert_eq!(json.as_object().map(|o| o.len()), Some(2), "{e:?}");
+            let expected_len = if matches!(e, Error::Api { .. }) { 3 } else { 2 };
+            assert_eq!(json.as_object().map(|o| o.len()), Some(expected_len), "{e:?}");
         }
+        let api = serde_json::to_value(Error::Api { code: "API_MYBOX_FULL".into() }).unwrap();
+        assert_eq!(api["code"], "API_MYBOX_FULL");
     }
 }

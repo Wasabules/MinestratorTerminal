@@ -47,14 +47,15 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (45)
+## 5. Capacités — catalogue d'outils (59)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **29 outils de lecture**
-> + **16 modifiants**.
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **35 outils de lecture**
+> + **24 modifiants** (dont 7 d'infrastructure MyBox, `INFRA_TOOLS`). Un test vérifie que chaque
+> outil listé est classé lecture **ou** écriture, et que chaque outil classé a son schéma.
 
 #### Découverte & état
 
@@ -66,6 +67,31 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 | `list_schedules` | | `server_id` | Tâches planifiées **du panel MineStrator** (`GET /server/{id}/schedules`, non documenté) : nom, cron, active, seulement si en ligne, prochaine/dernière exécution, actions ordonnées (commande ou alimentation, délai). Exécutées par l'hébergeur, même PC éteint — distinctes des automatisations de l'app. Commandes anonymisées. |
 | `mybox_info` | | `mybox_id` | Détail d'une MyBox (`GET /mybox/{id}`) : échéance, **renouvellement automatique**, jours avant suppression si expirée, CPU/RAM encore allouables, offre (bases de données, IP dédiées), serveurs et ressources allouées. |
 | `server_metrics` | | `server_id`, `since_secs?` | **Historique croisé** CPU (% d'un cœur) / RAM / disque (octets) sur la fenêtre (défaut 1 h, max 30 j) : surveillance de l'app (`source: local`, 10 s) complétée par les statistiques à la minute de l'hébergeur (`source: host`, `GET /server/{id}/stats/…`, non documenté) là où l'app ne surveillait pas. **Résumé** (moyennes pondérées par durée, max, pic et moyenne de joueurs), `coverage` (`local_s`, `host_s`, `host_available`), 120 échantillons au plus (maximum par tranche), `players` (joueurs connectés, hébergeur). |
+
+#### Architecture des MyBox (« architecte »)
+
+Répartir des serveurs entre ses MyBox selon les ressources libres. Unités rappelées dans chaque
+sortie : **CPU en cœurs entiers** (1 = un cœur, pas un %), **RAM en Go entiers** (pas en Mo) ;
+le disque est **partagé** par toute la MyBox ; seuls les serveurs **actifs** consomment CPU et RAM.
+Analyse complète des endpoints : [`docs/api/MYBOX.md`](./docs/api/MYBOX.md).
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `mybox_capacity` | | `mybox_id?` | **Point d'entrée** : pour chaque MyBox, CPU/RAM totaux, alloués, restants ; disque (Go, occupé en Mo) ; emplacements actifs/en pause ; FlexCore ; état ; serveurs (cœurs, Go, pause, localisation, ordre) ; `blockers` (ce qui empêche d'y créer un serveur). |
+| `server_catalog` | | `query?`, `include_experimental?` | Jeux (`egg_id`, catégorie, ressources **recommandées**, champs requis) et localisations (`location_id`, ville, en stock). |
+| `plan_placement` | | `servers[{label?, cpu, ram, disk_gb?}]`, `strategy?` | **Calcul pur, ne modifie rien** : MyBox proposée pour chaque serveur (`pack` = au plus juste, `spread` = répartir), ce qu'il y restera, raisons d'un refus, pistes (serveurs à mettre en pause). |
+| `mybox_smartscan` | | `mybox_id` | Analyse SmartScan de l'hébergeur (usage p95) : serveurs surdimensionnés et allocation suggérée, rééquilibrage, conseil d'évolution. |
+| `mybox_create_server` | ✎ | `mybox_id`, `name`, `egg_id`, `experimental?`, `location_id?`, `cpu`, `ram`, `required_fields?` | Crée un serveur après validation stricte **avant envoi** (ressources restantes, emplacement actif libre, jeu du catalogue, champs requis, localisation en stock). |
+| `mybox_resize_server` | ✎ | `mybox_id`, `server_id`, `cpu`, `ram` | Valeurs **finales** de CPU/RAM ; le serveur rend d'abord ce qu'il occupe. L'API peut exiger le serveur arrêté. |
+| `mybox_pause_server` | ✎ | `mybox_id`, `server_id`, `paused` | Pause (ressources rendues, fichiers gardés) ou reprise (emplacement et ressources requis). |
+| `mybox_reorder_servers` | ✎ | `mybox_id`, `server_ids` | Ordre des serveurs dans la MyBox. |
+| `rename_server` | ✎ | `server_id`, `name` | Renomme un serveur (1 à 50 caractères). |
+| `rename_mybox` | ✎ | `mybox_id`, `name` | Renomme une MyBox (1 à 50 caractères). |
+| `mybox_delete_server` | ✎ | `mybox_id`, `server_id`, `confirm_name`, `snapshot_first?` | **Suppression définitive.** `confirm_name` doit reprendre **exactement** le nom du serveur ; par défaut une snapshot est créée et attendue d'abord (suppression annulée si elle échoue ou dépasse 15 min). |
+
+Ces 7 outils modifiants forment `INFRA_TOOLS` : disponibles pour un client MCP externe (si
+`allow_writes`), **jamais** pour le Copilote, qui lit du contenu non fiable (chat des joueurs) —
+ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer ».
 
 #### Contrôle & console
 
@@ -150,7 +176,9 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 ### Couverture par domaine
 
-- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`, `list_players`
+- **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
+- **Architecture des MyBox** : `mybox_capacity`, `server_catalog`, `plan_placement` (calcul pur),
+  `mybox_smartscan` ; création, redimensionnement, pause, ordre, renommage et suppression gardée
 - **Consommation & optimisation** : `server_metrics` (historique + résumé), `server_status` (live),
   `analyze_performance` (Spark : TPS/MSPT/GC/points chauds), `parse_spark_report`
 - **Contrôle** : `power_action`, `send_command`
@@ -184,8 +212,11 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
   (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
   `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `set_property`, `install_mod`,
-  `update_mods`, `install_ficsit_mod`, `extract_archive`, `create_snapshot`) sont refusés ; les outils de
-  lecture/diagnostic restent disponibles. Idéal pour donner un accès *observation* sans risque.
+  `install_ficsit_mod`, `extract_archive`, `create_snapshot`, et l'infrastructure MyBox :
+  `mybox_create_server`, `mybox_resize_server`, `mybox_pause_server`, `mybox_reorder_servers`,
+  `rename_server`, `rename_mybox`, `mybox_delete_server`) sont refusés ; les outils de
+  lecture/diagnostic restent disponibles (dont `plan_placement`, qui ne modifie rien). Idéal pour
+  donner un accès *observation* sans risque.
 
 **Garde-fous by design :**
 
@@ -197,6 +228,10 @@ Deux réglages, modifiables depuis le GUI (Réglages → MCP) et persistés (`mc
   `delete_snapshot`, `restore_backup`, `repair_region` ne sont **pas** des outils MCP → un agent ne
   peut jamais les déclencher. Elles n'existent que dans l'app, derrière un « Appliquer » (intention
   explicite de l'utilisateur). Seul `create_snapshot` (additif) est exposé.
+- **Suppression d'un serveur gardée** : `mybox_delete_server` exige le nom exact du serveur
+  (`confirm_name`, vérifié avant tout appel) et fait par défaut une snapshot préalable. Les
+  écritures MyBox sont validées localement avant envoi (ressources, emplacements, champs requis) :
+  une saisie incohérente est refusée sans toucher à l'API.
 
 > **Portée de ce document** : il décrit le serveur MCP **local** exposé aux clients externes (Claude
 > Desktop, Claude Code…). L'usage inverse — le Copilote interne comme *client* du **MCP officiel

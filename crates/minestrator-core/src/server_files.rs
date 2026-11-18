@@ -623,13 +623,13 @@ pub struct DiskSpace {
     /// Limite du serveur (octets ; franchise comprise). 0 si inconnue.
     pub limit_bytes: u64,
     /// Espace de la MyBox, partagé par ses serveurs (absent si indisponible).
-    pub mybox: Option<MyBoxDisk>,
+    pub mybox: Option<MyBoxDiskSpace>,
 }
 
 /// Espace disque d'une MyBox : occupation de tous ses serveurs face au disque de l'offre.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct MyBoxDisk {
+pub struct MyBoxDiskSpace {
     pub used_bytes: u64,
     /// Disque de l'offre, extensions comprises (octets). 0 si inconnu.
     pub limit_bytes: u64,
@@ -1295,7 +1295,7 @@ impl crate::Core {
         if let Some(mybox) = mybox {
             let (used, details) = tokio::join!(self.api.mybox_disk(&token, mybox), self.mybox_details(mybox));
             if let Ok(used_bytes) = used {
-                space.mybox = Some(MyBoxDisk {
+                space.mybox = Some(MyBoxDiskSpace {
                     used_bytes,
                     limit_bytes: details.map(|d| gib_to_bytes(d.offer.disk)).unwrap_or(0),
                 });
@@ -1655,7 +1655,7 @@ mod tests {
             base_game_bytes: 500 * MIB,
             allowance_applied: true,
             limit_bytes: 8 * 1024 * MIB,
-            mybox: Some(MyBoxDisk { used_bytes: 3 * 1024 * MIB, limit_bytes: 300 * 1024 * MIB }),
+            mybox: Some(MyBoxDiskSpace { used_bytes: 3 * 1024 * MIB, limit_bytes: 300 * 1024 * MIB }),
         };
         let r = disk_usage_report(&usage, Some(&space));
         assert!(r.starts_with("Dossier « / » : 4.0 Mio au total."), "{r}");

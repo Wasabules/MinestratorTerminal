@@ -403,7 +403,7 @@ fn non_empty(v: Option<String>) -> Option<String> {
 
 /// Complète un nom de fichier d'egg (`minecraft.webp`) en URL CDN. Une valeur déjà absolue est
 /// laissée telle quelle : si l'API se met un jour à renvoyer des URLs, rien ne casse.
-fn egg_asset_url(icon: Option<&str>, base: &str) -> Option<String> {
+pub(crate) fn egg_asset_url(icon: Option<&str>, base: &str) -> Option<String> {
     let icon = icon.map(str::trim).filter(|s| !s.is_empty())?;
     if icon.starts_with("http://") || icon.starts_with("https://") {
         return Some(icon.to_string());
@@ -1109,9 +1109,10 @@ pub struct MyBoxOffer {
     /// Taille maximale par base (Go).
     #[serde(default, rename(deserialize = "dbsize"), deserialize_with = "lenient_i64")]
     pub database_size: i64,
-    /// IP dédiées disponibles.
+    /// Nombre maximal de serveurs **actifs** (`pods` ; les serveurs en pause n'en consomment pas).
+    /// Voir `docs/api/MYBOX.md`.
     #[serde(default, rename(deserialize = "pods"), deserialize_with = "lenient_i64")]
-    pub dedicated_ips: i64,
+    pub max_servers: i64,
 }
 
 /// Serveur d'une MyBox, avec les ressources qui lui sont allouées.
@@ -1651,7 +1652,7 @@ mod tests {
         assert_eq!((d.mybox.days_left, d.mybox.deletion_days), (14, None));
         assert_eq!(d.mybox.expires_at, "2026-12-01 00:00:00");
         assert_eq!(d.mybox.ram_remaining, 4.0);
-        assert_eq!((d.offer.disk, d.offer.databases, d.offer.dedicated_ips), (150, 3, 1));
+        assert_eq!((d.offer.disk, d.offer.databases, d.offer.max_servers), (150, 3, 1));
         assert_eq!(d.servers[0].ram, 8);
         // Le JSON exposé garde NOS noms, pas ceux de l'API.
         let out = serde_json::to_value(&d).unwrap();

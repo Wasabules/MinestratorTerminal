@@ -2,6 +2,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
+    BackupJob, CreateServerInput, CreatedServer, MyBoxCapacity, PauseOutcome, PlacementPlan,
+    PlacementRequest, ServerCatalog, SnapshotJob,
     PanelSchedule, PanelScheduleInput,
     PanelTaskInput,
     PlayerInventory, PlayerProfile, PlayersPage, PlayersQuery,
@@ -124,6 +126,102 @@ pub async fn set_server_property(
 #[tauri::command]
 pub async fn mybox_details(core: State<'_, Arc<Core>>, id: i64) -> Result<MyBoxDetails, Error> {
     core.mybox_details(id).await
+}
+
+// --- Gestion des MyBox (core/src/mybox.rs) -----------------------------------
+
+/// Capacité de toutes les MyBox : CPU/RAM totaux, alloués, restants, disque, emplacements.
+#[tauri::command]
+pub async fn mybox_capacities(core: State<'_, Arc<Core>>) -> Result<Vec<MyBoxCapacity>, Error> {
+    core.mybox_capacities().await
+}
+
+#[tauri::command]
+pub async fn mybox_capacity(core: State<'_, Arc<Core>>, id: i64) -> Result<MyBoxCapacity, Error> {
+    core.mybox_capacity(id).await
+}
+
+/// Catalogue de création (jeux, champs requis, localisations), mis en cache côté Rust.
+#[tauri::command]
+pub async fn server_catalog(core: State<'_, Arc<Core>>) -> Result<ServerCatalog, Error> {
+    core.server_catalog().await
+}
+
+#[tauri::command]
+pub async fn mybox_create_server(core: State<'_, Arc<Core>>, input: CreateServerInput) -> Result<CreatedServer, Error> {
+    core.mybox_create_server(input).await
+}
+
+#[tauri::command]
+pub async fn mybox_resize_server(
+    core: State<'_, Arc<Core>>,
+    mybox_id: i64,
+    server_id: i64,
+    cpu: i64,
+    ram: i64,
+) -> Result<(), Error> {
+    core.mybox_resize_server(mybox_id, server_id, cpu, ram).await
+}
+
+#[tauri::command]
+pub async fn mybox_set_server_paused(
+    core: State<'_, Arc<Core>>,
+    mybox_id: i64,
+    server_id: i64,
+    paused: bool,
+) -> Result<PauseOutcome, Error> {
+    core.mybox_set_server_paused(mybox_id, server_id, paused).await
+}
+
+#[tauri::command]
+pub async fn mybox_reorder_servers(core: State<'_, Arc<Core>>, mybox_id: i64, server_ids: Vec<i64>) -> Result<(), Error> {
+    core.mybox_reorder_servers(mybox_id, server_ids).await
+}
+
+#[tauri::command]
+pub async fn rename_server(core: State<'_, Arc<Core>>, server_id: i64, name: String) -> Result<(), Error> {
+    core.rename_server(server_id, &name).await
+}
+
+#[tauri::command]
+pub async fn rename_mybox(core: State<'_, Arc<Core>>, mybox_id: i64, name: String) -> Result<(), Error> {
+    core.rename_mybox(mybox_id, &name).await
+}
+
+#[tauri::command]
+pub async fn mybox_snapshot_before_delete(
+    core: State<'_, Arc<Core>>,
+    mybox_id: i64,
+    server_id: i64,
+) -> Result<SnapshotJob, Error> {
+    core.mybox_snapshot_before_delete(mybox_id, server_id).await
+}
+
+/// Avancement d'un job de sauvegarde (snapshot avant suppression, reprise d'un serveur en pause).
+#[tauri::command]
+pub async fn backup_job(core: State<'_, Arc<Core>>, job_id: i64) -> Result<BackupJob, Error> {
+    core.backup_job(job_id).await
+}
+
+/// Suppression définitive : `confirm` doit reprendre exactement le nom du serveur (vérifié en Rust).
+#[tauri::command]
+pub async fn mybox_delete_server(
+    core: State<'_, Arc<Core>>,
+    mybox_id: i64,
+    server_id: i64,
+    confirm: String,
+) -> Result<(), Error> {
+    core.mybox_delete_server(mybox_id, server_id, &confirm).await
+}
+
+/// Plan de placement (calcul pur, rien n'est modifié).
+#[tauri::command]
+pub async fn mybox_plan_placement(
+    core: State<'_, Arc<Core>>,
+    requests: Vec<PlacementRequest>,
+    strategy: String,
+) -> Result<PlacementPlan, Error> {
+    core.mybox_plan_placement(requests, &strategy).await
 }
 
 #[tauri::command]

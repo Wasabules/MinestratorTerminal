@@ -3,6 +3,7 @@
   import { api, humanizeError } from '#lib/ipc.ts';
   import { t } from '#lib/i18n/index.ts';
   import { rememberCaps } from '#lib/games/capabilities.svelte.ts';
+  import { tabs } from '#lib/tabs/tabs.svelte.ts';
   import type { MyBoxDetails, MyBoxSummary, ServerListItem, ServersOverview } from '#lib/types.ts';
   import ServerCard from './ServerCard.svelte';
 
@@ -82,9 +83,12 @@
         {#if data}{t('home.summary', { myboxes: data.myboxes.length, servers: totalServers })}{/if}
       </p>
     </div>
-    <button class="btn btn--ghost" onclick={load} disabled={loading}>
-      {#if loading}<span class="spinner"></span>{/if} {t('common.refresh')}
-    </button>
+    <div class="head-actions">
+      <button class="btn btn--ghost" onclick={() => tabs.openMyboxes()}>{t('mybox.manage')}</button>
+      <button class="btn btn--ghost" onclick={load} disabled={loading}>
+        {#if loading}<span class="spinner"></span>{/if} {t('common.refresh')}
+      </button>
+    </div>
   </header>
 
   {#if loading && !data}
@@ -170,6 +174,10 @@
     align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
+  }
+  .head-actions {
+    display: flex;
+    gap: 8px;
   }
   .head h1 {
     margin: 0;

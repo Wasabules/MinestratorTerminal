@@ -44,6 +44,7 @@ import type {
   MarketSource,
   MarketVersion,
   MetricsHistory,
+  MyBoxCapacity,
   PlayerAction,
   PlayerInventory,
   PlayerProfile,
@@ -166,6 +167,29 @@ export const api = {
     invoke<MetricsHistory>("metrics_history", { serverId, sinceSecs, maxPoints: maxPoints ?? null }),
   /** Échantillon live de stats (CPU/RAM/disque) via une connexion monitor éphémère. */
   sampleStats: (serverId: number) => invoke<ConsoleStats | null>("sample_stats", { serverId }),
+
+  // --- MyBox : ressources et renommage ---
+  /**
+   * Capacité de toutes les MyBox du compte (CPU en cœurs, RAM en Go, disque partagé, serveurs).
+   * Mode démo : mêmes substituts que `listServers`, pour que les noms concordent entre les vues.
+   */
+  myboxCapacities: () =>
+    demo(invoke<MyBoxCapacity[]>("mybox_capacities"), (list) =>
+      list.map((m) => ({
+        ...m,
+        name: fakeBox(m.name),
+        servers: m.servers.map((s) => ({
+          ...s,
+          name: fakeServer(s.name),
+          support_ref: s.support_ref ? fakeRef(s.support_ref) : s.support_ref,
+        })),
+      })),
+    ),
+  /** Renomme un serveur (1 à 50 caractères, contrôlé par le core). */
+  renameServer: (serverId: number, name: string) =>
+    invoke<void>("rename_server", { serverId, name }),
+  /** Renomme une MyBox (1 à 50 caractères, contrôlé par le core). */
+  renameMybox: (myboxId: number, name: string) => invoke<void>("rename_mybox", { myboxId, name }),
 
   // --- Paramètres du serveur (`server.properties`, via l'API) ---
   /** Réglages du serveur ; ceux qui l'identifient sont substitués en mode démo. */

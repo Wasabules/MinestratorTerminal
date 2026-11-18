@@ -44,6 +44,12 @@ export interface NotificationsTab {
   kind: 'notifications';
 }
 
+/** Gestion des MyBox (ressources, création, redimensionnement, suppression de serveurs). */
+export interface MyBoxesTab {
+  id: string;
+  kind: 'myboxes';
+}
+
 export interface ServerTab {
   id: string;
   kind: 'server';
@@ -52,7 +58,7 @@ export interface ServerTab {
   view: ServerView;
 }
 
-export type Tab = HomeTab | SettingsTab | CopilotTab | NotificationsTab | ServerTab;
+export type Tab = HomeTab | SettingsTab | CopilotTab | NotificationsTab | MyBoxesTab | ServerTab;
 
 /** Métadonnées d'affichage par vue (ordre = ordre des actions dans l'UI). `icon` = nom dans Icon.svelte. */
 export const VIEWS: { id: ServerView; icon: string; ready: boolean }[] = [
@@ -117,6 +123,18 @@ class TabManager {
       return;
     }
     const tab: NotificationsTab = { id: uid(), kind: 'notifications' };
+    this.tabs.push(tab);
+    this.activeId = tab.id;
+  }
+
+  /** Ouvre (ou focus) l'onglet de gestion des MyBox — unique. */
+  openMyboxes(): void {
+    const existing = this.tabs.find((t) => t.kind === 'myboxes');
+    if (existing) {
+      this.activeId = existing.id;
+      return;
+    }
+    const tab: MyBoxesTab = { id: uid(), kind: 'myboxes' };
     this.tabs.push(tab);
     this.activeId = tab.id;
   }
