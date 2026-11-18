@@ -1,14 +1,51 @@
 <script lang="ts">
+  import { onMount, onDestroy } from 'svelte';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
   import { openUrl } from '@tauri-apps/plugin-opener';
   import { api, humanizeError } from '#lib/ipc.ts';
   import { setAuth } from '#lib/stores/auth.svelte.ts';
+  import { accountEvents } from '#lib/events.ts';
+  import { applyAccountSwitch } from '#lib/stores/accounts.svelte.ts';
   import { t } from '#lib/i18n/index.ts';
+  import type { Account } from '#lib/types.ts';
 
   const PANEL_URL = 'https://minestrator.com/my/account?section=api';
 
   let key = $state('');
   let busy = $state(false);
   let error = $state<string | null>(null);
+  /**
+   * Autres comptes déjà enregistrés : la clé du compte actif a pu être révoquée, ou ce compte
+   * retiré — on peut reprendre un autre compte sans ressaisir de clé.
+   */
+  let others = $state<Account[]>([]);
+  let unlisten: UnlistenFn | undefined;
+
+  onMount(async () => {
+    try {
+      others = (await api.accountsList()).filter((a) => !a.active);
+    } catch {
+      others = [];
+    }
+    // Connexion faite depuis une autre fenêtre : celle-ci suit.
+    unlisten = await accountEvents.switched((s) => {
+      if (s.current) void applyAccountSwitch(s.current);
+    });
+  });
+  onDestroy(() => unlisten?.());
+
+  async function useAccount(a: Account) {
+    if (busy) return;
+    busy = true;
+    error = null;
+    try {
+      await applyAccountSwitch(await api.accountSwitch(a.id));
+    } catch (err) {
+      error = humanizeError(err);
+    } finally {
+      busy = false;
+    }
+  }
 
   async function submit(event: Event) {
     event.preventDefault();
@@ -65,6 +102,19 @@
         {#if busy}<span class="spinner"></span> {t('onboarding.verifying')}{:else}{t('onboarding.connect')}{/if}
       </button>
     </form>
+
+    {#if others.length > 0}
+      <div class="others">
+        <p class="dim foot">{t('onboarding.otherAccounts')}</p>
+        <div class="other-list">
+          {#each others as a (a.id)}
+            <button type="button" class="btn btn--ghost" onclick={() => useAccount(a)} disabled={busy}>
+              {a.pseudo}
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
     <p class="dim foot">
       {t('onboarding.noKey')}
@@ -133,5 +183,15 @@
   }
   .linklike:hover {
     text-decoration: underline;
+  }
+  .others {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .other-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 </style>

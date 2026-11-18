@@ -155,7 +155,15 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
   Windows. Un nouveau secret = un compte `KEYRING_ACCOUNT_*` dans `config.rs` + ses fonctions dans
   `secrets.rs` ; jamais dans un `PersistedConfig`, `localStorage` ou un journal. Le **mot de passe
   SFTP** n'est plus fourni par l'API : saisi une fois par serveur (`sftp-password-<id>`), vérifié
-  avant d'être enregistré, purgé à la déconnexion (`sftp_passwords.json` ne liste que les ids).
+  avant d'être enregistré, effacé avec le compte qui l'a enregistré (`sftp_passwords.json` :
+  serveur → id utilisateur, aucun secret).
+- **Plusieurs comptes** (`core/src/accounts.rs`, app seulement) : la clé du compte **actif** reste
+  sous `api-key` — c'est elle que lisent MCP headless, agents CLI, superviseur et activation du
+  service, sans rien savoir des autres comptes ; les comptes inactifs sous `api-key-<idUtilisateur>` ;
+  la liste non secrète dans `accounts.json`. Tout échange de clés passe par les fonctions de
+  `accounts.rs` (copie vérifiée avant écrasement, rétablissement en cas d'échec) : n'écris jamais
+  `api-key` directement pour changer de compte. Le service d'arrière-plan reste à **clé unique**
+  (`authenticate_and_store` / `logout`) et garde le compte avec lequel il a été activé.
 - **Service d'arrière-plan** (`docs/SERVICE.md`) : `core/src/service.rs` porte le protocole IPC, la
   décision « qui supervise » et le lien côté app (superviseur local mis en veille quand le service
   surveille le même compte). Le service ne s'embarque dans les installeurs qu'avec la surcouche

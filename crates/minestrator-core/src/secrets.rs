@@ -1,6 +1,7 @@
-//! Stockage des secrets : clé API MineStrator, clés LLM du Copilote, secrets par jeu, mots de passe
-//! SFTP par serveur. **Aucun secret n'est écrit en clair par l'app** : chaque plateforme passe par
-//! son stockage sécurisé natif.
+//! Stockage des secrets : clés API MineStrator (compte actif sous `api-key`, comptes inactifs sous
+//! `api-key-<idUtilisateur>`), clés LLM du Copilote, secrets par jeu, mots de passe SFTP par
+//! serveur. **Aucun secret n'est écrit en clair par l'app** : chaque plateforme passe par son
+//! stockage sécurisé natif.
 //!
 //! | Contexte | Backend |
 //! |---|---|
@@ -12,8 +13,8 @@
 //! Les identifiants de compte (`KEYRING_ACCOUNT*`) sont communs à tous les backends.
 
 use crate::config::{
-    KEYRING_ACCOUNT, KEYRING_ACCOUNT_GAME_PREFIX, KEYRING_ACCOUNT_LLM_PREFIX,
-    KEYRING_ACCOUNT_SFTP_PREFIX,
+    KEYRING_ACCOUNT, KEYRING_ACCOUNT_GAME_PREFIX, KEYRING_ACCOUNT_KEY_PREFIX,
+    KEYRING_ACCOUNT_LLM_PREFIX, KEYRING_ACCOUNT_SFTP_PREFIX,
 };
 use crate::error::Result;
 
@@ -206,6 +207,60 @@ pub fn delete_key() -> Result<()> {
     delete_account(KEYRING_ACCOUNT)
 }
 
+// --- Clés des comptes MineStrator inactifs (une par utilisateur) -------------
+//
+// La clé du compte actif reste sous `api-key` (fonctions ci-dessus) ; celles des autres comptes
+// enregistrés attendent sous `api-key-<idUtilisateur>`. L'échange entre les deux, sans fenêtre de
+// perte, est fait par `crate::accounts`.
+
+/// Nom de l'entrée qui garde la clé d'un compte inactif.
+pub(crate) fn account_key_name(user_id: i64) -> String {
+    format!("{KEYRING_ACCOUNT_KEY_PREFIX}{user_id}")
+}
+
+/// Enregistre (ou remplace) la clé d'un compte inactif.
+pub fn store_account_key(user_id: i64, key: &str) -> Result<()> {
+    write_account(&account_key_name(user_id), key)
+}
+
+/// Lit la clé d'un compte inactif. `Ok(None)` si aucune n'est enregistrée.
+pub fn read_account_key(user_id: i64) -> Result<Option<String>> {
+    read_account(&account_key_name(user_id))
+}
+
+/// Supprime la clé d'un compte inactif. Ne renvoie pas d'erreur si elle n'existait pas.
+pub fn delete_account_key(user_id: i64) -> Result<()> {
+    delete_account(&account_key_name(user_id))
+}
+
+/// Accès au stockage des secrets par nom d'entrée. Abstrait pour que l'échange des clés de
+/// compte (`crate::accounts`) se teste sur un dossier temporaire, pannes comprises, sans jamais
+/// toucher au trousseau réel.
+pub(crate) trait SecretStore {
+    fn read(&self, account: &str) -> Result<Option<String>>;
+    fn write(&self, account: &str, value: &str) -> Result<()>;
+    fn delete(&self, account: &str) -> Result<()>;
+}
+
+/// Le stockage sécurisé de la plateforme (même aiguillage que les fonctions de ce module).
+pub(crate) struct SystemStore;
+
+impl SecretStore for SystemStore {
+    fn read(&self, account: &str) -> Result<Option<String>> {
+        read_account(account)
+    }
+    fn write(&self, account: &str, value: &str) -> Result<()> {
+        write_account(account, value)
+    }
+    fn delete(&self, account: &str) -> Result<()> {
+        delete_account(account)
+    }
+}
+
+/// Backend fichier sur un dossier explicite (tests de l'échange de clés).
+#[cfg(test)]
+pub(crate) use file_store::DirStore;
+
 // --- Clés LLM du Copilote (une par fournisseur) ----------------------------
 
 fn llm_account(provider: &str) -> String {
@@ -280,5 +335,7 @@ mod tests {
         assert_eq!(llm_account("openai"), "llm-key-openai");
         assert_eq!(game_account("factorio"), "game-secret-factorio");
         assert_eq!(sftp_account(377829), "sftp-password-377829");
+        assert_eq!(account_key_name(4242), "api-key-4242");
+        assert_eq!(KEYRING_ACCOUNT, "api-key");
     }
 }

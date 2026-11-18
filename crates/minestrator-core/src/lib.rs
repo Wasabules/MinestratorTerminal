@@ -6,6 +6,7 @@
 //!
 //! Le token API est géré en interne (trousseau OS) ; les appelants n'ont jamais à le manipuler.
 
+mod accounts;
 mod api;
 mod archive;
 /// Génération des types TypeScript des frontends (feature `ts`, hors build de production).
@@ -47,6 +48,7 @@ mod umod;
 mod util;
 mod world;
 
+pub use accounts::{Account, AccountSwitch};
 pub use archive::ArchiveEntry;
 pub use cli_agent::{detect_clis, CliAgent, CliStatus};
 pub use copilot::{Autonomy, ChatReply, CopilotConfig, Effort};
@@ -89,7 +91,7 @@ use console::ConsoleManager;
 use copilot::ChatSession;
 use persist::PersistedConfig;
 use sftp::SftpManager;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use store::{now_secs, MetricsStore};
 use tokio::sync::broadcast;
@@ -108,10 +110,14 @@ pub struct Core {
     ficsit_paths: PersistedConfig<HashMap<i64, String>>,
     /// Réglages par jeu (non-secrets) : ex. le `username` Factorio. Secrets → trousseau.
     game_settings: PersistedConfig<GameSettings>,
-    /// Serveurs dont le mot de passe SFTP est enregistré : **identifiants seulement**, les mots de
-    /// passe sont dans le stockage sécurisé. Sert à l'UI et à les purger à la déconnexion (le
-    /// trousseau ne sait pas lister ses entrées).
-    sftp_saved: PersistedConfig<BTreeSet<i64>>,
+    /// Serveurs dont le mot de passe SFTP est enregistré, avec le compte qui l'a enregistré :
+    /// **identifiants seulement**, les mots de passe sont dans le stockage sécurisé. Sert à l'UI et
+    /// à les purger avec leur compte (le trousseau ne sait pas lister ses entrées).
+    sftp_saved: PersistedConfig<accounts::SftpIndex>,
+    /// Comptes MineStrator enregistrés (non secret ; voir [`accounts`]).
+    accounts: PersistedConfig<accounts::AccountsFile>,
+    /// Sérialise les opérations de compte (connexion, ajout, bascule, retrait).
+    account_op: tokio::sync::Mutex<()>,
     /// Une conversation = une cellule verrouillable (Mutex async). Le Mutex sync externe ne protège
     /// QUE l'accès à la map ; le tour, lui, tient le Mutex async de la cellule → warm et send (et
     /// deux envois concurrents) se sérialisent sur la MÊME session au lieu de s'écraser.
@@ -161,6 +167,8 @@ impl Core {
             ficsit_paths: PersistedConfig::load(&dir, "ficsit_paths.json"),
             game_settings: PersistedConfig::load(&dir, "game_settings.json"),
             sftp_saved: PersistedConfig::load(&dir, "sftp_passwords.json"),
+            accounts: PersistedConfig::load(&dir, "accounts.json"),
+            account_op: tokio::sync::Mutex::new(()),
             service_link: service::ServiceLink::new(&dir),
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
@@ -433,7 +441,14 @@ impl Core {
     }
 
     // --- Authentification --------------------------------------------------
+    //
+    // `authenticate_and_store` et `logout` gèrent une **clé unique** : c'est le modèle du service
+    // d'arrière-plan, qui ne garde jamais que la clé du compte qu'il surveille. L'app passe par les
+    // opérations de compte de `accounts.rs` (`sign_in`, `add_account`, `switch_account`,
+    // `remove_account`, `sign_out`, `session_user`).
 
+    /// Valide une clé et la range comme clé active, en remplaçant la précédente (service
+    /// d'arrière-plan ; l'app utilise [`Core::sign_in`]).
     pub async fn authenticate_and_store(&self, key: &str) -> Result<UserProfile> {
         let (profile, token) = self.api.authenticate(key).await?;
         secrets::store_key(&token)?;
@@ -450,6 +465,8 @@ impl Core {
         Ok(secrets::read_key()?.is_some())
     }
 
+    /// Efface la clé active et tous les mots de passe SFTP enregistrés (service d'arrière-plan ;
+    /// l'app utilise [`Core::sign_out`], qui ne retire que le compte actif).
     pub fn logout(&self) -> Result<()> {
         *self.token_cache.lock().unwrap() = None;
         *self.user_id_cache.lock().unwrap() = None;
@@ -1843,8 +1860,10 @@ impl Core {
             sftp::open(models::SftpCreds { password: password.to_string(), ..creds }, self.sftp.hosts())
                 .await?;
         secrets::store_sftp_password(id, password)?;
+        // Rattaché au compte actif : retirer ce compte effacera ce mot de passe.
+        let owner = self.user_id().await.ok();
         let mut ids = self.sftp_saved.get();
-        ids.insert(id);
+        ids.insert(id, owner);
         self.sftp_saved.set(ids);
         self.sftp.insert(id, conn);
         Ok(())
@@ -1879,7 +1898,7 @@ impl Core {
     pub fn forget_sftp_password(&self, id: i64) -> Result<()> {
         secrets::delete_sftp_password(id)?;
         let mut ids = self.sftp_saved.get();
-        ids.remove(&id);
+        ids.remove(id);
         self.sftp_saved.set(ids);
         self.sftp.drop_session(id);
         Ok(())
@@ -1887,26 +1906,17 @@ impl Core {
 
     /// Un mot de passe SFTP est-il enregistré pour ce serveur ? (Sans lecture du trousseau.)
     pub fn has_sftp_password(&self, id: i64) -> bool {
-        self.sftp_saved.with(|ids| ids.contains(&id))
+        self.sftp_saved.with(|ids| ids.contains(id))
     }
 
-    /// Supprime tous les mots de passe SFTP enregistrés : ils appartiennent au compte et partent
-    /// avec lui. Un échec de suppression garde l'identifiant, pour réessayer à la prochaine.
+    /// Supprime tous les mots de passe SFTP enregistrés (clé unique du service : ils partent avec
+    /// elle). Un échec de suppression garde l'identifiant, pour réessayer à la prochaine.
     fn purge_sftp_passwords(&self) {
         self.sftp.clear();
-        let remaining: BTreeSet<i64> = self
-            .sftp_saved
-            .get()
-            .into_iter()
-            .filter(|&id| match secrets::delete_sftp_password(id) {
-                Ok(()) => false,
-                Err(e) => {
-                    tracing::warn!(server = id, "suppression du mot de passe SFTP : {e}");
-                    true
-                }
-            })
-            .collect();
-        self.sftp_saved.set(remaining);
+        let mut idx = self.sftp_saved.get();
+        let all = idx.all();
+        idx.purge(&all, secrets::delete_sftp_password);
+        self.sftp_saved.set(idx);
     }
 
     pub fn sftp_disconnect(&self, id: i64) {

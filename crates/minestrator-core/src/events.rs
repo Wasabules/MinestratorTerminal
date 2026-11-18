@@ -191,4 +191,6 @@ pub enum CoreEvent {
     Diagnosis(Diagnosis),
     SftpProgress(SftpProgress),
     ModInstallProgress(ModInstallProgress),
+    /// Le compte MineStrator actif a changé (voir [`crate::accounts`]).
+    AccountSwitched(crate::accounts::AccountSwitch),
 }

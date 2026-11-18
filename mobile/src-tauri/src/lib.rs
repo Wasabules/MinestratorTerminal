@@ -75,21 +75,10 @@ pub fn run() {
                 }
             });
 
-            // Noms des serveurs pour la notification : une seule lecture au démarrage suffit,
-            // ils ne changent pas en cours de session (et l'échec est sans gravité : repli sur l'id).
-            let names_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                let core = names_handle.state::<Arc<Core>>();
-                if let Ok(overview) = core.list_servers().await {
-                    if let Some(sum) = names_handle.try_state::<std::sync::Mutex<MonitorSummary>>() {
-                        if let Ok(mut sum) = sum.lock() {
-                            for srv in overview.servers {
-                                sum.names.insert(srv.id, srv.name);
-                            }
-                        }
-                    }
-                }
-            });
+            // Noms des serveurs pour la notification : une lecture au démarrage suffit, ils ne
+            // changent pas en cours de session — sauf changement de compte, qui la refait (et
+            // l'échec est sans gravité : repli sur l'id).
+            load_server_names(app.handle().clone());
 
             // Superviseur : actif tant que l'app est au premier plan. Les alertes « app fermée »
             // viendront d'un daemon + push (cf. docs/PUSH.md), pas d'ici.
@@ -105,6 +94,10 @@ pub fn run() {
             commands::has_stored_key,
             commands::get_user,
             commands::logout,
+            commands::accounts_list,
+            commands::account_add,
+            commands::account_switch,
+            commands::account_remove,
             commands::list_servers,
             commands::server_details,
             commands::live_light,
@@ -214,6 +207,34 @@ impl MonitorSummary {
     }
 }
 
+/// Charge (en tâche de fond) les noms des serveurs du compte actif pour la notification persistante.
+fn load_server_names(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        let core = handle.state::<Arc<Core>>();
+        if let Ok(overview) = core.list_servers().await {
+            if let Some(sum) = handle.try_state::<std::sync::Mutex<MonitorSummary>>() {
+                if let Ok(mut sum) = sum.lock() {
+                    for srv in overview.servers {
+                        sum.names.insert(srv.id, srv.name);
+                    }
+                }
+            }
+        }
+    });
+}
+
+/// Changement de compte : les serveurs suivis par la notification persistante sont ceux de
+/// l'ancien compte. On repart de zéro ; les connexions monitor du nouveau compte la rempliront.
+fn reset_monitor_summary(handle: &tauri::AppHandle) {
+    if let Some(sum) = handle.try_state::<std::sync::Mutex<MonitorSummary>>() {
+        if let Ok(mut sum) = sum.lock() {
+            sum.states.clear();
+            sum.names.clear();
+        }
+    }
+    load_server_names(handle.clone());
+}
+
 /// Enregistre l'état d'un serveur surveillé et rafraîchit la notification persistante.
 ///
 /// N'écrit dans la notification **que si l'état a changé** : les connexions monitor émettent des
@@ -267,6 +288,10 @@ fn forward(handle: &tauri::AppHandle, ev: CoreEvent) {
         }
         CoreEvent::ModInstallProgress(p) => {
             let _ = handle.emit("mods://install-progress", p);
+        }
+        CoreEvent::AccountSwitched(s) => {
+            reset_monitor_summary(handle);
+            let _ = handle.emit("account://switched", s);
         }
         CoreEvent::Alert(a) => {
             // Consignée AVANT l'event : le webview relit le journal en le recevant.

@@ -31,6 +31,7 @@ export const fr = {
     verifying: 'Vérification…',
     noKey: 'Pas de clé ?',
     openPanel: 'Ouvrir le panel → Compte → Clés API',
+    otherAccounts: 'Ou reprendre un compte déjà enregistré :',
   },
   home: {
     title: 'Mes serveurs',
@@ -753,6 +754,9 @@ export const fr = {
       'Mot de passe SFTP requis : saisis-le une fois dans l’onglet Fichiers de ce serveur.',
     sftp_host_key_changed:
       'L’identité du serveur SFTP a changé : connexion bloquée. Ouvre l’onglet Fichiers de ce serveur pour vérifier et confirmer la nouvelle empreinte.',
+    account_exists: 'Ce compte MineStrator est déjà enregistré sur cet appareil.',
+    account_not_found:
+      'Compte introuvable : sa clé n’est plus enregistrée sur cet appareil. Retire-le puis ajoute-le à nouveau.',
   },
   // Service d'arrière-plan (supervision machine) — espace de noms dédié, voir docs/SERVICE.md.
   service: {
@@ -773,9 +777,12 @@ export const fr = {
     byService: 'Assurée par le service — le superviseur de l’application est en veille.',
     byApp: 'Assurée par l’application, tant qu’elle tourne (fenêtre ou zone de notification).',
     accountLabel: 'Compte surveillé',
+    accountActive: 'compte actif',
+    accountOther: 'pas le compte actif',
     noKey: 'Aucun — le service attend son activation.',
     otherAccount:
-      'Le service surveille un autre compte MineStrator : l’application garde sa propre supervision.',
+      'Le service surveille un autre compte que le compte actif : l’application supervise elle-même le compte actif tant qu’elle tourne. « Surveiller le compte actif » transmet sa clé au service, qui cesse alors de surveiller l’autre compte.',
+    enableActive: 'Surveiller le compte actif',
     activityLabel: 'Activité',
     monitored: '{n} serveur(s) surveillé(s)',
     lastPoll: 'dernier relevé il y a {s} s',
@@ -845,6 +852,38 @@ export const fr = {
       identity: 'Impossible de déterminer ton identité système.',
       bad_request: 'Requête refusée par le service.',
     },
+  },
+  // Plusieurs comptes MineStrator et changement de compte (menu utilisateur, Réglages → Comptes).
+  account: {
+    nav: 'Comptes',
+    title: 'Comptes MineStrator',
+    intro:
+      'Enregistre plusieurs comptes MineStrator sur cet appareil et passe de l’un à l’autre. Chaque clé API reste dans le trousseau sécurisé du système ; seule la liste des comptes (pseudo, date d’ajout) est conservée à part.',
+    active: 'Actif',
+    watchedByService: 'Surveillé par le service',
+    addedOn: 'ajouté le {date}',
+    switch: 'Basculer',
+    switching: 'Bascule…',
+    switchTo: 'Basculer vers',
+    remove: 'Retirer',
+    removed: 'Compte {pseudo} retiré de cet appareil.',
+    add: 'Ajouter un compte',
+    manage: 'Gérer les comptes',
+    addTitle: 'Ajouter un compte MineStrator',
+    addIntro:
+      'Colle la clé API de l’autre compte. Elle est vérifiée auprès de MineStrator, puis rangée dans le trousseau sécurisé du système — jamais en clair.',
+    addStored: 'La clé se crée dans le panel MineStrator :',
+    switchAfterAdd: 'Basculer sur ce compte après l’ajout',
+    confirmRemove:
+      'Retirer le compte {pseudo} ? Sa clé API et ses mots de passe SFTP enregistrés seront effacés de cet appareil.',
+    confirmRemoveActive:
+      'Retirer le compte actif {pseudo} ? Sa clé API et ses mots de passe SFTP enregistrés seront effacés de cet appareil. L’application basculera sur un autre compte enregistré, ou reviendra à l’écran de connexion s’il n’en reste aucun.',
+    confirmRemoveService:
+      'Le service d’arrière-plan surveille ce compte avec sa propre copie de la clé : il continuera. Pour l’arrêter : Réglages → Service d’arrière-plan → Désactiver.',
+    activeUsage:
+      'Le compte actif est aussi celui qu’utilisent le serveur MCP et les agents du Copilote. Un client MCP déjà lancé garde le compte qu’il avait au démarrage : relance-le après un changement de compte.',
+    serviceNote:
+      'Le service d’arrière-plan surveille le compte avec lequel il a été activé, quel que soit le compte actif ici. Quand le compte actif en est un autre, l’application le supervise elle-même tant qu’elle tourne.',
   },
 };
 

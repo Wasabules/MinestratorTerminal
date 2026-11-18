@@ -163,6 +163,34 @@ pub fn remove_file() -> Result<()> {
     }
 }
 
+/// Même backend, sur un dossier explicite plutôt que `MINESTRATOR_DATA_DIR` : les tests de
+/// l'échange de clés de compte s'y exécutent en parallèle sans variable d'environnement partagée
+/// et sans jamais toucher au trousseau réel.
+#[cfg(test)]
+pub(crate) struct DirStore {
+    pub dir: PathBuf,
+}
+
+#[cfg(test)]
+impl super::SecretStore for DirStore {
+    fn read(&self, account: &str) -> Result<Option<String>> {
+        let _g = LOCK.lock().unwrap();
+        Ok(load_in(&self.dir)?.get(account).cloned())
+    }
+    fn write(&self, account: &str, value: &str) -> Result<()> {
+        let _g = LOCK.lock().unwrap();
+        let mut map = load_in(&self.dir)?;
+        map.insert(account.to_string(), value.to_string());
+        save_in(&self.dir, &map)
+    }
+    fn delete(&self, account: &str) -> Result<()> {
+        let _g = LOCK.lock().unwrap();
+        let mut map = load_in(&self.dir)?;
+        map.remove(account);
+        save_in(&self.dir, &map)
+    }
+}
+
 /// Chiffrement au repos du fichier (DPAPI sous Windows ; aucun ailleurs, cf. doc du module).
 #[cfg(windows)]
 mod seal {

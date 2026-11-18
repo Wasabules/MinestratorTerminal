@@ -816,7 +816,10 @@ impl Core {
         });
     }
 
-    async fn service_tick(&self) {
+    /// Un tour du lien : qui supervise, relais des alertes. Appelé aussi au changement de compte
+    /// (`crate::accounts`) : le service garde son compte, le superviseur local reprend si le
+    /// nouveau compte n'est pas le sien.
+    pub(crate) async fn service_tick(&self) {
         let _guard = self.service_link.tick.lock().await;
         let endpoint = default_endpoint();
         // Injoignable, accès refusé ou réponse inattendue : comme s'il n'y avait pas de service.

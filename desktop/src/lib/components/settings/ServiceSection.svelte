@@ -136,6 +136,12 @@
       <span class="val">
         {#if status.has_key && status.account_name}
           {status.account_name}{#if status.account_id != null}&nbsp;<span class="dim">#{status.account_id}</span>{/if}
+          <!-- Le service garde le compte avec lequel il a été activé, quel que soit le compte actif. -->
+          {#if overview.same_account === true}
+            <span class="dim">· {t('service.accountActive')}</span>
+          {:else if overview.same_account === false}
+            <span class="other">· {t('service.accountOther')}</span>
+          {/if}
         {:else}
           {t('service.noKey')}
         {/if}
@@ -183,7 +189,11 @@
   <div class="actions">
     {#if !byService}
       <button class="btn" onclick={enable} disabled={!canEnable}>
-        {busy === 'enable' ? t('service.enabling') : t('service.enable')}
+        {busy === 'enable'
+          ? t('service.enabling')
+          : overview.same_account === false
+            ? t('service.enableActive')
+            : t('service.enable')}
       </button>
     {/if}
     {#if status?.has_key}
@@ -276,6 +286,9 @@
   .mono {
     font-family: var(--font-mono);
     font-size: 12px;
+  }
+  .other {
+    color: var(--state-pending);
   }
   .badge[data-state='running'] {
     color: var(--state-running);

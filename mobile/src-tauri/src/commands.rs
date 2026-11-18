@@ -3,8 +3,8 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
-    ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem, LiveLight,
-    LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
+    Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
+    LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
     ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
 };
 use std::sync::Arc;
@@ -21,7 +21,7 @@ pub async fn validate_and_store_key(
     if key.is_empty() {
         return Err(Error::Unexpected("clé vide".into()));
     }
-    core.authenticate_and_store(&key).await
+    core.sign_in(&key).await
 }
 
 #[tauri::command]
@@ -29,14 +29,47 @@ pub fn has_stored_key(core: State<'_, Arc<Core>>) -> Result<bool, Error> {
     core.has_key()
 }
 
+/// Profil du compte actif (et mise en cohérence de la liste des comptes).
 #[tauri::command]
 pub async fn get_user(core: State<'_, Arc<Core>>) -> Result<UserProfile, Error> {
-    core.get_user().await
+    core.session_user().await
+}
+
+/// Retire le compte actif ; renvoie celui qui prend la relève (`null` : écran de connexion).
+#[tauri::command]
+pub async fn logout(core: State<'_, Arc<Core>>) -> Result<Option<Account>, Error> {
+    core.sign_out().await
+}
+
+// --- Comptes (plusieurs comptes MineStrator) ---------------------------------
+
+#[tauri::command]
+pub fn accounts_list(core: State<'_, Arc<Core>>) -> Vec<Account> {
+    core.accounts()
+}
+
+/// Ajoute un compte (clé validée par l'API, doublon refusé), rangé inactif.
+#[tauri::command]
+pub async fn account_add(core: State<'_, Arc<Core>>, key: String) -> Result<Account, Error> {
+    let key = key.trim().to_string();
+    if key.is_empty() {
+        return Err(Error::Unexpected("clé vide".into()));
+    }
+    core.add_account(&key).await
 }
 
 #[tauri::command]
-pub fn logout(core: State<'_, Arc<Core>>) -> Result<(), Error> {
-    core.logout()
+pub async fn account_switch(core: State<'_, Arc<Core>>, id: i64) -> Result<Account, Error> {
+    core.switch_account(id).await
+}
+
+/// Retire un compte ; renvoie le compte actif après l'opération (`null` : plus aucun).
+#[tauri::command]
+pub async fn account_remove(
+    core: State<'_, Arc<Core>>,
+    id: i64,
+) -> Result<Option<Account>, Error> {
+    core.remove_account(id).await
 }
 
 // --- Serveurs -------------------------------------------------------------

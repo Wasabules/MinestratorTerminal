@@ -2,6 +2,7 @@
 
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
+  AccountSwitch,
   Alert,
   ChatDelta,
   ConsoleConnection,
@@ -53,4 +54,13 @@ export const modEvents = {
   /** Progression d'une installation de mod Satisfactory (ficsit → SFTP). */
   installProgress: (cb: (p: ModInstallProgress) => void): Promise<UnlistenFn> =>
     listen<ModInstallProgress>('mods://install-progress', (e) => cb(e.payload)),
+};
+
+export const accountEvents = {
+  /**
+   * Le compte actif a changé (bascule, retrait, connexion), dans cette fenêtre ou une autre.
+   * Le pseudo du payload n'est pas filtré par le mode démo : n'en retenir que les identifiants.
+   */
+  switched: (cb: (s: AccountSwitch) => void): Promise<UnlistenFn> =>
+    listen<AccountSwitch>('account://switched', (e) => cb(e.payload)),
 };

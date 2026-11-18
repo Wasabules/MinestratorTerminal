@@ -103,6 +103,10 @@ pub fn run() {
             commands::has_stored_key,
             commands::get_user,
             commands::logout,
+            commands::accounts_list,
+            commands::account_add,
+            commands::account_switch,
+            commands::account_remove,
             commands::list_servers,
             commands::server_details,
             commands::live_light,
@@ -237,6 +241,10 @@ fn forward(handle: &tauri::AppHandle, ev: CoreEvent) {
         }
         CoreEvent::ModInstallProgress(p) => {
             let _ = handle.emit("mods://install-progress", p);
+        }
+        // Toutes les fenêtres (détachées comprises) se rechargent sur le nouveau compte.
+        CoreEvent::AccountSwitched(s) => {
+            let _ = handle.emit("account://switched", s);
         }
         CoreEvent::Alert(a) => {
             let title = if a.severity == "critical" {

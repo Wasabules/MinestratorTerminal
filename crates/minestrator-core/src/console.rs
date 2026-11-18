@@ -56,6 +56,14 @@ impl ConsoleManager {
             let _ = tx.try_send(());
         }
     }
+
+    /// Ferme toutes les connexions (changement de compte : elles portent le token de l'ancien).
+    /// Celles du superviseur sont rouvertes par lui, avec la nouvelle clé.
+    pub fn disconnect_all(&self) {
+        for (_, tx) in self.conns.lock().unwrap().drain() {
+            let _ = tx.try_send(());
+        }
+    }
 }
 
 fn phase(events: &broadcast::Sender<CoreEvent>, conn_id: &str, phase: &str) {

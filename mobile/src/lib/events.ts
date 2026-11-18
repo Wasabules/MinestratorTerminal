@@ -3,6 +3,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Alert,
+  AccountSwitch,
   ConsoleConnection,
   ConsoleOutput,
   ConsoleStats,
@@ -34,4 +35,11 @@ export const sftpEvents = {
 export const alertEvents = {
   new: (cb: (a: Alert) => void): Promise<UnlistenFn> =>
     listen<Alert>("alert://new", (e) => cb(e.payload)),
+};
+
+/** Changement du compte actif (bascule, retrait, connexion). N'en retenir que les identifiants :
+ *  le pseudo du payload n'est pas filtré par le mode démo. */
+export const accountEvents = {
+  switched: (cb: (s: AccountSwitch) => void): Promise<UnlistenFn> =>
+    listen<AccountSwitch>("account://switched", (e) => cb(e.payload)),
 };

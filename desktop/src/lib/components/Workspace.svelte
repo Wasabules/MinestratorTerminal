@@ -3,7 +3,15 @@
   import type { UnlistenFn } from '@tauri-apps/api/event';
   import { tabs } from '#lib/tabs/tabs.svelte.ts';
   import { t } from '#lib/i18n/index.ts';
-  import { alertEvents, copilotEvents, sftpEvents, consoleEvents, modEvents } from '#lib/events.ts';
+  import {
+    accountEvents,
+    alertEvents,
+    copilotEvents,
+    sftpEvents,
+    consoleEvents,
+    modEvents,
+  } from '#lib/events.ts';
+  import { applyAccountSwitch } from '#lib/stores/accounts.svelte.ts';
   import { addAlert, addBacklog } from '#lib/alerts/alerts.svelte.ts';
   import { api, humanizeError } from '#lib/ipc.ts';
   import { addDiagnosis, startRun, progressRun } from '#lib/copilot/diagnoses.svelte.ts';
@@ -51,6 +59,9 @@
     unlisteners.push(await modEvents.installProgress(applyInstallProgress));
     unlisteners.push(await consoleEvents.status((p) => onRuntime(p.conn_id, p.state)));
     unlisteners.push(await consoleEvents.stats((p) => onRuntime(p.conn_id, p.state)));
+    // Changement de compte (depuis cette fenêtre ou une autre) : onglets serveurs fermés, profil
+    // rechargé ; le workspace est ensuite remonté pour le nouveau compte.
+    unlisteners.push(await accountEvents.switched((s) => void applyAccountSwitch(s.current)));
     if (destroyed) unlisteners.forEach((u) => u()); // démonté pendant l'enregistrement
     // Alertes détectées par le service d'arrière-plan pendant que l'app était fermée (24 h).
     // Vide si aucun service ne supervise ce compte.

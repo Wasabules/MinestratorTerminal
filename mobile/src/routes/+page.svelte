@@ -2,6 +2,8 @@
   import { api, ensureNotificationPermission } from "#lib/ipc.ts";
   import { auth } from "#lib/stores/auth.svelte.ts";
   import { alerts } from "#lib/stores/alerts.svelte.ts";
+  import { applyAccountSwitch } from "#lib/stores/accounts.svelte.ts";
+  import { accountEvents } from "#lib/events.ts";
   import { settings } from "#lib/stores/settings.svelte.ts";
   import { initFake, isFake } from "#lib/fake.svelte.ts";
   import { t } from "#lib/i18n.ts";
@@ -87,6 +89,27 @@
     })();
   });
 
+  // Changement de compte : le serveur ouvert appartient à l'ancien compte ; on revient à la liste
+  // (rechargée grâce au `{#key}` plus bas) et on aligne le profil sur le nouveau compte.
+  $effect(() => {
+    let unlisten: (() => void) | undefined;
+    let gone = false;
+    accountEvents
+      .switched((s) => {
+        if (s.previous !== (s.current?.id ?? null)) {
+          selected = null;
+          rememberServer(null);
+        }
+        void applyAccountSwitch(s.current);
+      })
+      .then((u) => (gone ? u() : (unlisten = u)))
+      .catch(() => {});
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  });
+
   // Restauration de l'écran après un rechargement (voir `LAST_SERVER`).
   $effect(() => {
     if (!auth.isAuthed) return;
@@ -143,14 +166,17 @@
     }}
   />
 {:else}
-  <ServersList
-    onOpen={(s, box) => {
-      selected = { server: s, box };
-      rememberServer(s.id);
-    }}
-    onSettings={() => (showSettings = true)}
-    onAlerts={() => (showAlerts = true)}
-  />
+  <!-- Changement de compte : la liste est remontée, donc rechargée. -->
+  {#key auth.user?.id}
+    <ServersList
+      onOpen={(s, box) => {
+        selected = { server: s, box };
+        rememberServer(s.id);
+      }}
+      onSettings={() => (showSettings = true)}
+      onAlerts={() => (showAlerts = true)}
+    />
+  {/key}
 {/if}
 
 <style>

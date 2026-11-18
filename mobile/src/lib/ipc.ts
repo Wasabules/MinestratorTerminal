@@ -20,6 +20,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { isPermissionGranted, requestPermission } from "@tauri-apps/plugin-notification";
 import { t } from "./i18n";
 import type {
+  Account,
   ActivityPage,
   AlertEntry,
   AppError,
@@ -60,17 +61,35 @@ async function demo<T>(value: Promise<T>, transform: (v: T) => T): Promise<T> {
   return isFake() ? transform(v) : v;
 }
 
+/** Mode démo : profil du compte (pseudo et e-mail). */
+function fakeProfile(u: UserProfile): UserProfile {
+  return { ...u, pseudo: fakePlayer(u.pseudo), mail: fakeMail(u.mail) };
+}
+
+/** Mode démo : compte enregistré (pseudo). */
+function fakeAccount(a: Account): Account {
+  return { ...a, pseudo: fakePlayer(a.pseudo) };
+}
+
 export const api = {
   // --- Auth ---
-  validateAndStoreKey: (key: string) => invoke<UserProfile>("validate_and_store_key", { key }),
+  /** Connexion : la clé devient celle du compte actif (compte ajouté, ou sa clé remplacée). */
+  validateAndStoreKey: (key: string) =>
+    demo(invoke<UserProfile>("validate_and_store_key", { key }), fakeProfile),
   hasStoredKey: () => invoke<boolean>("has_stored_key"),
-  getUser: () =>
-    demo(invoke<UserProfile>("get_user"), (u) => ({
-      ...u,
-      pseudo: fakePlayer(u.pseudo),
-      mail: fakeMail(u.mail),
-    })),
-  logout: () => invoke<void>("logout"),
+  getUser: () => demo(invoke<UserProfile>("get_user"), fakeProfile),
+  /** Retire le compte actif ; renvoie celui qui prend la relève (`null` : écran de connexion). */
+  logout: () => demo(invoke<Account | null>("logout"), (a) => (a ? fakeAccount(a) : a)),
+
+  // --- Comptes (plusieurs comptes MineStrator) ---
+  accountsList: () => demo(invoke<Account[]>("accounts_list"), (list) => list.map(fakeAccount)),
+  /** Ajoute un compte (clé validée, doublon refusé), rangé inactif. */
+  accountAdd: (key: string) => demo(invoke<Account>("account_add", { key }), fakeAccount),
+  /** Bascule vers un compte enregistré (le core émet `account://switched`). */
+  accountSwitch: (id: number) => demo(invoke<Account>("account_switch", { id }), fakeAccount),
+  /** Retire un compte ; renvoie le compte actif après coup (`null` : aucun). */
+  accountRemove: (id: number) =>
+    demo(invoke<Account | null>("account_remove", { id }), (a) => (a ? fakeAccount(a) : a)),
 
   // --- Serveurs ---
   listServers: () =>
