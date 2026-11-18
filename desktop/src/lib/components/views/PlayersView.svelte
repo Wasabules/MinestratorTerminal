@@ -258,11 +258,9 @@
   }
   .connected h2 {
     margin: 4px 0 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .state {
     display: flex;
@@ -304,14 +302,14 @@
     display: grid;
     place-items: center;
     font-family: var(--font-mono);
-    font-weight: 700;
+    font-weight: 800;
     font-size: 13px;
-    color: #fff;
-    background: var(--brand-gradient);
+    color: var(--on-accent);
+    background: var(--accent);
   }
   .name {
     flex: 1;
-    font-weight: 600;
+    font-weight: 800;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

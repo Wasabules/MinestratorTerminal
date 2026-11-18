@@ -114,12 +114,12 @@
     padding: 0 4px;
     border-radius: 999px;
     background: var(--brand-primary);
-    color: #fff;
+    color: var(--on-primary);
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 800;
     display: grid;
     place-items: center;
-    box-shadow: 0 0 0 2px var(--surface);
+    box-shadow: 0 0 0 2px var(--chrome);
   }
   /* Point « live » qui bat (comme la pastille de notification), coin haut-droit de l'icône. */
   .pulse {
@@ -213,7 +213,7 @@
     border-bottom: 1px solid var(--border);
   }
   .title {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .link {
@@ -258,7 +258,7 @@
     flex: none;
   }
   .srv {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -275,7 +275,7 @@
     height: 100%;
     width: 35%;
     border-radius: 3px;
-    background: var(--brand-gradient, var(--brand-primary));
+    background: var(--accent);
     animation: slide 1.3s ease-in-out infinite;
   }
   .phase {

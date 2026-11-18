@@ -100,7 +100,7 @@
   <div class="actions">
     <span class="spacer"></span>
     <button class="btn btn--ghost" onclick={onclose}>{t('common.cancel')}</button>
-    <button class="btn danger" onclick={remove} disabled={!confirmed || busy || snapshotRunning}>
+    <button class="btn btn--danger" onclick={remove} disabled={!confirmed || busy || snapshotRunning}>
       {#if busy}<span class="spinner"></span>{/if}
       {t('mybox.delete.submit')}
     </button>
@@ -122,9 +122,6 @@
   }
   .ok {
     color: var(--state-running);
-  }
-  .danger {
-    background: var(--state-danger);
   }
   .actions {
     display: flex;

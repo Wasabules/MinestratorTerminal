@@ -19,6 +19,7 @@
   import { applyInstallProgress } from '#lib/mods/installs.svelte.ts';
   import { setServerRuntime } from '#lib/servers/runtime.svelte.ts';
   import TabBar from './TabBar.svelte';
+  import Logo from './Logo.svelte';
   import UserMenu from './UserMenu.svelte';
   import AlertCenter from './AlertCenter.svelte';
   import CopilotCenter from './CopilotCenter.svelte';
@@ -112,8 +113,8 @@
 
 <div class="workspace">
   <header class="topbar">
-    <button class="brand" onclick={() => tabs.focusHome()} title={t('common.appName')}>
-      <span class="mark" aria-hidden="true">◧</span>
+    <button class="brand" onclick={() => tabs.focusHome()} title={t('common.appName')} aria-label={t('common.appName')}>
+      <Logo size={20} />
     </button>
     <TabBar />
     <div class="controls">
@@ -157,39 +158,40 @@
     flex-direction: column;
     min-height: 0;
   }
+  /* Barre d'onglets : fond le plus sombre, onglets en intercalaires posés sur la page. */
   .topbar {
     display: flex;
-    align-items: stretch;
-    gap: 8px;
-    padding: 0 10px;
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
+    align-items: flex-end;
+    gap: 6px;
+    padding: 8px 12px 0;
+    background: var(--chrome);
     flex: none;
   }
   .controls {
     display: flex;
     align-items: center;
-    gap: 8px;
+    align-self: center;
+    gap: 6px;
+    padding-bottom: 4px;
     flex: none;
   }
+  /* Tuile du logo : sombre dans les deux thèmes, le logo garde ses couleurs. */
   .brand {
-    display: flex;
-    align-items: center;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0 4px;
-    flex: none;
-  }
-  .mark {
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
+    align-self: center;
     display: grid;
     place-items: center;
-    color: #fff;
-    background: var(--brand-gradient);
-    font-size: 14px;
+    width: 30px;
+    height: 30px;
+    margin: 0 6px 4px 2px;
+    border-radius: 8px;
+    border: none;
+    background: #1b2126;
+    cursor: pointer;
+    padding: 0;
+    flex: none;
+  }
+  .brand:hover {
+    background: #232b31;
   }
   .panels {
     position: relative;

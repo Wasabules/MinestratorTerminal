@@ -7,10 +7,12 @@
   import { t } from '#lib/i18n/index.ts';
   import { runtimeMeta, isRunning } from '#lib/status.ts';
   import { fmtBytes } from '#lib/copilot/format.ts';
+  import { fmtDuration } from '#lib/automations/format.ts';
   import { tabs, type ServerTab, type ServerView } from '#lib/tabs/tabs.svelte.ts';
   import { serverCaps, availableViews } from '#lib/games/capabilities.svelte.ts';
   import { loadUpdates, updateCount } from '#lib/mods/updates.svelte.ts';
   import { requestDiskView } from '#lib/sftp/diskRequest.svelte.ts';
+  import { avatarStyle, BIOMES, biomeVars, serverBiome } from '#lib/servers/colors.svelte.ts';
   import type {
     ConsoleStats,
     LiveLight,
@@ -25,11 +27,14 @@
   import MetricsChart from '../MetricsChart.svelte';
   import PlayersChart from '../PlayersChart.svelte';
   import UptimeCard from '../UptimeCard.svelte';
+  import BiomeLandscape from '../BiomeLandscape.svelte';
   import Icon from '../Icon.svelte';
 
   let { tab }: { tab: ServerTab } = $props();
   const serverId = $derived(tab.serverId);
   const connId = $derived(tab.id);
+  /** Biome du serveur : colore la bannière, les sélections et les tuiles de la vue. */
+  const biome = $derived(serverBiome(serverId));
 
   let live = $state<LiveLight | null>(null);
   /** `/live` : FlexCore, réseau, uptime — ce que `live/light` et le WebSocket ne donnent pas. */
@@ -75,6 +80,21 @@
   const diskLimitBytes = $derived((live?.disk.limit ?? 0) * 1024 * 1024);
   const diskPct = $derived(
     stats && diskLimitBytes > 0 ? (stats.disk_bytes / diskLimitBytes) * 100 : 0
+  );
+
+  /** Temps en service : WebSocket d'abord (à la seconde), sinon `/live` (relu toutes les 15 s). */
+  const uptimeMs = $derived(
+    stats && stats.uptime > 0
+      ? stats.uptime
+      : liveNow?.stats.uptime
+        ? liveNow.stats.uptime.total_seconds * 1000
+        : 0
+  );
+  /** Joueurs connectés : `/live` (relu) d'abord, sinon `live/light` (lu à l'ouverture). */
+  const players = $derived(liveNow?.stats.players ?? live?.players ?? null);
+  const flexcore = $derived(liveNow?.stats.cpu && liveNow.stats.cpu.flexcore > 0 ? liveNow.stats.cpu : null);
+  const hasInfos = $derived(
+    !!item?.last_backup_url || !!item?.support_ref || uptimeMs > 0 || !!flexcore || !!liveNow?.stats.network
   );
 
   let destroyed = false;
@@ -149,6 +169,23 @@
     return h.staff ? t('overview.byStaff') : t('overview.actorAccount');
   }
 
+  /** Pastille d'une entrée du journal : échec, staff, puis famille d'action. */
+  function activityDot(h: ActivityEntry): string {
+    if (h.result && h.result !== 'success') return 'var(--state-danger)';
+    const accent = (key: string) => BIOMES.find((b) => b.key === key)?.accent ?? 'var(--text-dim)';
+    if (h.staff) return accent('end');
+    switch (h.category) {
+      case 'power':
+        return accent('ocean');
+      case 'sftp':
+        return accent('desert');
+      case 'console':
+        return accent('forest');
+      default:
+        return 'var(--text-dim)';
+    }
+  }
+
   function copyAddress() {
     if (!address) return;
     void navigator.clipboard.writeText(address).catch(() => {});
@@ -162,9 +199,9 @@
    * l'hébergeur fournit l'essentiel des points.
    */
   const RANGES: { secs: number; label?: string; key?: string }[] = [
-    { secs: 3600, label: '1h' },
-    { secs: 6 * 3600, label: '6h' },
-    { secs: 86400, label: '24h' },
+    { secs: 3600, label: '1 h' },
+    { secs: 6 * 3600, label: '6 h' },
+    { secs: 86400, label: '24 h' },
     { secs: 7 * 86400, key: 'overview.range7d' },
     { secs: 30 * 86400, key: 'overview.range30d' },
   ];
@@ -241,6 +278,7 @@
 
   function fmtUptime(ms: number): string {
     const s = Math.floor(ms / 1000);
+    if (s >= 86400) return fmtDuration(s); // « 41 j 22 h »
     const h = Math.floor(s / 3600);
     const m = Math.floor((s % 3600) / 60);
     if (h > 0) return `${h} h ${m} min`;
@@ -248,594 +286,716 @@
   }
 </script>
 
-<div class="view">
-  <header class="head">
-    <div class="title">
-      <h1>{tab.serverName}</h1>
-      <span class="pill" style="color: {rt.color}">
-        <StatusDot color={rt.color} pulse={running} />
-        {t(`status.${rt.key}`)}
-      </span>
+<div class="ov biome" style={biomeVars(biome)}>
+  <!-- Bannière : paysage du biome, nom, puces d'état, alimentation. -->
+  <section class="banner" style="background: {biome.sky}">
+    <div class="land"><BiomeLandscape {biome} seed={serverId} height={190} pixel={6} /></div>
+    <div class="banner-body">
+      <div class="who">
+        <h1>{tab.serverName}</h1>
+        <div class="chips">
+          <span class="chip state" style="color: {rt.ink}">
+            <StatusDot color={rt.color} pulse={running} size={8} />
+            {t(`status.${rt.key}`)}
+          </span>
+          {#if live?.version}<span class="chip">{live.version}</span>{/if}
+          {#if address}
+            <button class="chip addr" onclick={copyAddress} title={t('overview.copyAddress')}>
+              <span class="mono">{address}</span>
+              {#if copied}
+                <Icon name="check" size={13} stroke={2.4} /><span class="copied">{t('overview.copied')}</span>
+              {:else}
+                <Icon name="copy" size={13} stroke={2.2} />
+              {/if}
+            </button>
+          {/if}
+        </div>
+      </div>
+      <div class="bpower">
+        <PowerControl
+          {serverId}
+          {running}
+          tone="banner"
+          disabled={hibernated}
+          restartWarning={item?.restart_warning}
+          stopWarning={item?.stop_warning}
+        />
+      </div>
     </div>
-    <PowerControl
-      {serverId}
-      {running}
-      disabled={hibernated}
-      restartWarning={item?.restart_warning}
-      stopWarning={item?.stop_warning}
-    />
-  </header>
+  </section>
 
-  {#if address}
-    <button class="addrbar" onclick={copyAddress} title={t('overview.copyAddress')}>
-      <span class="ag"><Icon name="globe" size={15} /></span>
-      <span class="av">{address}</span>
-      <span class="ac">
-        {#if copied}
-          <Icon name="check" size={14} /> {t('overview.copied')}
-        {:else}
-          <Icon name="copy" size={14} /> {t('overview.copy')}
-        {/if}
-      </span>
-    </button>
-  {/if}
-
-  {#if hibernated}
-    <div class="note">{t('overview.hibernated')}</div>
-  {/if}
-
-  {#if updates > 0}
-    <button class="note upd" onclick={() => open('mods')}>
-      <Icon name="package" size={15} />
-      <span>{t('overview.updatesAvailable', { count: updates })}</span>
-      <span class="upd-go">{t('overview.updatesOpen')} →</span>
-    </button>
-  {/if}
-
-  {#if item?.last_backup_url || item?.support_ref}
-    <div class="srvmeta dim">
+  <!-- Bandeau d'infos : seulement ce que l'hébergeur fournit pour ce serveur. -->
+  {#if hasInfos}
+    <div class="infobar">
       {#if item?.last_backup_url}
         <!-- URL signée : on l'ouvre sans jamais l'afficher (jeton porteur). -->
         <button class="linklike" onclick={() => void openUrl(item!.last_backup_url!)}>
-          <Icon name="download" size={13} />
+          <Icon name="download" size={14} stroke={2.2} />
           {t('overview.downloadLastBackup')}
         </button>
       {/if}
       {#if item?.support_ref}
         <span class="selectable">{t('overview.supportRef', { ref: item.support_ref })}</span>
       {/if}
+      {#if uptimeMs > 0}
+        <span>{t('overview.uptime')} <strong>{fmtUptime(uptimeMs)}</strong></span>
+      {/if}
+      <!-- FlexCore : seulement pour une offre qui en comporte. -->
+      {#if flexcore}
+        <span title={t('overview.flexcoreHint')}>
+          {t('overview.flexcore')}
+          <strong class:burst={flexcore.is_bursting}>
+            {flexcore.is_bursting ? t('overview.flexcoreOn') : t('overview.flexcoreOff')}
+          </strong>
+        </span>
+      {/if}
+      {#if liveNow?.stats.network}
+        <span title={t('overview.networkHint')}>
+          {t('overview.network')}
+          <strong class="mono">
+            ↓ {fmtBytes(liveNow.stats.network.rx_bytes)} · ↑ {fmtBytes(liveNow.stats.network.tx_bytes)}
+          </strong>
+        </span>
+      {/if}
     </div>
   {/if}
 
-  <section class="gauges">
-    <div class="card g">
-      <Gauge
-        label={t('overview.cpu')}
-        percent={cpuPct}
-        detail={stats ? `${stats.cpu_absolute.toFixed(1)} % / ${live?.cpu.limit ?? 0} %` : t('overview.noData')}
-      />
-    </div>
-    <div class="card g">
-      <Gauge
-        label={t('overview.ram')}
-        percent={ramPct}
-        detail={stats ? `${fmtBytes(stats.memory_bytes)} / ${fmtBytes(stats.memory_limit_bytes)}` : '—'}
-      />
-    </div>
-    <div class="card g">
-      <Gauge
-        label={t('overview.disk')}
-        percent={diskPct}
-        detail={stats ? `${fmtBytes(stats.disk_bytes)} / ${fmtBytes(diskLimitBytes)}` : '—'}
-      />
-      {#if openable.some((v) => v.id === 'sftp')}
-        <button class="linklike analyze" onclick={analyzeDisk}>
-          <Icon name="hard-drive" size={13} /> {t('overview.analyzeDisk')}
-        </button>
-      {/if}
-    </div>
-  </section>
-
-  <section class="facts">
-    {#if !caps || caps.players}
-      <div class="fact">
-        <span class="k">{t('overview.players')}</span>
-        <span class="v">{live?.players ? `${live.players.current} / ${live.players.limit}` : '—'}</span>
-      </div>
+  <div class="body">
+    {#if hibernated}
+      <div class="note sleep"><span class="ndot"></span><span>{t('overview.hibernated')}</span></div>
     {/if}
-    <div class="fact">
-      <span class="k">{t('overview.version')}</span>
-      <span class="v">{live?.version ?? '—'}</span>
-    </div>
-    <div class="fact">
-      <span class="k">{t('overview.uptime')}</span>
-      <span class="v">
-        {#if stats && stats.uptime > 0}
-          {fmtUptime(stats.uptime)}
-        {:else if liveNow?.stats.uptime}
-          {fmtUptime(liveNow.stats.uptime.total_seconds * 1000)}
-        {:else}
-          —
-        {/if}
-      </span>
-    </div>
-    <!-- FlexCore : seulement pour une offre qui en comporte. -->
-    {#if liveNow?.stats.cpu && liveNow.stats.cpu.flexcore > 0}
-      <div class="fact" title={t('overview.flexcoreHint')}>
-        <span class="k">{t('overview.flexcore')}</span>
-        <span class="v" class:burst={liveNow.stats.cpu.is_bursting}>
-          {liveNow.stats.cpu.is_bursting ? t('overview.flexcoreOn') : t('overview.flexcoreOff')}
-        </span>
-      </div>
+
+    {#if updates > 0}
+      <button class="note upd" onclick={() => open('mods')}>
+        <span class="ndot"></span>
+        <span class="ntext">{t('overview.updatesAvailable', { count: updates })}</span>
+        <span class="ngo">{t('overview.updatesOpen')} →</span>
+      </button>
     {/if}
-    {#if liveNow?.stats.network}
-      <div class="fact" title={t('overview.networkHint')}>
-        <span class="k">{t('overview.network')}</span>
-        <span class="v small">
-          ↓ {fmtBytes(liveNow.stats.network.rx_bytes)} · ↑ {fmtBytes(liveNow.stats.network.tx_bytes)}
-        </span>
-      </div>
-    {/if}
-  </section>
 
-  <section class="block">
-    <div class="hist-head">
-      <h2>{t('overview.history')}</h2>
-      <div class="hh-right">
-        <button
-          class="perfbtn"
-          onclick={runPerf}
-          disabled={perfBusy || !running}
-          title={running ? t('overview.perfHint') : t('overview.perfOffline')}
-        >
-          <Icon name="zap" size={15} /> {perfBusy ? t('overview.perfRunning') : t('overview.perf')}
-        </button>
-        <div class="ranges">
-          {#each RANGES as r (r.secs)}
-            <button class="rg" class:on={range === r.secs} onclick={() => setRange(r.secs)}>
-              {r.key ? t(r.key) : r.label}
-            </button>
-          {/each}
-        </div>
-      </div>
-    </div>
-    <div class="card chart-card">
-      <MetricsChart history={metrics} cpuLimit={live?.cpu.limit ?? 0} />
-      {#if metrics && metrics.players.length > 0 && (!caps || caps.players)}
-        <div class="players-chart">
-          <PlayersChart
-            players={metrics.players}
-            from={metrics.from}
-            to={metrics.to}
-            stepS={metrics.step_s}
-          />
-        </div>
-      {/if}
-    </div>
-  </section>
-
-  <!-- Disponibilité 24 h / 7 j / 30 j et coupures : surveillance locale, complétée par les
-       mesures de l'hébergeur là où rien ne surveillait. -->
-  <UptimeCard {serverId} />
-
-  {#if history.length > 0}
-    <section class="block">
-      <h2>{t('overview.activity')}</h2>
-      <div class="acts">
-        {#each history as h (h.id)}
-          <div class="act">
-            <span class="a-date dim">{h.date.slice(0, 16)}</span>
-            <span class="a-what">
-              {actionLabel(h.action)}
-              {#if h.context}<code class="a-ctx selectable">{h.context}</code>{/if}
-              {#if h.result && h.result !== 'success'}<span class="a-ko">{h.result}</span>{/if}
-            </span>
-            <span class="a-who dim" class:staff={h.staff}>{actorLabel(h)}</span>
-            {#if h.ip}<span class="a-ip dim selectable">{h.ip}</span>{/if}
-          </div>
-        {/each}
-      </div>
-    </section>
-  {/if}
-
-  <section class="block">
-    <h2>{t('overview.openView')}</h2>
-    <div class="views">
+    <!-- Ouvrir une vue : « + » ouvre un onglet de plus (doublons permis). -->
+    <section class="views" aria-label={t('overview.openView')}>
       {#each openable as v (v.id)}
-        <div class="vcard">
+        <div class="vtile">
           <button class="vmain" onclick={() => open(v.id)}>
-            <span class="vg"><Icon name={v.icon} size={17} /></span>
-            <span class="vl">{t(`view.${v.id}`)}</span>
-            {#if v.id === 'mods' && updates > 0}
-              <span class="ubadge" title={t('overview.updatesAvailable', { count: updates })}>{updates}</span>
-            {/if}
-            {#if !v.ready}<span class="soon">{t('common.comingSoon')}</span>{/if}
+            <span class="vg"><Icon name={v.icon} size={19} stroke={2} /></span>
+            <span class="vl">
+              {t(`view.${v.id}`)}
+              {#if v.id === 'mods' && updates > 0}
+                <span class="ubadge" title={t('overview.updatesAvailable', { count: updates })}>{updates}</span>
+              {/if}
+              {#if !v.ready}<span class="soon">{t('common.comingSoon')}</span>{/if}
+            </span>
           </button>
-          <button class="vnew" title="+" onclick={() => open(v.id, true)}>+</button>
+          <button
+            class="vnew"
+            title={t('overview.newTabHint')}
+            aria-label={t('overview.newTab', { view: t(`view.${v.id}`) })}
+            onclick={() => open(v.id, true)}>+</button
+          >
         </div>
       {/each}
+    </section>
+
+    <div class="cols">
+      <div class="col main">
+        <section class="card hist">
+          <div class="hist-head">
+            <h2>{t('overview.history')}</h2>
+            <button
+              class="perfbtn"
+              onclick={runPerf}
+              disabled={perfBusy || !running}
+              title={running ? t('overview.perfHint') : t('overview.perfOffline')}
+            >
+              <Icon name="zap" size={14} stroke={2.2} />
+              {perfBusy ? t('overview.perfRunning') : t('overview.perf')}
+            </button>
+            <div class="ranges" role="group" aria-label={t('overview.range')}>
+              {#each RANGES as r (r.secs)}
+                <button class="rg" class:on={range === r.secs} aria-pressed={range === r.secs} onclick={() => setRange(r.secs)}>
+                  {r.key ? t(r.key) : r.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+          <MetricsChart history={metrics} cpuLimit={live?.cpu.limit ?? 0} />
+          {#if metrics && metrics.players.length > 0 && (!caps || caps.players)}
+            <div class="players-chart">
+              <PlayersChart
+                players={metrics.players}
+                from={metrics.from}
+                to={metrics.to}
+                stepS={metrics.step_s}
+              />
+            </div>
+          {/if}
+        </section>
+
+        {#if history.length > 0}
+          <section class="card acts">
+            <h2>{t('overview.activity')}</h2>
+            {#each history as h (h.id)}
+              <div class="act">
+                <span class="adot" style="background: {activityDot(h)}"></span>
+                <span class="a-what">
+                  <strong class:staff={h.staff}>{actorLabel(h)}</strong>
+                  <span>{actionLabel(h.action)}</span>
+                  {#if h.context}<code class="a-ctx selectable">{h.context}</code>{/if}
+                  {#if h.result && h.result !== 'success'}<span class="a-ko">{h.result}</span>{/if}
+                </span>
+                {#if h.ip}<span class="a-ip selectable">{h.ip}</span>{/if}
+                <span class="a-date">{h.date.slice(0, 16)}</span>
+              </div>
+            {/each}
+          </section>
+        {/if}
+      </div>
+
+      <div class="col side">
+        <section class="card res">
+          <h2>{t('overview.resources')}</h2>
+          <Gauge
+            label={t('overview.cpu')}
+            percent={cpuPct}
+            detail={stats ? `${stats.cpu_absolute.toFixed(1)} % / ${live?.cpu.limit ?? 0} %` : t('overview.noData')}
+          />
+          <Gauge
+            label={t('overview.ram')}
+            percent={ramPct}
+            detail={stats ? `${fmtBytes(stats.memory_bytes)} / ${fmtBytes(stats.memory_limit_bytes)}` : '—'}
+          />
+          <Gauge
+            label={t('overview.disk')}
+            percent={diskPct}
+            detail={stats ? `${fmtBytes(stats.disk_bytes)} / ${fmtBytes(diskLimitBytes)}` : '—'}
+          />
+          {#if openable.some((v) => v.id === 'sftp')}
+            <button class="linklike" onclick={analyzeDisk}>
+              <Icon name="hard-drive" size={14} stroke={2.2} />
+              {t('overview.analyzeDisk')}
+            </button>
+          {/if}
+        </section>
+
+        <!-- Joueurs : seulement quand l'hébergeur en remonte pour ce jeu. -->
+        {#if players && (!caps || caps.players)}
+          <section class="card pl">
+            <div class="pl-head">
+              <h2>{t('overview.players')}</h2>
+              <span class="mono pl-count">{players.current} / {players.limit}</span>
+            </div>
+            {#if players.list.length > 0}
+              <div class="pl-list">
+                {#each players.list.slice(0, 8) as name (name)}
+                  <span class="phead" style={avatarStyle(name)} title={name}>{name.charAt(0).toUpperCase()}</span>
+                {/each}
+                {#if players.list.length > 8}<span class="pl-more">+{players.list.length - 8}</span>{/if}
+              </div>
+              <p class="pl-names selectable">{players.list.join(', ')}</p>
+            {:else if players.current === 0}
+              <p class="pl-names">{t('players.none')}</p>
+            {/if}
+            {#if openable.some((v) => v.id === 'players')}
+              <button class="linklike" onclick={() => open('players')}>
+                <Icon name="users" size={14} stroke={2.2} />
+                {t('overview.openPlayers')}
+              </button>
+            {/if}
+          </section>
+        {/if}
+
+        <!-- Disponibilité 24 h / 7 j / 30 j et coupures : surveillance locale, complétée par les
+             mesures de l'hébergeur là où rien ne surveillait. -->
+        <UptimeCard {serverId} />
+      </div>
     </div>
-    <p class="dim hint">{t('overview.newTabHint')}</p>
-  </section>
+  </div>
 </div>
 
 <style>
-  .note.upd {
+  .ov {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* --- Bannière --------------------------------------------------------------- */
+  /* Pas d'overflow caché : le menu d'alimentation déborde sous la bannière (le paysage, lui,
+     est rogné par son propre conteneur). */
+  .banner {
+    position: relative;
+    min-height: 190px;
+    display: flex;
+    align-items: flex-end;
+    flex: none;
+  }
+  .land {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+  }
+  /* Sur le paysage, tout garde les couleurs du thème sombre (les paysages le sont toujours). */
+  .banner-body {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 16px;
+    padding: 28px 40px 22px;
+  }
+  .who {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  h1 {
+    margin: 0;
+    font-size: 48px;
+    line-height: 0.95;
+    color: #ffffff;
+    overflow-wrap: anywhere;
+  }
+  .chips {
+    --state-running: #5fd68c;
+    --state-running-text: #8fe8b0;
+    --state-pending: #f2b84b;
+    --state-offline: #6b7a7f;
+    --state-hibernate: #c79bff;
+    --text-dim: #8c9a94;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: none;
+    background: #0d1113;
+    color: #e4ebe8;
+    font: inherit;
+    font-weight: 800;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .chip.addr {
+    cursor: pointer;
+    color: #e4ebe8;
+  }
+  .chip.addr .mono {
+    font-weight: 500;
+    font-size: 12.5px;
+  }
+  .chip.addr :global(.icon) {
+    color: #b3bfba;
+  }
+  .chip.addr:hover {
+    background: #1b2126;
+  }
+  .copied {
+    color: #8fe8b0;
+  }
+  .bpower {
+    margin-left: auto;
+  }
+
+  /* --- Bandeau d'infos --------------------------------------------------------- */
+  .infobar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 22px;
+    padding: 10px 40px;
+    background: var(--inset);
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+  .infobar strong {
+    color: var(--text);
+  }
+  .infobar strong.mono {
+    font-weight: 500;
+    font-size: 13px;
+  }
+  .infobar strong.burst {
+    color: var(--state-pending);
+  }
+  .linklike {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--brand-primary);
+    font: inherit;
+    font-weight: 800;
+    font-size: 14px;
+    cursor: pointer;
+    align-self: flex-start;
+  }
+  .linklike:hover {
+    text-decoration: underline;
+  }
+
+  /* --- Corps --------------------------------------------------------------------- */
+  .body {
+    flex: 1;
+    padding: 22px 40px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  h2 {
+    margin: 0;
+    font-size: 18px;
+  }
+
+  .note {
     display: flex;
     align-items: center;
-    gap: 8px;
-    width: 100%;
+    gap: 12px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: none;
     font: inherit;
-    font-size: 13.5px;
+    font-size: 14.5px;
     text-align: left;
-    cursor: pointer;
     color: var(--text);
-    border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
-    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
   }
-  .note.upd span:first-of-type {
+  .ndot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex: none;
+  }
+  .note.sleep {
+    background: color-mix(in srgb, var(--state-hibernate) 14%, var(--surface));
+  }
+  .note.sleep .ndot {
+    background: var(--state-hibernate);
+  }
+  .note.upd {
+    width: 100%;
+    cursor: pointer;
+    background: color-mix(in srgb, var(--state-pending) 14%, var(--surface));
+  }
+  .note.upd:hover {
+    background: color-mix(in srgb, var(--state-pending) 20%, var(--surface));
+  }
+  .note.upd .ndot {
+    background: var(--state-pending);
+  }
+  .ntext {
     flex: 1;
   }
-  .upd-go {
-    font-weight: 600;
-    color: var(--brand-primary);
+  .ngo {
+    font-weight: 900;
+    color: var(--state-pending);
+    white-space: nowrap;
+  }
+
+  /* Tuiles « Ouvrir une vue » */
+  .views {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
+    gap: 10px;
+  }
+  .vtile {
+    position: relative;
+    display: flex;
+  }
+  .vmain {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px 14px 13px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .vmain:hover {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  }
+  .vg {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: grid;
+    place-items: center;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+  }
+  .vl {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-weight: 800;
+    font-size: 15px;
   }
   .ubadge {
-    margin-left: auto;
-    min-width: 18px;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: var(--brand-primary);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
+    padding: 0 7px;
+    border-radius: 9px;
+    background: var(--state-pending);
+    color: var(--bg);
+    font-size: 12px;
+    font-weight: 900;
     line-height: 18px;
-    text-align: center;
   }
+  .soon {
+    font-size: 10.5px;
+    font-weight: 800;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 7px;
+  }
+  .vnew {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    border: none;
+    background: var(--border);
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 900;
+    cursor: pointer;
+  }
+  .vnew:hover {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+
+  /* Deux colonnes : historique et activité, puis ressources, joueurs, disponibilité. */
+  .cols {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: flex-start;
+  }
+  .col {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .col.main {
+    flex: 2 1 560px;
+  }
+  .col.side {
+    flex: 1 1 300px;
+  }
+  .card {
+    padding: 20px 22px;
+  }
+
+  .hist {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .hist-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+  }
+  .hist-head h2 {
+    margin-right: auto;
+  }
+  .perfbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 32px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: none;
+    background: var(--accent-soft);
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 800;
+    font-size: 13.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .perfbtn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 18%, var(--accent-soft));
+  }
+  .perfbtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  /* Période : la sélection prend l'accent du biome. */
+  .ranges {
+    display: flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 9px;
+    background: var(--bg);
+  }
+  .rg {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 7px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font: inherit;
+    font-weight: 800;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .rg:hover:not(.on) {
+    color: var(--text);
+  }
+  .rg.on {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .players-chart {
+    padding-top: 12px;
+    border-top: 1px solid var(--border-strong);
+  }
+
+  /* Activité récente */
   .acts {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+  }
+  .acts h2 {
+    margin-bottom: 10px;
   }
   .act {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    font-size: 13px;
+    gap: 12px;
+    padding: 9px 0;
+    border-top: 1px solid var(--border);
+    font-size: 14px;
   }
-  .act:nth-child(odd) {
-    background: color-mix(in srgb, var(--text) 3%, transparent);
-  }
-  .a-date {
-    font-variant-numeric: tabular-nums;
+  .adot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
     flex: none;
   }
   .a-what {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 2px 7px;
     flex: 1;
     min-width: 0;
   }
+  .a-what strong.staff {
+    color: var(--state-hibernate);
+  }
   .a-ctx {
+    max-width: 100%;
     padding: 1px 6px;
     border-radius: 5px;
-    background: color-mix(in srgb, var(--text) 7%, transparent);
-    font-family: var(--font-mono);
+    background: var(--inset);
     font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .a-ko {
-    padding: 1px 6px;
+    padding: 0 7px;
     border-radius: 999px;
-    font-size: 11px;
-    background: color-mix(in srgb, var(--state-danger) 18%, transparent);
-    color: var(--state-danger);
+    font-size: 11.5px;
+    font-weight: 800;
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
-  .a-who {
+  .a-ip,
+  .a-date {
     flex: none;
-    max-width: 18ch;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .a-who.staff {
-    color: var(--brand-tertiary);
+    font-size: 12.5px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
   }
   .a-ip {
-    font-variant-numeric: tabular-nums;
-    flex: none;
-  }
-
-  .linklike {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 0;
-    border: 0;
-    background: none;
-    color: var(--brand-primary);
-    font: inherit;
-    cursor: pointer;
-  }
-  .linklike:hover {
-    text-decoration: underline;
-  }
-  .linklike.analyze {
-    margin-top: 10px;
-    font-size: 12px;
-  }
-
-  .srvmeta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 18px;
-    font-size: 12px;
-  }
-
-  .view {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 26px 24px 48px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-  .head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  .title {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  .title h1 {
-    margin: 0;
-    font-size: 24px;
-    letter-spacing: -0.02em;
-  }
-  .pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 5px 12px;
-  }
-  .note {
-    border: 1px solid color-mix(in srgb, var(--state-hibernate) 40%, var(--border));
-    background: color-mix(in srgb, var(--state-hibernate) 10%, transparent);
-    border-radius: var(--radius);
-    padding: 12px 14px;
-    font-size: 13.5px;
-    color: var(--text-muted);
-  }
-  /* Barre d'adresse de connexion (clic = copie). */
-  .addrbar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    cursor: pointer;
-    font: inherit;
-    color: var(--text);
-    padding: 10px 14px;
-    text-align: left;
-  }
-  .addrbar:hover {
-    border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
-  }
-  .ag {
-    display: inline-flex;
-    color: var(--brand-primary);
-    flex: none;
-  }
-  .av {
-    flex: 1;
-    min-width: 0;
     font-family: var(--font-mono);
-    font-size: 14px;
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .ac {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    flex: none;
     font-size: 12px;
-    color: var(--text-dim);
   }
-  .addrbar:hover .ac {
-    color: var(--text-muted);
-  }
-  .gauges {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  }
-  .g {
-    padding: 16px 18px;
-  }
-  .facts {
-    display: grid;
-    gap: 14px;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  }
-  .fact {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .fact .k {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-dim);
-  }
-  .fact .v {
-    font-size: 18px;
-    font-weight: 700;
-    font-family: var(--font-mono);
-  }
-  .fact .v.small {
-    font-size: 14px;
-  }
-  .fact .v.burst {
-    color: var(--state-pending);
-  }
-  .block {
+
+  /* Ressources */
+  .res {
     display: flex;
     flex-direction: column;
     gap: 14px;
   }
-  .block h2 {
-    margin: 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-  }
-  .hist-head {
+
+  /* Joueurs */
+  .pl {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
     gap: 12px;
-    flex-wrap: wrap;
   }
-  .hh-right {
+  .pl-head {
     display: flex;
-    align-items: center;
-    gap: 10px;
+    justify-content: space-between;
+    align-items: baseline;
   }
-  .perfbtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    background: color-mix(in srgb, var(--brand-primary) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, var(--border));
-    border-radius: 8px;
-    cursor: pointer;
-    font: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
-    color: var(--text);
-    padding: 5px 12px;
-    white-space: nowrap;
-  }
-  .perfbtn :global(.icon) {
-    color: var(--brand-primary);
-  }
-  .perfbtn:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--brand-primary) 20%, transparent);
-  }
-  .perfbtn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .ranges {
-    display: flex;
-    gap: 4px;
-  }
-  .rg {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    cursor: pointer;
-    font: inherit;
-    font-size: 12px;
+  .pl-count {
+    font-size: 13px;
     color: var(--text-muted);
-    padding: 4px 10px;
   }
-  .rg.on {
-    color: #fff;
-    background: var(--brand-primary);
-    border-color: transparent;
+  .pl-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
   }
-  .chart-card {
-    padding: 14px 16px 12px;
-  }
-  .players-chart {
-    margin-top: 12px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .views {
+  .phead {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
     display: grid;
-    gap: 10px;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    place-items: center;
+    font-weight: 900;
+    font-size: 15px;
   }
-  .vcard {
-    display: flex;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    background: var(--surface);
+  .pl-more {
+    font-size: 13px;
+    color: var(--text-muted);
   }
-  .vmain {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    font: inherit;
-    color: var(--text);
-    padding: 12px 14px;
-  }
-  .vmain:hover {
-    background: color-mix(in srgb, var(--text) 5%, transparent);
-  }
-  .vg {
-    display: inline-flex;
-    align-items: center;
-    color: var(--brand-primary);
-  }
-  .vl {
-    font-weight: 600;
-    font-size: 14px;
-  }
-  .soon {
-    margin-left: auto;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-dim);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 1px 7px;
-  }
-  .vnew {
-    background: none;
-    border: none;
-    border-left: 1px solid var(--border);
-    color: var(--text-dim);
-    cursor: pointer;
-    font-size: 17px;
-    padding: 0 12px;
-  }
-  .vnew:hover {
-    color: var(--brand-primary);
-  }
-  .hint {
-    font-size: 12.5px;
+  .pl-names {
     margin: 0;
+    font-size: 14px;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 760px) {
+    .banner-body,
+    .infobar,
+    .body {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    h1 {
+      font-size: 36px;
+    }
   }
 </style>

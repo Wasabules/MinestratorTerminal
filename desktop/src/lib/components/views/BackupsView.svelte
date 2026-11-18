@@ -338,11 +338,9 @@
   }
   h2 {
     margin: 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .hint {
     margin: -4px 0 4px;
@@ -409,7 +407,7 @@
     gap: 1px;
   }
   .name {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -421,7 +419,7 @@
   }
   .tag {
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-dim);
     border: 1px solid var(--border);
     border-radius: 5px;
@@ -457,9 +455,9 @@
   }
   /* En attente de confirmation : rouge plein pour signaler le caractère destructif. */
   .mini.armed {
-    background: var(--state-danger);
-    border-color: var(--state-danger);
-    color: #fff;
+    background: var(--danger-bg);
+    border-color: var(--danger-bg);
+    color: var(--danger-ink);
   }
   .mini.cancel {
     padding: 5px 8px;

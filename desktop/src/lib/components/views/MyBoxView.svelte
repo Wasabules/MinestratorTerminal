@@ -15,6 +15,8 @@
   import ResizeDialog from '#lib/mybox/ResizeDialog.svelte';
   import DeleteServerDialog from '#lib/mybox/DeleteServerDialog.svelte';
   import { percent } from '#lib/mybox/util.ts';
+  import { serverBiome } from '#lib/servers/colors.svelte.ts';
+  import BiomeBlock from '../BiomeBlock.svelte';
 
   let caps = $state<MyBoxCapacity[] | null>(null);
   let loading = $state(true);
@@ -253,7 +255,7 @@
                         onblur={() => commitRename('server', s.id)}
                       />
                     {:else}
-                      <span class="sname">{s.name}</span>
+                      <span class="sname"><BiomeBlock biome={serverBiome(s.id)} size={12} />{s.name}</span>
                       <span class="dim small">{s.location}</span>
                     {/if}
                   </td>
@@ -420,7 +422,7 @@
   }
   th {
     text-align: left;
-    font-weight: 500;
+    font-weight: 700;
     font-size: 11.5px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -441,7 +443,10 @@
     font-variant-numeric: tabular-nums;
   }
   .sname {
-    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-weight: 800;
     margin-right: 6px;
   }
   .order {

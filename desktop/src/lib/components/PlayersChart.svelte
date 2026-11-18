@@ -125,23 +125,24 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 4px;
-    font-size: 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
   }
   .title {
-    color: var(--text-muted);
-    font-weight: 600;
+    color: var(--text);
+    font-size: 14.5px;
+    font-weight: 800;
   }
   .stats {
-    font-family: var(--font-mono);
-    font-size: 11.5px;
+    color: var(--text-muted);
+    font-size: 13px;
   }
   svg {
     display: block;
     cursor: crosshair;
   }
   .grid {
-    stroke: var(--border);
+    stroke: var(--border-strong);
     stroke-width: 1;
   }
   .axis {
@@ -151,8 +152,8 @@
   }
   .serie {
     fill: none;
-    stroke: var(--brand-tertiary);
-    stroke-width: 1.75;
+    stroke: var(--chart-players);
+    stroke-width: 2;
     stroke-linejoin: round;
   }
   .cross {
@@ -163,7 +164,7 @@
   }
   .dot {
     fill: var(--surface);
-    stroke: var(--brand-tertiary);
+    stroke: var(--chart-players);
     stroke-width: 2;
   }
   .tip {

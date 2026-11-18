@@ -479,7 +479,7 @@
     color: var(--brand-primary);
   }
   .ttl {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .srv {
@@ -567,7 +567,7 @@
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
     flex: none;
   }
   .cart-chips {
@@ -637,7 +637,7 @@
     cursor: pointer;
     font: inherit;
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 800;
     color: var(--text);
     padding: 4px 0;
     text-align: left;
@@ -653,7 +653,7 @@
   }
   .count {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-dim);
     background: var(--surface);
     border: 1px solid var(--border);
@@ -686,7 +686,7 @@
     opacity: 0.6;
   }
   .inm {
-    font-weight: 500;
+    font-weight: 700;
   }
   .disabled {
     font-size: 10.5px;
@@ -751,7 +751,7 @@
     flex: 1;
   }
   .nm {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
   }
   .dl {
@@ -796,14 +796,14 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: 7px;
     cursor: pointer;
     font: inherit;
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
     padding: 8px 13px;
   }
   .btn:hover:not(:disabled) {
@@ -825,7 +825,7 @@
     background: none;
     border: 1px solid var(--border);
     color: var(--text-muted);
-    font-weight: 500;
+    font-weight: 700;
   }
   .done,
   .queued {
@@ -833,7 +833,7 @@
     align-items: center;
     gap: 6px;
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
     padding: 8px 0;
   }
   .done {

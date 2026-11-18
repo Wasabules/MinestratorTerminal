@@ -550,7 +550,7 @@
     padding-top: 2px;
   }
   .executor {
-    font-weight: 600;
+    font-weight: 800;
   }
   section {
     display: flex;
@@ -559,11 +559,9 @@
   }
   h2 {
     margin: 0;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .sec-head {
     display: flex;
@@ -597,7 +595,7 @@
     cursor: pointer;
   }
   .tl-title {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 14px;
   }
   .tl-desc {
@@ -679,7 +677,7 @@
     gap: 2px;
   }
   .name {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -724,15 +722,15 @@
     cursor: default;
   }
   .mini.armed {
-    background: var(--state-danger);
-    border-color: var(--state-danger);
-    color: #fff;
+    background: var(--danger-bg);
+    border-color: var(--danger-bg);
+    color: var(--danger-ink);
   }
   .editor {
     border-color: color-mix(in srgb, var(--brand-primary) 45%, var(--border));
   }
   .ed-title {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .seg {
@@ -758,7 +756,7 @@
   .seg button.on {
     background: color-mix(in srgb, var(--brand-primary) 18%, transparent);
     color: var(--text);
-    font-weight: 600;
+    font-weight: 800;
   }
   .days {
     display: flex;
@@ -811,7 +809,7 @@
     flex: none;
   }
   .run-name {
-    font-weight: 600;
+    font-weight: 800;
     flex: 1;
     min-width: 0;
     overflow: hidden;
@@ -820,7 +818,7 @@
   }
   .status {
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 800;
     flex: none;
   }
   .run-msg {

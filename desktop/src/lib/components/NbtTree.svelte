@@ -173,7 +173,7 @@
   }
   .nkey {
     font-family: var(--font-mono);
-    font-weight: 600;
+    font-weight: 800;
     font-size: 12.5px;
     color: var(--text);
     flex: none;

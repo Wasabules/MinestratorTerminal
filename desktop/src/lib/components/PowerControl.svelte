@@ -9,13 +9,20 @@
     running,
     disabled = false,
     compact = false,
+    tone = 'page',
     restartWarning = null,
     stopWarning = null,
   }: {
     serverId: number;
     running: boolean;
     disabled?: boolean;
+    /** Barre d'état de la console : une seule action visible, le reste dans le menu. */
     compact?: boolean;
+    /**
+     * `banner` : posé sur le paysage d'un biome, toujours sombre — les boutons gardent les
+     * couleurs du thème sombre (principal clair, secondaire noir) quel que soit le thème.
+     */
+    tone?: 'page' | 'banner';
     /**
      * Avertissements configurés par l'hébergeur pour CE serveur (`poweraction_message_*` de
      * l'API). Quand ils existent, l'action passe par une confirmation qui les affiche.
@@ -30,8 +37,17 @@
   /** Action retenue en attente de confirmation (avertissement de l'hébergeur à lire). */
   let pending = $state<PowerAction | null>(null);
 
-  // Actions secondaires regroupées dans le menu « ⋯ » (logique partagée avec la palette).
-  const secondary = $derived(secondaryPowerActions(running));
+  const primary = $derived(primaryPowerAction(running));
+  /**
+   * Boutons visibles : le premier est le bouton principal (clair). Serveur en marche, hors mode
+   * compact : « Redémarrer » puis « Arrêter », comme sur la bannière du tableau de bord.
+   */
+  const buttons = $derived<PowerAction[]>(
+    running && !compact ? ['restart', primary] : [primary]
+  );
+  // Actions secondaires (logique partagée avec la palette) moins celles déjà en bouton :
+  // Redémarrer (10 s), Arrêter (10 s), Forcer l'arrêt.
+  const secondary = $derived(secondaryPowerActions(running).filter((a) => !buttons.includes(a)));
 
   /** Avertissement associé à une action, ou `null` si l'hébergeur n'en a pas défini. */
   function warningFor(action: PowerAction): string | null {
@@ -61,24 +77,34 @@
       busy = false;
     }
   }
-
-  const primary = $derived(primaryPowerAction(running));
 </script>
 
-<div class="power">
-  <div class="group" class:danger={running} class:compact>
-    <button class="main" disabled={disabled || busy} onclick={() => request(primary)}>
-      {#if busy}<span class="spinner"></span>{/if}
-      {t(`power.${primary}`)}
-    </button>
-    <button
-      class="caret"
-      disabled={disabled || busy}
-      aria-label={t('power.more')}
-      onclick={() => (menuOpen = !menuOpen)}
-    >
-      ⋯
-    </button>
+<div class="power" class:compact class:banner={tone === 'banner'}>
+  <div class="group">
+    {#each buttons as action, i (action)}
+      <button
+        class="pbtn"
+        class:main={i === 0}
+        disabled={disabled || busy}
+        onclick={() => request(action)}
+      >
+        {#if busy && i === 0}<span class="spinner"></span>{/if}
+        {t(`power.${action}`)}
+      </button>
+    {/each}
+    {#if secondary.length > 0}
+      <button
+        class="pbtn caret"
+        disabled={disabled || busy}
+        aria-label={t('power.more')}
+        title={t('power.more')}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onclick={() => (menuOpen = !menuOpen)}
+      >
+        ▾
+      </button>
+    {/if}
   </div>
 
   {#if menuOpen}
@@ -86,7 +112,12 @@
     ></button>
     <div class="menu" role="menu">
       {#each secondary as action (action)}
-        <button class="item" role="menuitem" onclick={() => request(action)}>
+        <button
+          class="item"
+          class:danger={action === 'kill'}
+          role="menuitem"
+          onclick={() => request(action)}
+        >
           {t(`power.${action}`)}
         </button>
       {/each}
@@ -100,7 +131,9 @@
       <p class="warn">{warningFor(pending)}</p>
       <div class="confirm-actions">
         <button class="btn btn--ghost" onclick={() => (pending = null)}>{t('common.cancel')}</button>
-        <button class="btn" onclick={() => act(pending!)}>{t(`power.${pending}`)}</button>
+        <button class="btn" class:btn--danger={pending === 'kill'} onclick={() => act(pending!)}
+          >{t(`power.${pending}`)}</button
+        >
       </div>
     </div>
   {/if}
@@ -109,91 +142,88 @@
 </div>
 
 <style>
-  .confirm {
-    position: absolute;
-    z-index: 20;
-    top: calc(100% + 6px);
-    right: 0;
-    width: 280px;
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    background: var(--elevated);
-    box-shadow: 0 10px 30px rgb(0 0 0 / 35%);
-  }
-  .confirm .warn {
-    margin: 0 0 10px;
-    font-size: 13px;
-    line-height: 1.45;
-    color: var(--text-muted);
-  }
-  .confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-  }
-
   .power {
     position: relative;
     display: inline-flex;
     flex-direction: column;
     gap: 6px;
-    align-items: flex-start;
+    align-items: flex-end;
   }
   .group {
     display: inline-flex;
-    border-radius: var(--radius);
-    overflow: hidden;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
-  }
-  .main {
-    border: none;
-    cursor: pointer;
-    font: inherit;
-    font-weight: 600;
-    color: #fff;
-    background: var(--brand-primary);
-    padding: 9px 16px;
-    display: inline-flex;
-    align-items: center;
     gap: 8px;
   }
-  .group.danger .main {
-    background: var(--brand-pro);
-  }
-  .caret {
+  /* Secondaire sombre par défaut ; le premier bouton est le principal, clair. */
+  .pbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 18px;
     border: none;
-    border-left: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--radius);
     cursor: pointer;
-    color: #fff;
-    background: var(--brand-primary);
-    padding: 0 12px;
-    font-size: 15px;
+    font: inherit;
+    font-weight: 800;
+    font-size: 14.5px;
+    color: var(--btn-secondary-ink);
+    background: var(--btn-secondary-bg);
+    white-space: nowrap;
   }
-  .group.danger .caret {
-    background: var(--brand-pro);
+  .pbtn.main {
+    font-weight: 900;
+    color: var(--btn-primary-ink);
+    background: var(--btn-primary-bg);
   }
-  .main:hover:not(:disabled),
-  .caret:hover:not(:disabled) {
-    filter: brightness(1.1);
+  .pbtn:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--btn-secondary-bg) 82%, var(--btn-secondary-ink));
   }
-  .main:disabled,
-  .caret:disabled {
-    opacity: 0.55;
+  .pbtn.main:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--btn-primary-bg) 86%, var(--btn-primary-ink));
+  }
+  .banner .pbtn {
+    color: #f1f5f3;
+    background: #0d1113;
+  }
+  .banner .pbtn.main {
+    color: #0d1113;
+    background: #f1f5f3;
+  }
+  .banner .pbtn:hover:not(:disabled) {
+    background: #1b2126;
+  }
+  .banner .pbtn.main:hover:not(:disabled) {
+    background: #dfe6e2;
+  }
+  .pbtn.caret {
+    width: 40px;
+    padding: 0;
+    font-size: 13px;
+  }
+  .pbtn:disabled {
+    opacity: 0.5;
     cursor: not-allowed;
   }
-  .group.compact {
-    border-radius: 7px;
+  .compact .group {
+    gap: 5px;
   }
-  .group.compact .main {
-    padding: 3px 11px;
-    font-size: 11.5px;
-    gap: 6px;
+  .compact .pbtn {
+    height: 28px;
+    padding: 0 11px;
+    font-size: 12.5px;
+    border-radius: 8px;
   }
-  .group.compact .caret {
-    padding: 0 9px;
-    font-size: 12px;
+  .compact .pbtn.caret {
+    width: 28px;
+    padding: 0;
+    font-size: 11px;
   }
+  .compact .spinner {
+    width: 12px;
+    height: 12px;
+  }
+
   .backdrop {
     position: fixed;
     inset: 0;
@@ -204,10 +234,10 @@
   }
   .menu {
     position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
+    top: 46px;
+    right: 0;
     z-index: 21;
-    min-width: 190px;
+    min-width: 200px;
     background: var(--elevated);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -216,21 +246,63 @@
     display: flex;
     flex-direction: column;
   }
+  .compact .menu,
+  .compact .confirm {
+    top: 34px;
+  }
   .item {
     text-align: left;
     background: none;
     border: none;
     cursor: pointer;
     font: inherit;
+    font-weight: 700;
     color: var(--text);
     padding: 8px 11px;
     border-radius: 7px;
   }
   .item:hover {
-    background: color-mix(in srgb, var(--text) 8%, transparent);
+    background: var(--hover);
   }
-  .err {
-    font-size: 12px;
+  .item.danger {
     color: var(--state-danger);
+  }
+  .item.danger:hover {
+    background: var(--danger-bg);
+    color: var(--danger-ink);
+  }
+  .confirm {
+    position: absolute;
+    z-index: 21;
+    top: 46px;
+    right: 0;
+    width: 300px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--elevated);
+    box-shadow: var(--shadow);
+    color: var(--text);
+  }
+  .confirm .warn {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  /* Pilule : lisible sur la page comme sur le paysage de la bannière. */
+  .err {
+    max-width: 340px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    background: var(--danger-bg);
+    color: var(--danger-ink);
   }
 </style>

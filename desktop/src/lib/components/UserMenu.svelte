@@ -13,6 +13,7 @@
   import { toggleTheme } from '#lib/theme.ts';
   import { t, getLocale, setLocale, LOCALES, type Locale } from '#lib/i18n/index.ts';
   import type { Account } from '#lib/types.ts';
+  import { avatarStyle } from '#lib/servers/colors.svelte.ts';
   import Icon from './Icon.svelte';
   import AddAccountDialog from './AddAccountDialog.svelte';
 
@@ -75,7 +76,7 @@
 
 <div class="usermenu">
   <button class="trigger" onclick={toggle} title={pseudo}>
-    <span class="avatar" aria-hidden="true">{pseudo.charAt(0).toUpperCase()}</span>
+    <span class="avatar" style={avatarStyle(pseudo)} aria-hidden="true">{pseudo.charAt(0).toUpperCase()}</span>
     <span class="pseudo">{pseudo}</span>
     <span class="caret" aria-hidden="true">▾</span>
   </button>
@@ -100,7 +101,7 @@
             onclick={() => switchTo(a)}
             disabled={switching !== null}
           >
-            <span class="mini-avatar" aria-hidden="true">{a.pseudo.charAt(0).toUpperCase()}</span>
+            <span class="mini-avatar" style={avatarStyle(a.pseudo)} aria-hidden="true">{a.pseudo.charAt(0).toUpperCase()}</span>
             <span class="acc-name">{a.pseudo}</span>
             {#if switching === a.id}<span class="spinner small"></span>{/if}
           </button>
@@ -199,13 +200,11 @@
     display: grid;
     place-items: center;
     font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-gradient);
+    font-weight: 900;
   }
   .pseudo {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 800;
     max-width: 140px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -244,7 +243,7 @@
     padding: 6px 8px 8px;
   }
   .h-pseudo {
-    font-weight: 700;
+    font-weight: 800;
   }
   .h-mail {
     font-size: 12px;
@@ -286,10 +285,7 @@
     display: grid;
     place-items: center;
     font-size: 10px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--brand-gradient);
-    opacity: 0.8;
+    font-weight: 800;
   }
   .acc-name {
     flex: 1;
@@ -338,8 +334,8 @@
     padding: 7px 8px;
   }
   .lang.active {
-    color: #fff;
-    background: var(--brand-primary);
+    color: var(--on-accent);
+    background: var(--accent);
     border-color: transparent;
   }
 </style>

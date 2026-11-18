@@ -350,12 +350,12 @@
     flex-wrap: wrap;
   }
   .d-name {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 14px;
   }
   .tag {
     font-size: 10.5px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-dim);
     border: 1px solid var(--border);
     border-radius: 5px;
@@ -421,7 +421,7 @@
     gap: 12px;
   }
   .ed-title {
-    font-weight: 700;
+    font-weight: 800;
     font-size: 14px;
   }
   .field {
@@ -431,7 +431,7 @@
   }
   .lab {
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text-muted);
   }
   .txt {
@@ -470,7 +470,7 @@
   .seg button.on {
     background: color-mix(in srgb, var(--brand-primary) 18%, transparent);
     color: var(--text);
-    font-weight: 600;
+    font-weight: 800;
   }
   .events {
     display: grid;

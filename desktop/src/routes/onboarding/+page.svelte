@@ -8,6 +8,9 @@
   import { applyAccountSwitch } from '#lib/stores/accounts.svelte.ts';
   import { t } from '#lib/i18n/index.ts';
   import type { Account } from '#lib/types.ts';
+  import { BIOMES } from '#lib/servers/colors.svelte.ts';
+  import Logo from '#lib/components/Logo.svelte';
+  import BiomeLandscape from '#lib/components/BiomeLandscape.svelte';
 
   const PANEL_URL = 'https://minestrator.com/my/account?section=api';
 
@@ -73,9 +76,11 @@
 
 <main class="wrap">
   <section class="card panel">
+    <!-- Paysage de forêt : le biome de la marque, en vert MineStrator. -->
+    <div class="cover"><BiomeLandscape biome={BIOMES[0]} seed={7} height={84} pixel={6} /></div>
     <div class="head">
-      <div class="mark" aria-hidden="true">◧</div>
-      <h1>Minestrator <span class="gradient-text">Terminal</span></h1>
+      <div class="mark"><Logo size={30} /></div>
+      <h1>Minestrator Terminal</h1>
       <p class="muted sub">{t('onboarding.subtitle')}</p>
     </div>
 
@@ -133,31 +138,36 @@
   .panel {
     width: 100%;
     max-width: 440px;
-    padding: 36px 32px 28px;
+    padding: 0 32px 28px;
     display: flex;
     flex-direction: column;
     gap: 24px;
+    overflow: hidden;
+  }
+  .cover {
+    margin: 0 -32px;
   }
   .head {
     display: flex;
     flex-direction: column;
     gap: 10px;
   }
+  /* Tuile du logo, sombre dans les deux thèmes ; elle chevauche le bas du paysage. */
   .mark {
-    width: 46px;
-    height: 46px;
+    position: relative;
+    width: 52px;
+    height: 52px;
+    margin-top: -50px;
     border-radius: 12px;
+    border: 3px solid var(--surface);
     display: grid;
     place-items: center;
-    font-size: 24px;
-    color: #fff;
-    background: var(--brand-gradient);
-    box-shadow: var(--shadow);
+    background: #0d1113;
   }
   h1 {
     margin: 4px 0 0;
-    font-size: 26px;
-    letter-spacing: -0.02em;
+    font-size: 30px;
+    line-height: 1.1;
   }
   .sub {
     margin: 0;
@@ -178,6 +188,7 @@
     border: none;
     padding: 0;
     font: inherit;
+    font-weight: 800;
     color: var(--brand-primary);
     cursor: pointer;
   }

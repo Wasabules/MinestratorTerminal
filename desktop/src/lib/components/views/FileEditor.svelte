@@ -229,7 +229,7 @@
   }
 </script>
 
-<div class="editor">
+<div class="editor force-dark">
   <div class="bar">
     <div class="left">
       <span class="fname">{name}</span>
@@ -277,21 +277,22 @@
 </div>
 
 <style>
-  /* L'éditeur est toujours sombre (CodeMirror one-dark) → palette fixe, pas de tokens de thème. */
+  /* L'éditeur est toujours sombre (CodeMirror one-dark) : `.force-dark` lui donne les tokens du
+     thème sombre quel que soit le thème de l'app. */
   .editor {
     height: 100%;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background: #0d1214;
+    background: var(--chrome);
   }
   .bar {
     display: flex;
     align-items: center;
     gap: 10px;
     padding: 8px 12px;
-    background: #141b1e;
-    border-bottom: 1px solid #232c31;
+    background: var(--inset);
+    border-bottom: 1px solid var(--border);
     flex: none;
   }
   .left {
@@ -302,9 +303,9 @@
   }
   .fname {
     font-family: var(--font-mono);
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13px;
-    color: #e6edf0;
+    color: var(--text);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -314,15 +315,15 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #f0b429;
+    background: var(--state-pending);
     flex: none;
   }
   .lang {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 800;
     letter-spacing: 0.04em;
-    color: #56d4ac;
-    background: rgba(0, 155, 114, 0.16);
+    color: var(--accent-text);
+    background: var(--accent-soft);
     border-radius: 6px;
     padding: 3px 9px;
     flex: none;
@@ -340,29 +341,29 @@
   .vsep {
     width: 1px;
     height: 18px;
-    background: #2a343a;
+    background: var(--border-strong);
     margin: 0 4px;
   }
   .tool {
     background: transparent;
-    border: 1px solid #2a343a;
+    border: 1px solid var(--border-strong);
     border-radius: 7px;
     cursor: pointer;
     font: inherit;
     font-size: 12px;
-    color: #aeb9be;
+    color: var(--text-muted);
     padding: 5px 11px;
     transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
   .tool:hover {
-    color: #eef3f5;
-    background: #1e262a;
-    border-color: #3a454b;
+    color: var(--text);
+    background: var(--surface);
+    border-color: var(--tab-neutral);
   }
   .tool.on {
-    color: #fff;
-    background: #009b72;
-    border-color: #009b72;
+    color: var(--on-accent);
+    background: var(--accent);
+    border-color: var(--accent);
   }
   .exp {
     position: relative;
@@ -382,8 +383,8 @@
     left: 0;
     z-index: 6;
     min-width: 140px;
-    background: #141b1e;
-    border: 1px solid #2a343a;
+    background: var(--elevated);
+    border: 1px solid var(--border-strong);
     border-radius: 9px;
     box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
     padding: 5px;
@@ -397,36 +398,36 @@
     cursor: pointer;
     font: inherit;
     font-size: 12.5px;
-    color: #d6e2e6;
+    color: var(--text);
     padding: 7px 10px;
     border-radius: 6px;
   }
   .expitem:hover {
-    background: #1e262a;
+    background: var(--surface);
   }
   .grow {
     flex: 1;
   }
   .msg {
     font-size: 12px;
-    color: #56d4ac;
+    color: var(--state-running);
   }
   .msg.err {
-    color: #ff6b6b;
+    color: var(--state-danger);
   }
   .save {
-    background: #009b72;
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: 7px;
     font: inherit;
-    font-weight: 600;
+    font-weight: 800;
     font-size: 12.5px;
     padding: 6px 15px;
     cursor: pointer;
   }
   .save:hover:not(:disabled) {
-    filter: brightness(1.09);
+    background: color-mix(in srgb, var(--btn-primary-bg) 86%, var(--btn-primary-ink));
   }
   .save:disabled {
     opacity: 0.45;
@@ -437,15 +438,15 @@
     align-items: center;
     background: transparent;
     border: none;
-    color: #8a99a0;
+    color: var(--text-dim);
     cursor: pointer;
     padding: 6px 10px;
     border-radius: 7px;
     line-height: 1;
   }
   .close:hover {
-    color: #eef3f5;
-    background: #1e262a;
+    color: var(--text);
+    background: var(--surface);
   }
   .cm {
     flex: 1;

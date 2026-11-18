@@ -79,10 +79,10 @@
   .risk {
     flex: none;
     font-size: 9.5px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #fff;
+    color: var(--bg);
     padding: 2px 6px;
     border-radius: 5px;
     margin-top: 1px;
@@ -112,7 +112,7 @@
     flex: none;
   }
   .act-res.ok {
-    color: var(--state-ok, #3fb950);
+    color: var(--state-running);
   }
   .act-res.err {
     color: var(--state-danger);
@@ -125,8 +125,8 @@
   }
   .apply {
     flex: none;
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
     border: none;
     border-radius: 7px;
     cursor: pointer;

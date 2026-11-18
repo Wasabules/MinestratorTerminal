@@ -220,7 +220,7 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
   }
   .grow {

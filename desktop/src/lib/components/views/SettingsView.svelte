@@ -1269,7 +1269,7 @@
   .nav-item.on {
     color: var(--text);
     background: color-mix(in srgb, var(--brand-primary) 14%, transparent);
-    font-weight: 600;
+    font-weight: 800;
   }
   .content {
     flex: 1;
@@ -1286,11 +1286,9 @@
   }
   h2 {
     margin: 26px 0 12px;
-    font-size: 13px;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--text);
+    font-weight: 900;
   }
   .row {
     display: flex;
@@ -1302,7 +1300,7 @@
   }
   .label {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 700;
   }
   .ver {
     font-family: var(--font-mono);
@@ -1338,8 +1336,8 @@
     padding: 6px 12px;
   }
   .chip.on {
-    color: #fff;
-    background: var(--brand-primary);
+    color: var(--on-accent);
+    background: var(--accent);
     border-color: transparent;
   }
   .toggle-row {
@@ -1356,7 +1354,7 @@
   }
   .tl-title {
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 700;
   }
   .tl-desc {
     font-size: 12.5px;
@@ -1458,9 +1456,9 @@
     border-radius: 7px;
   }
   .effort-seg button.on {
-    background: var(--brand-primary);
-    color: #fff;
-    font-weight: 600;
+    background: var(--accent);
+    color: var(--on-accent);
+    font-weight: 800;
   }
   .closepref {
     display: flex;
@@ -1483,7 +1481,7 @@
   .tool-badge {
     margin-left: auto;
     font-size: 9.5px;
-    font-weight: 700;
+    font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--state-pending);
@@ -1651,7 +1649,7 @@
   }
   .auto-title {
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 800;
   }
   .auto-desc {
     font-size: 12px;
@@ -1685,7 +1683,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 700;
+    font-weight: 800;
     font-size: 15px;
     margin-bottom: 4px;
   }
@@ -1717,7 +1715,7 @@
     gap: 8px;
   }
   .dbg-name {
-    font-weight: 600;
+    font-weight: 800;
     font-size: 13.5px;
   }
   .dbg-id {

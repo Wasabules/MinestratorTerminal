@@ -82,7 +82,7 @@
   }
   .txt strong {
     font-size: 13.5px;
-    font-weight: 600;
+    font-weight: 800;
     color: var(--text);
   }
   .err {
@@ -102,15 +102,15 @@
   .ubtn {
     font: inherit;
     font-size: 12.5px;
-    font-weight: 600;
+    font-weight: 800;
     border-radius: 8px;
     padding: 7px 14px;
     cursor: pointer;
     border: 1px solid transparent;
   }
   .ubtn.primary {
-    background: var(--brand-primary);
-    color: #fff;
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-ink);
   }
   .ubtn.primary:hover {
     filter: brightness(1.08);

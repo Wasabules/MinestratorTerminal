@@ -1,6 +1,6 @@
 /**
  * Mode d'affichage des onglets : **compact** (icônes de vue seules ; le nom du serveur reste visible
- * via le chip de groupe ou l'onglet solo) vs normal. Persisté en localStorage. Réactif (rune `$state`),
+ * en tête de groupe) vs normal. Persisté en localStorage. Réactif (rune `$state`),
  * miroir de `servers/colors.svelte.ts`.
  */
 
