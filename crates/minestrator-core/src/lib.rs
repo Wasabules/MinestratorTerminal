@@ -47,6 +47,7 @@ mod store;
 mod supervisor;
 mod thunderstore;
 mod umod;
+mod updates;
 mod uptime;
 mod util;
 mod webhook;
@@ -96,6 +97,10 @@ pub use models::{
 pub use service::{ServiceOverview, ServiceStatus};
 pub use store::{MetricSample, StoredAlert};
 pub use supervisor::{Supervisor, SupervisorConfig, SupervisorHeartbeat, SupervisorState};
+pub use updates::{
+    ContentKind, ContentUpdate, ContentUpdates, IgnoreReason, IgnoredUpdate, UpdateCheckError,
+    UpdateOutcome, UpdateReport, UpdateSelection, UpdateStatus,
+};
 
 use api::ApiClient;
 use console::ConsoleManager;
@@ -141,6 +146,8 @@ pub struct Core {
     transfer_cancels: Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>,
     /// Cache TTL des lectures d'API stables/semi-stables (voir [`cache`]). Purgé après toute écriture.
     cache: cache::TtlCache,
+    /// Dernière vérification des mises à jour de mods/plugins/datapacks, par serveur (voir [`updates`]).
+    updates_cache: updates::UpdatesCache,
     /// Token API mémorisé → évite une lecture BLOQUANTE du trousseau OS (DPAPI/Keychain/D-Bus) à
     /// CHAQUE appel async. Invalidé au (re)login / logout.
     token_cache: Mutex<Option<String>>,
@@ -190,6 +197,7 @@ impl Core {
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
+            updates_cache: updates::UpdatesCache::default(),
             token_cache: Mutex::new(None),
             user_id_cache: Mutex::new(None),
             events,
@@ -717,6 +725,8 @@ impl Core {
         version_id: &str,
         loader: &str,
     ) -> Result<()> {
+        // Le contenu du serveur change : sa dernière vérification des mises à jour ne vaut plus.
+        self.updates_cache.forget(server_id);
         match source {
             "modrinth" => {
                 // `kind`/`loader` non requis par l'API Modrinth (placement déterminé côté serveur).
@@ -749,6 +759,63 @@ impl Core {
     /// Plugins installés sur un serveur.
     pub async fn installed_plugins(&self, id: i64) -> Result<Vec<InstalledItem>> {
         self.api.installed_plugins(&self.token()?, id).await
+    }
+
+    /// Datapacks installés dans le monde actif d'un serveur (`GET /server/{id}/datapacks`).
+    /// `filename` porte le nom exact (clé des mises à jour), `name` le nom sans extension.
+    pub async fn installed_datapacks(&self, id: i64) -> Result<Vec<InstalledItem>> {
+        let list = self.api.content_list(&self.token()?, id, ContentKind::Datapacks).await?;
+        Ok(updates::datapacks_as_installed(&list))
+    }
+
+    // --- Mises à jour des mods, plugins et datapacks (voir `updates.rs`) ---
+
+    /// Mises à jour disponibles des mods, plugins et datapacks d'un serveur Minecraft, d'après la
+    /// comparaison de l'hébergeur passée au garde-fou local (variantes d'une autre plateforme et
+    /// versions non plus récentes écartées). Sans effet sur le serveur. Le résultat est gardé
+    /// 15 minutes ; `force` refait la vérification.
+    pub async fn content_updates(&self, server_id: i64, force: bool) -> Result<ContentUpdates> {
+        if !force {
+            if let Some(cached) = self.updates_cache.get(server_id) {
+                return Ok(cached);
+            }
+        }
+        let check = updates::check(&self.api, &self.token()?, server_id, &ContentKind::ALL).await?;
+        self.updates_cache.put(server_id, check.public.clone());
+        Ok(check.public)
+    }
+
+    /// Applique des mises à jour : nouvelle vérification des types concernés, puis, pour chaque
+    /// élément retenu, installation de la nouvelle version et suppression de l'ancien fichier. Effet
+    /// au prochain démarrage du serveur (`restart_needed`).
+    pub async fn apply_content_updates(
+        &self,
+        server_id: i64,
+        items: Vec<UpdateSelection>,
+    ) -> Result<UpdateReport> {
+        let report = updates::apply(&self.api, &self.token()?, server_id, &items).await;
+        self.updates_cache.forget(server_id);
+        report
+    }
+
+    /// Applique toutes les mises à jour retenues des types demandés (tous si vide), sauf celles des
+    /// éléments désactivés sur le serveur (la nouvelle version serait installée active).
+    pub async fn apply_all_content_updates(
+        &self,
+        server_id: i64,
+        kinds: &[ContentKind],
+    ) -> Result<UpdateReport> {
+        let current = self.content_updates(server_id, true).await?;
+        let items: Vec<UpdateSelection> = current
+            .updates
+            .iter()
+            .filter(|u| u.enabled && (kinds.is_empty() || kinds.contains(&u.kind)))
+            .map(|u| UpdateSelection { kind: u.kind, key: u.key.clone() })
+            .collect();
+        if items.is_empty() {
+            return Ok(UpdateReport { outcomes: Vec::new(), restart_needed: false });
+        }
+        self.apply_content_updates(server_id, items).await
     }
 
     // --- Mods Satisfactory (ficsit.app / SMR) ------------------------------

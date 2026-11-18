@@ -1,9 +1,11 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { api, humanizeError } from "../../ipc";
   import { t } from "../../i18n";
   import Icon from "../Icon.svelte";
   import MetricsCard from "../MetricsCard.svelte";
   import { alerts } from "../../stores/alerts.svelte";
+  import { loadUpdates, updateCount } from "../../stores/updates.svelte";
   import type {
     ConsoleStats,
     LiveLight,
@@ -223,6 +225,14 @@
   const diskUsed = $derived(stats?.disk_bytes ?? 0);
   const diskLimit = $derived((live?.disk.limit ?? 0) * 1024 ** 2);
 
+  /** Mises à jour de mods/plugins/datapacks (vérification partagée avec l'onglet Mods). */
+  const updates = $derived(updateCount(serverId));
+  $effect(() => {
+    const id = serverId;
+    // `untrack` : l'effet dépend de l'onglet actif, pas du store qu'il alimente.
+    if (active && server.capabilities?.mods === "minecraft") untrack(() => void loadUpdates(id));
+  });
+
   /** Dernières alertes du superviseur pour ce serveur (journal local, cf. écran Alertes). */
   const serverAlerts = $derived(alerts.forServer(serverId).slice(0, 3));
 
@@ -297,6 +307,14 @@
 
 <div class="view">
   {#if error}<p class="err selectable">{error}</p>{/if}
+
+  {#if updates > 0}
+    <button class="upd-note" onclick={() => onNavigate?.("market")}>
+      <Icon name="package" size={16} />
+      <span>{t("overview.updates").replace("{count}", String(updates))}</span>
+      <Icon name="chevronRight" size={16} />
+    </button>
+  {/if}
 
   <!-- Bloc de tête : état, offre et jauges d'un seul coup d'œil. -->
   <section class="head-card">
@@ -452,6 +470,25 @@
 </div>
 
 <style>
+  /* Mises à jour de mods/plugins/datapacks disponibles : renvoie vers l'onglet Mods. */
+  .upd-note {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 48px;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--brand-primary) 45%, var(--border));
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--brand-primary) 10%, transparent);
+    color: var(--text);
+    font: inherit;
+    font-size: 14px;
+    text-align: left;
+  }
+  .upd-note span {
+    flex: 1;
+  }
   .head-card {
     display: flex;
     flex-direction: column;

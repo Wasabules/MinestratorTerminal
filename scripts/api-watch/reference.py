@@ -39,6 +39,20 @@ NOTES = {
     "/user/{x}/2fa/setup": "Non testé : un `GET` qui peut générer un nouveau secret 2FA.",
     "/server/{x}/files/upload/url": "Non testé : génère une URL d'envoi.",
     "/server/{x}/files/bulk-upload-token": "Non testé : génère un jeton d'envoi.",
+    "/server/{x}/minecraft_version": "`{ version, source, confidence }` : version détectée (`source` = plateforme, ou `explicit_jar`). Utilisé par l'app pour les mises à jour (`updates.rs`).",
+    "/server/{x}/plugins": "Installés : `filename`, `sha1`, `version`, `enabled`, `source`/`project_id` (null si non identifié). Utilisé par l'app.",
+    "/server/{x}/mods": "Installés (mêmes champs, plus `loader`). Utilisé par l'app.",
+    "/server/{x}/datapacks": "`{ level_name, datapacks: [{ name, size, modified_at }] }` (forme des éléments d'après le panel). Utilisé par l'app.",
+    "/server/{x}/plugins/updates": "Vérification des mises à jour, **sans effet de bord** (le panel l'appelle seul à l'ouverture de l'onglet). Corps `{ items: [{ filename, sha1 }], mc_version }` → `{ updates: { fichier: { has_update, source, target } }, updates_available }`. Propose parfois la variante d'une autre plateforme à version égale (Velocity pour un plugin Paper) : écartée par l'app.",
+    "/server/{x}/mods/updates": "Idem pour les mods : éléments `{ filename, sha1, loader }` ; cible Modrinth (`slug`, `version_id`) ou CurseForge (`mod_id`, `file_id`). Liste vide → `API_MISSING_REQUIRED_FIELDS`, sans version → `API_INVALID_MC_VERSION`.",
+    "/server/{x}/datapacks/updates": "Idem pour les datapacks : éléments `{ name }`, clé = nom du datapack.",
+    "/server/{x}/modrinth": "Installation Modrinth : `{ slug, version_id }` (plugins dans le panel ; mods aussi pour l'app). Sert aussi à mettre à jour un plugin.",
+    "/server/{x}/modrinth/mod": "Installation et mise à jour d'un mod par le panel : `{ slug, version_id, loader }`.",
+    "/server/{x}/curseforge/mod": "`{ modId, fileId, loader }`.",
+    "/server/{x}/modrinth/datapack": "`{ slug, version_id }`.",
+    "/server/{x}/curseforge/datapack": "`{ modId, fileId }`.",
+    "/server/{x}/mod/{x}": "`{id}` = nom de fichier encodé. Après une mise à jour, le panel supprime ainsi l'ancien fichier si le nom change.",
+    "/server/{x}/plugin/{x}": "`{id}` = nom de fichier encodé (même usage que pour les mods).",
 }
 
 SECTIONS = [
@@ -219,6 +233,9 @@ def main():
     w("- Autres endpoints utiles : état groupé des serveurs (`POST /servers/live/light/bulk`), tâches")
     w("  planifiées du panel (`/server/{id_server}/schedule…`), statistiques sur une période, joueurs hors")
     w("  ligne et inventaires, sous-utilisateurs et bases de données d'une MyBox.")
+    w("- **Mises à jour des mods, plugins et datapacks** : `POST /server/{id_server}/{mods,plugins,datapacks}/updates`")
+    w("  ne fait que comparer (sans effet de bord) ; il propose parfois la variante d'une autre plateforme")
+    w("  à version égale, à filtrer avant d'installer.")
     w("")
     w("## Conventions")
     w("")

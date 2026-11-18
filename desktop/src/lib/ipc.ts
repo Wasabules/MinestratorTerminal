@@ -28,6 +28,7 @@ import type {
   Backup,
   ChatReply,
   CliStatus,
+  ContentUpdates,
   CopilotConfig,
   Egg,
   FicsitInstallItem,
@@ -58,6 +59,8 @@ import type {
   PrivacyConfig,
   RegionChunk,
   RestartRule,
+  UpdateReport,
+  UpdateSelection,
   ScheduledTask,
   ServerAutomations,
   ServerDetails,
@@ -335,6 +338,18 @@ export const api = {
   /** Plugins installés sur un serveur. */
   installedPlugins: (serverId: number) =>
     invoke<InstalledItem[]>('installed_plugins', { serverId }),
+  /** Datapacks du monde actif (`filename` = nom exact, clé des mises à jour). */
+  installedDatapacks: (serverId: number) =>
+    invoke<InstalledItem[]>('installed_datapacks', { serverId }),
+  /**
+   * Mises à jour disponibles des mods, plugins et datapacks (vérification de l'hébergeur passée
+   * au garde-fou du core). Gardées 15 min côté Rust ; `force` refait la vérification.
+   */
+  contentUpdates: (serverId: number, force = false) =>
+    invoke<ContentUpdates>('content_updates', { serverId, force }),
+  /** Applique des mises à jour : effet au prochain démarrage (`restart_needed`). */
+  applyContentUpdates: (serverId: number, items: UpdateSelection[]) =>
+    invoke<UpdateReport>('apply_content_updates', { serverId, items }),
 
   // --- Mods Satisfactory (ficsit.app / SMR) ---
   /** Recherche / tri paginé du catalogue ficsit.app (search vide/court = parcours trié). */

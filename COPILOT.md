@@ -135,14 +135,14 @@ garde **NOTRE MCP** pour le **SFTP fin + les outils exclusifs**.
 En diagnostic, l'agent ne dispose que d'outils de **lecture** (jamais d'action modifiante directe).
 Ce ne sont plus « 6 » outils : il y a **21 `READ_TOOLS`** (source unique `mcp.rs`, voir `MCP.md`) —
 console, métriques, statut, SFTP (`list_files`/`read_file`/`read_gz`/archives/`search_files`),
-`read_startup`, mods/plugins installés, backups/snapshots, marketplace (`market_search`/
-`list_mod_versions`), `analyze_performance`, `parse_spark_report`, `diagnose_startup`,
+`read_startup`, mods/plugins installés et leurs mises à jour (`check_updates`), backups/snapshots,
+marketplace (`market_search`/`list_mod_versions`), `analyze_performance`, `parse_spark_report`, `diagnose_startup`,
 `inspect_region`. Il croise ces sources, puis livre un **rapport structuré** via `report_diagnosis` :
 résumé · cause probable justifiée · correctif détaillé · **0 à 3 actions** proposées, chacune classée
 `safe` / `caution` / `danger`.
 
 - **Actions** = les `WRITE_TOOLS` (power, commande, joueur, fichiers, `set_startup_params`,
-  `install_mod`, `create_snapshot`…). Le prompt injecte les **arguments EXACTS** par outil
+  `install_mod`, `update_mods`, `create_snapshot`…). Le prompt injecte les **arguments EXACTS** par outil
   (`ACTION_TOOLS_SPEC`) et un normaliseur (`prepare_action_args`) résout les synonymes + force le
   `server_id` — filet contre les hallucinations de paramètres. Les outils **destructifs**
   (`restore_snapshot`/`restore_backup`/`delete_snapshot`) sont volontairement **absents** de la liste

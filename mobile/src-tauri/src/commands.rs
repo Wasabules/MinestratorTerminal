@@ -7,6 +7,7 @@ use minestrator_core::{
     Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
     LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
     ServersOverview, SftpEntry, SftpHostKey, Snapshot, UserNotification, UserProfile,
+    ContentUpdates, UpdateReport, UpdateSelection,
 };
 use std::sync::Arc;
 use tauri::State;
@@ -208,6 +209,34 @@ pub async fn installed_plugins(
     server_id: i64,
 ) -> Result<Vec<InstalledItem>, Error> {
     core.installed_plugins(server_id).await
+}
+
+#[tauri::command]
+pub async fn installed_datapacks(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+) -> Result<Vec<InstalledItem>, Error> {
+    core.installed_datapacks(server_id).await
+}
+
+/// Mises à jour disponibles des mods, plugins et datapacks (gardées 15 min, `force` revérifie).
+#[tauri::command]
+pub async fn content_updates(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    force: bool,
+) -> Result<ContentUpdates, Error> {
+    core.content_updates(server_id, force).await
+}
+
+/// Applique des mises à jour (nouvelle version installée, ancien fichier supprimé).
+#[tauri::command]
+pub async fn apply_content_updates(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    items: Vec<UpdateSelection>,
+) -> Result<UpdateReport, Error> {
+    core.apply_content_updates(server_id, items).await
 }
 
 // --- Console / power / joueurs -------------------------------------------

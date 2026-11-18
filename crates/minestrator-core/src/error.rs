@@ -158,17 +158,22 @@ impl Error {
     }
 }
 
-impl Serialize for Error {
-    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+impl From<&Error> for ErrorPayload {
+    fn from(e: &Error) -> Self {
         ErrorPayload {
-            kind: self.error_kind(),
-            message: self.to_string(),
-            code: match self {
+            kind: e.error_kind(),
+            message: e.to_string(),
+            code: match e {
                 Error::Service { code, .. } => Some(code.clone()),
                 _ => None,
             },
         }
-        .serialize(serializer)
+    }
+}
+
+impl Serialize for Error {
+    fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        ErrorPayload::from(self).serialize(serializer)
     }
 }
 

@@ -6,6 +6,7 @@
 //! actions modifiantes (mode lecture seule).
 
 use crate::models::InstalledItem;
+use crate::updates::ContentKind;
 use crate::{Core, MetricSample};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -118,6 +119,8 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "list_schedules",
     "list_installed_mods",
     "list_installed_plugins",
+    // Vérification des mises à jour : pure comparaison côté hébergeur, rien n'est installé.
+    "check_updates",
     "list_backups",
     "list_snapshots",
     "market_search",
@@ -149,6 +152,7 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "set_startup_params",
     "set_property",
     "install_mod",
+    "update_mods",
     "install_ficsit_mod",
     // Snapshot = additif/sans risque → l'agent peut le créer (filet avant une intervention).
     // NB : restore_snapshot / restore_backup / delete_snapshot sont DESTRUCTIFS et volontairement
@@ -170,6 +174,8 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "install_mod",
     "list_installed_mods",
     "list_installed_plugins",
+    "check_updates",
+    "update_mods",
     "read_startup",
     "set_startup_params",
     "read_properties",
@@ -222,6 +228,9 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "parse_spark_report",
     // Historique local (SQLite) : l'API n'a aucun historique, l'officiel non plus.
     "server_metrics",
+    // Mises à jour des mods/plugins/datapacks, avec le garde-fou local : hors catalogue de l'officiel.
+    "check_updates",
+    "update_mods",
     // Mods Satisfactory (ficsit.app) : hors catalogue de l'officiel.
     "ficsit_search",
     "ficsit_versions",
@@ -668,6 +677,29 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             Ok(format_installed(&core.installed_plugins(id).await.map_err(es)?, &query, "plugin"))
         }
 
+        "check_updates" => {
+            let id = req_i64(&args, "server_id")?;
+            let kind = opt_kind(&args)?;
+            let force = args.get("force").and_then(Value::as_bool).unwrap_or(false);
+            let updates = core.content_updates(id, force).await.map_err(es)?;
+            Ok(crate::updates::format_check(&updates, kind))
+        }
+
+        "update_mods" => {
+            let id = req_i64(&args, "server_id")?;
+            let kind = opt_kind(&args)?;
+            let keys = str_list(&args, "keys");
+            let report = if keys.is_empty() {
+                let kinds: Vec<ContentKind> = kind.into_iter().collect();
+                core.apply_all_content_updates(id, &kinds).await.map_err(es)?
+            } else {
+                let current = core.content_updates(id, false).await.map_err(es)?;
+                let items = resolve_update_keys(&current, kind, &keys)?;
+                core.apply_content_updates(id, items).await.map_err(es)?
+            };
+            Ok(crate::updates::format_report(&report))
+        }
+
         "list_backups" => {
             let id = req_i64(&args, "server_id")?;
             json_pretty(&core.list_backups(id).await.map_err(es)?)
@@ -877,6 +909,8 @@ fn build_tool_list() -> Value {
         tool("diagnose_startup", "Docteur démarrage : pour un serveur qui NE DÉMARRE PAS / crash-loop, rassemble en UN appel la commande de démarrage + la fin de logs/latest.log + le dernier crash-report, et pré-scanne les pannes connues (EULA, port occupé, OOM, version Java, dépendance/mixin de mod, monde corrompu). Utilise-le AVANT de proposer un correctif.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("inspect_region", "Inspecte un fichier de région Minecraft (`.mca`) et repère les chunks structurellement CORROMPUS (pointeurs/longueurs invalides — cause des crash au chargement de monde). Chemin ex. `/world/region/r.0.0.mca` (Nether : `/world/DIM-1/region/…`, End : `/world/DIM1/region/…`). Lecture seule ; croise avec les coordonnées du crash pour cibler la bonne région.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin absolu du fichier .mca"))], &["server_id", "path"])),
         tool("install_mod", "Installe un mod/plugin. `modrinth` = mods ET plugins (corps {slug, version_id}, PAS de loader) ; `spigot` = plugins (`slug` = id numérique de la ressource, `version_id` = id de version). Récupère `version_id` via list_mod_versions. N'installe PAS un projet premium/external (non installable → 403 ; vérifie via market_search). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("source", prop_str("modrinth|spigot (défaut modrinth)")), ("kind", prop_str("mod|plugin (défaut mod)")), ("slug", prop_str("Slug Modrinth ou id numérique SpigotMC")), ("version_id", prop_str("ID de la version à installer")), ("loader", prop_str("Optionnel : modloader (ignoré par Modrinth et Spigot)"))], &["server_id", "slug", "version_id"])),
+        tool("check_updates", "Mises à jour disponibles des mods, plugins et datapacks installés (Minecraft) : version installée → nouvelle, d'après l'hébergeur (version de Minecraft et loader du serveur pris en compte). Lecture seule ; résultat gardé 15 min, `force` pour revérifier. Les propositions ÉCARTÉES (variante d'une autre plateforme, même version ou plus ancienne) ne doivent PAS être installées, ni via install_mod. Donne la clé de chaque élément (entre crochets) pour update_mods.", obj(&[("server_id", prop_int("ID du serveur")), ("kind", prop_str("mods|plugins|datapacks (défaut : tous)")), ("force", prop_bool("Refaire la vérification au lieu du résultat gardé (défaut false)"))], &["server_id"])),
+        tool("update_mods", "Met à jour des mods/plugins/datapacks : installe la nouvelle version retenue par check_updates puis supprime l'ancien fichier (revérifie avant ; une proposition écartée n'est jamais appliquée). `keys` = clés renvoyées par check_updates ; vide = toutes les mises à jour des éléments ACTIFS (filtrées par `kind`). Effet au PROCHAIN démarrage : redémarre ensuite (power_action). Crée un snapshot avant (create_snapshot). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("kind", prop_str("mods|plugins|datapacks (optionnel)")), ("keys", json!({ "type": "array", "items": { "type": "string" }, "description": "Clés (noms de fichier) renvoyées par check_updates ; vide = toutes" }))], &["server_id"])),
         tool("ficsit_search", "Cherche des mods SATISFACTORY dans le catalogue ficsit.app (SMR). `query` vide = parcours trié. `order_by` ∈ popularity|hotness|downloads|last_version_date|name (défaut popularity). Renvoie id, mod_reference, name, downloads. À réserver aux serveurs Satisfactory (pas Minecraft).", obj(&[("query", prop_str("Recherche par nom (optionnel, ≥ 3 car.)")), ("order_by", prop_str("Tri (défaut popularity)")), ("page", prop_int("Page (défaut 1)"))], &[])),
         tool("ficsit_versions", "Versions d'un mod Satisfactory (par son `mod_id` ficsit, renvoyé par ficsit_search) : `id` de version + contrainte SML + dépendances — nécessaires pour installer.", obj(&[("mod_id", prop_str("id ficsit du mod"))], &["mod_id"])),
         tool("install_ficsit_mod", "Installe un mod SATISFACTORY : télécharge le mod + SML + dépendances (cible LinuxServer) et les écrit dans Mods/ via SFTP, avec ARRÊT puis REDÉMARRAGE automatiques du serveur. `reference` = mod_reference, `version_id` via ficsit_versions. ✎ (modifiant — redémarre le serveur)", obj(&[("server_id", prop_int("ID du serveur")), ("reference", prop_str("mod_reference du mod")), ("version_id", prop_str("ID de la version à installer"))], &["server_id", "reference", "version_id"])),
@@ -935,6 +969,60 @@ fn req_str(args: &Value, key: &str) -> Result<String, String> {
         .map(|s| s.to_string())
         .ok_or_else(|| format!("paramètre `{key}` (texte) requis"))
 }
+/// Type de contenu optionnel (`kind`) ; vide ou `all` = tous.
+fn opt_kind(args: &Value) -> Result<Option<ContentKind>, String> {
+    match args.get("kind").and_then(Value::as_str).map(str::trim) {
+        None | Some("") | Some("all") => Ok(None),
+        Some(k) => ContentKind::parse(k)
+            .map(Some)
+            .ok_or_else(|| format!("`kind` inconnu : « {k} » (mods, plugins ou datapacks)")),
+    }
+}
+
+/// Liste de chaînes (tableau, ou chaîne seule), sans les vides.
+fn str_list(args: &Value, key: &str) -> Vec<String> {
+    match args.get(key) {
+        Some(Value::Array(a)) => a
+            .iter()
+            .filter_map(Value::as_str)
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect(),
+        Some(Value::String(s)) if !s.trim().is_empty() => vec![s.trim().to_string()],
+        _ => Vec::new(),
+    }
+}
+
+/// Associe chaque clé à son type d'après la dernière vérification (une clé écartée garde son type :
+/// `update_mods` dira pourquoi elle n'est pas appliquée). Une clé inconnue est une erreur.
+fn resolve_update_keys(
+    current: &crate::updates::ContentUpdates,
+    kind: Option<ContentKind>,
+    keys: &[String],
+) -> Result<Vec<crate::updates::UpdateSelection>, String> {
+    let known = current
+        .updates
+        .iter()
+        .map(|u| (u.kind, u.key.as_str()))
+        .chain(current.ignored.iter().map(|i| (i.kind, i.key.as_str())));
+    let known: Vec<(ContentKind, &str)> = known.filter(|(k, _)| kind.is_none_or(|w| w == *k)).collect();
+    let mut items = Vec::new();
+    let mut unknown = Vec::new();
+    for key in keys {
+        match known.iter().find(|(_, k)| k == key) {
+            Some((k, _)) => items.push(crate::updates::UpdateSelection { kind: *k, key: key.clone() }),
+            None => unknown.push(key.as_str()),
+        }
+    }
+    if !unknown.is_empty() {
+        return Err(format!(
+            "aucune mise à jour connue pour : {} — utilise les clés entre crochets de check_updates (force=true pour revérifier).",
+            unknown.join(", ")
+        ));
+    }
+    Ok(items)
+}
+
 fn opt_i64(args: &Value, key: &str, default: i64) -> i64 {
     args.get(key).and_then(|v| v.as_i64()).unwrap_or(default)
 }
@@ -1047,6 +1135,70 @@ mod tests {
         assert!(filtered.contains("Sodium") && !filtered.contains("Lithium"));
         // Aucun résultat.
         assert!(format_installed(&items, "absent", "mod").contains("(aucun)"));
+    }
+
+    #[test]
+    fn update_tools_are_classified_and_scoped() {
+        // La vérification n'installe rien (lecture) ; l'application est modifiante.
+        assert!(!is_write_tool("check_updates"));
+        assert!(READ_TOOLS.contains(&"check_updates"));
+        assert!(is_write_tool("update_mods"));
+        assert!(WRITE_TOOLS.contains(&"update_mods"));
+        for t in ["check_updates", "update_mods"] {
+            assert!(tool_for_game(t, "minecraft"), "{t} : Minecraft");
+            assert!(!tool_for_game(t, "satisfactory"), "{t} : pas pour un autre jeu");
+            assert!(LOCAL_KEEP_TOOLS.contains(&t), "{t} : exclusif, gardé face au MCP officiel");
+        }
+        // Résultat déjà gardé par le core : pas de second cache.
+        assert!(cache_ttl("check_updates").is_none());
+        assert!(cache_ttl("update_mods").is_none());
+    }
+
+    #[test]
+    fn update_arguments_are_read_leniently() {
+        use crate::updates::{ContentUpdate, ContentUpdates, IgnoreReason, IgnoredUpdate};
+        assert_eq!(opt_kind(&json!({})), Ok(None));
+        assert_eq!(opt_kind(&json!({ "kind": "all" })), Ok(None));
+        assert_eq!(opt_kind(&json!({ "kind": "plugin" })), Ok(Some(ContentKind::Plugins)));
+        assert!(opt_kind(&json!({ "kind": "texture" })).is_err());
+        assert_eq!(str_list(&json!({ "keys": ["a.jar", " ", "b.jar"] }), "keys"), vec!["a.jar", "b.jar"]);
+        assert_eq!(str_list(&json!({ "keys": "a.jar" }), "keys"), vec!["a.jar"]);
+        assert!(str_list(&json!({}), "keys").is_empty());
+
+        let current = ContentUpdates {
+            mc_version: Some("1.21.1".into()),
+            platform: None,
+            checked_at: 0,
+            examined: 2,
+            untracked: 0,
+            updates: vec![ContentUpdate {
+                kind: ContentKind::Mods,
+                key: "sodium.jar".into(),
+                name: "Sodium".into(),
+                enabled: true,
+                current_version: "0.5".into(),
+                new_version: "0.6".into(),
+                new_filename: "sodium-0.6.jar".into(),
+                source: "modrinth".into(),
+            }],
+            ignored: vec![IgnoredUpdate {
+                kind: ContentKind::Plugins,
+                key: "LP.jar".into(),
+                name: "LuckPerms".into(),
+                current_version: "5".into(),
+                new_version: "5".into(),
+                new_filename: "LP-Velocity.jar".into(),
+                reason: IgnoreReason::OtherPlatform,
+            }],
+            errors: vec![],
+        };
+        let keys = vec!["sodium.jar".to_string(), "LP.jar".to_string()];
+        let items = resolve_update_keys(&current, None, &keys).unwrap();
+        assert_eq!(items[0].kind, ContentKind::Mods);
+        assert_eq!(items[1].kind, ContentKind::Plugins, "clé écartée : transmise, update_mods dira pourquoi");
+        // Filtre de type : la clé d'un autre type devient inconnue.
+        let err = resolve_update_keys(&current, Some(ContentKind::Mods), &keys).unwrap_err();
+        assert!(err.contains("LP.jar") && !err.contains("sodium.jar"));
     }
 
     #[test]

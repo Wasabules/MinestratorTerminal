@@ -10,7 +10,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 ## En bref
 
 - **314 chemins** recensés, dont **283 absents de la documentation officielle**.
-- **77 lectures** testées avec une clé API répondent normalement ; seules les données de
+- **80 lectures** testées avec une clé API répondent normalement ; seules les données de
   paiement et les passkeys sont réservées à la session web (`403 API_FORBIDDEN`). Une clé API a donc,
   en pratique, le même périmètre que le panel. Les écritures n'ont **pas** été testées (aucune action
   n'a été déclenchée), mais rien n'indique un traitement différent.
@@ -21,6 +21,9 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 - Autres endpoints utiles : état groupé des serveurs (`POST /servers/live/light/bulk`), tâches
   planifiées du panel (`/server/{id_server}/schedule…`), statistiques sur une période, joueurs hors
   ligne et inventaires, sous-utilisateurs et bases de données d'une MyBox.
+- **Mises à jour des mods, plugins et datapacks** : `POST /server/{id_server}/{mods,plugins,datapacks}/updates`
+  ne fait que comparer (sans effet de bord) ; il propose parfois la variante d'une autre plateforme
+  à version égale, à filtrer avant d'installer.
 
 ## Conventions
 
@@ -211,7 +214,7 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | PATCH | `/server/{id_server}/docker/image` | — | écriture, non testé |  |
 | GET | `/server/{id_server}/docker/images` | — | ✓ GET |  |
 | PATCH | `/server/{id_server}/java/version` | — | écriture, non testé |  |
-| GET | `/server/{id_server}/minecraft_version` | — | ✓ GET |  |
+| GET | `/server/{id_server}/minecraft_version` | — | ✓ GET | `{ version, source, confidence }` : version détectée (`source` = plateforme, ou `explicit_jar`). Utilisé par l'app pour les mises à jour (`updates.rs`). |
 | PATCH | `/server/{id_server}/php/version` | — | écriture, non testé |  |
 | POST | `/server/{id_server}/pod/mariadb/database` | — | écriture, non testé |  |
 | GET / PATCH | `/server/{id_server}/properties` | ✓ | ✓ GET |  |
@@ -276,29 +279,29 @@ documentés, et lesquels ont été vérifiés avec une **clé API**.
 | DELETE | `/server/{id_server}/bedrock/addon/{id}` | — | écriture, non testé |  |
 | GET | `/server/{id_server}/bedrock/addons` | — | non testé |  |
 | POST | `/server/{id_server}/curseforge/bedrock/addon` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/curseforge/datapack` | — | écriture, non testé |  |
+| POST | `/server/{id_server}/curseforge/datapack` | — | écriture, non testé | `{ modId, fileId }`. |
 | POST | `/server/{id_server}/curseforge/hytale/mod` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/curseforge/mod` | — | écriture, non testé |  |
+| POST | `/server/{id_server}/curseforge/mod` | — | écriture, non testé | `{ modId, fileId, loader }`. |
 | POST | `/server/{id_server}/curseforge/world` | — | écriture, non testé |  |
-| GET | `/server/{id_server}/datapacks` | — | ✓ GET |  |
-| POST | `/server/{id_server}/datapacks/updates` | — | écriture, non testé |  |
+| GET | `/server/{id_server}/datapacks` | — | ✓ GET | `{ level_name, datapacks: [{ name, size, modified_at }] }` (forme des éléments d'après le panel). Utilisé par l'app. |
+| POST | `/server/{id_server}/datapacks/updates` | — | ✓ POST | Idem pour les datapacks : éléments `{ name }`, clé = nom du datapack. |
 | GET / PATCH | `/server/{id_server}/enshrouded/groups` | — | non testé |  |
 | PATCH | `/server/{id_server}/hytale/mod` | — | écriture, non testé |  |
 | DELETE | `/server/{id_server}/hytale/mod/{id}` | — | écriture, non testé |  |
 | GET | `/server/{id_server}/hytale/mods` | — | non testé |  |
 | GET / PUT / DELETE | `/server/{id_server}/hytale/verification` | — | non testé |  |
 | PATCH | `/server/{id_server}/mod` | — | écriture, non testé |  |
-| DELETE | `/server/{id_server}/mod/{id}` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/modrinth` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/modrinth/datapack` | — | écriture, non testé |  |
-| POST | `/server/{id_server}/modrinth/mod` | — | écriture, non testé |  |
-| GET | `/server/{id_server}/mods` | — | ✓ GET |  |
-| POST | `/server/{id_server}/mods/updates` | — | écriture, non testé |  |
+| DELETE | `/server/{id_server}/mod/{id}` | — | écriture, non testé | `{id}` = nom de fichier encodé. Après une mise à jour, le panel supprime ainsi l'ancien fichier si le nom change. |
+| POST | `/server/{id_server}/modrinth` | — | écriture, non testé | Installation Modrinth : `{ slug, version_id }` (plugins dans le panel ; mods aussi pour l'app). Sert aussi à mettre à jour un plugin. |
+| POST | `/server/{id_server}/modrinth/datapack` | — | écriture, non testé | `{ slug, version_id }`. |
+| POST | `/server/{id_server}/modrinth/mod` | — | écriture, non testé | Installation et mise à jour d'un mod par le panel : `{ slug, version_id, loader }`. |
+| GET | `/server/{id_server}/mods` | — | ✓ GET | Installés (mêmes champs, plus `loader`). Utilisé par l'app. |
+| POST | `/server/{id_server}/mods/updates` | — | ✓ POST | Idem pour les mods : éléments `{ filename, sha1, loader }` ; cible Modrinth (`slug`, `version_id`) ou CurseForge (`mod_id`, `file_id`). Liste vide → `API_MISSING_REQUIRED_FIELDS`, sans version → `API_INVALID_MC_VERSION`. |
 | GET / POST / PATCH / DELETE | `/server/{id_server}/palworld/import` | — | non testé |  |
 | POST / PATCH | `/server/{id_server}/plugin` | — | écriture, non testé |  |
-| DELETE | `/server/{id_server}/plugin/{id}` | — | écriture, non testé |  |
-| GET | `/server/{id_server}/plugins` | — | ✓ GET |  |
-| POST | `/server/{id_server}/plugins/updates` | — | écriture, non testé |  |
+| DELETE | `/server/{id_server}/plugin/{id}` | — | écriture, non testé | `{id}` = nom de fichier encodé (même usage que pour les mods). |
+| GET | `/server/{id_server}/plugins` | — | ✓ GET | Installés : `filename`, `sha1`, `version`, `enabled`, `source`/`project_id` (null si non identifié). Utilisé par l'app. |
+| POST | `/server/{id_server}/plugins/updates` | — | ✓ POST | Vérification des mises à jour, **sans effet de bord** (le panel l'appelle seul à l'ouverture de l'onglet). Corps `{ items: [{ filename, sha1 }], mc_version }` → `{ updates: { fichier: { has_update, source, target } }, updates_available }`. Propose parfois la variante d'une autre plateforme à version égale (Velocity pour un plugin Paper) : écartée par l'app. |
 | GET / PUT | `/server/{id_server}/steamworkshop/autoupdate` | — | non testé |  |
 | GET / PUT | `/server/{id_server}/steamworkshop/mods` | — | non testé |  |
 | POST | `/server/{id_server}/steamworkshop/mods/sync` | — | écriture, non testé |  |
@@ -752,6 +755,17 @@ datapacks[] : tableau (vide lors du relevé)
 
 </details>
 
+<details><summary><code>POST /server/{id_server}/datapacks/updates</code></summary>
+
+```
+updates.{nom}.has_update : bool
+updates.{nom}.source : null
+updates.{nom}.target : null
+updates_available : int
+```
+
+</details>
+
 <details><summary><code>GET /server/{id_server}/disk/total</code></summary>
 
 ```
@@ -903,6 +917,17 @@ mods[] : tableau (vide lors du relevé)
 
 </details>
 
+<details><summary><code>POST /server/{id_server}/mods/updates</code></summary>
+
+```
+updates.{fichier}.has_update : bool
+updates.{fichier}.source : null
+updates.{fichier}.target : null
+updates_available : int
+```
+
+</details>
+
 <details><summary><code>GET /server/{id_server}/players/offline</code></summary>
 
 ```
@@ -940,6 +965,20 @@ plugins[].enabled : bool
 plugins[].sha1 : str
 plugins[].source : str
 plugins[].project_id : str
+```
+
+</details>
+
+<details><summary><code>POST /server/{id_server}/plugins/updates</code></summary>
+
+```
+updates.{fichier}.has_update : bool
+updates.{fichier}.source : str
+updates.{fichier}.target.filename : str
+updates.{fichier}.target.slug : str
+updates.{fichier}.target.version_id : str
+updates.{fichier}.target.version_number : str
+updates_available : int
 ```
 
 </details>

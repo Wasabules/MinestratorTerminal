@@ -977,6 +977,7 @@ rename_path → {\"from\": \"/chemin/source\", \"to\": \"/chemin/destination\"} 
 player_action → {\"action\": \"kick|ban|unban|op_add|op_remove|whitelist_add|whitelist_remove\", \"player\": \"pseudo\"} ; \
 set_startup_params → {\"parameters\": \"java -Xms… -Xmx… <flags> -jar {{SERVER_JARFILE}}\"} — commande Java COMPLÈTE (pars de la commande actuelle via read_startup, GARDE {{SERVER_JARFILE}}, ne change pas -Xmx sans raison) ; effet au PROCHAIN démarrage (risque caution) ; \
 install_mod → {\"source\": \"modrinth|spigot\", \"kind\": \"mod|plugin\", \"slug\": \"slug-Modrinth-ou-id-numerique-Spigot\", \"version_id\": \"id-de-version\", \"loader\": \"fabric|neoforge|forge|quilt|paper|spigot|...\"} — obtiens le `version_id` via list_mod_versions AVANT ; sources installables : `modrinth` et `spigot` (CurseForge à venir) ; pour Spigot le `slug` est l'id numérique du plugin et le loader est ignoré ; effet au prochain démarrage (risque caution) ; \
+update_mods → {\"keys\": [\"clé\", …], \"kind\": \"mods|plugins|datapacks\"} — met à jour vers la version retenue par check_updates (installe la nouvelle, retire l'ancien fichier) ; `keys` = clés entre crochets de check_updates, vide = toutes les mises à jour des éléments actifs ; jamais une proposition écartée ; effet au PROCHAIN démarrage (risque caution, propose create_snapshot avant) ; \
 create_snapshot → {\"name\": \"nom court\"} — crée un SNAPSHOT (point de sauvegarde à la demande) du serveur, le filet AVANT une intervention risquée ; additif, risque SAFE ; \
 restore_snapshot → {\"snapshot_id\": id} — ÉCRASE le serveur avec ce snapshot (récupère l'id via list_snapshots) ; risque DANGER, perte de l'état actuel ; \
 restore_backup → {\"backup_id\": id} — ÉCRASE le serveur avec ce backup quotidien (id via list_backups) ; risque DANGER ; \
@@ -1017,6 +1018,10 @@ fn apply_aliases(tool: &str, map: &mut serde_json::Map<String, Value>) {
             ("version_id", &["version", "versionId", "file_id", "fileId", "vid"]),
             ("loader", &["modloader", "mod_loader", "modLoader"]),
         ],
+        "update_mods" => &[
+            ("keys", &["key", "files", "filenames", "filename", "items", "mods", "plugins", "names"]),
+            ("kind", &["type", "category"]),
+        ],
         "create_snapshot" => &[("name", &["label", "title", "snapshot_name", "nom"])],
         "restore_snapshot" | "delete_snapshot" => {
             &[("snapshot_id", &["id_snapshot", "snapshot", "id"])]
@@ -1056,7 +1061,7 @@ N'invente aucune donnée ; si une information te manque, dis-le. Réponds en fra
 /// Contexte + outils propres au jeu, injecté dans les prompts diagnostic ET chat (source unique).
 fn game_playbook(family: &str) -> &'static str {
     match family {
-        "minecraft" => "JEU — Minecraft. Mods/plugins via le MARKETPLACE : `market_search` (Modrinth/CurseForge/SpigotMC, filtrable `loader`/`game_version`) → `list_mod_versions` → `install_mod` (modrinth = mods ET plugins ; spigot = plugins). Ne propose JAMAIS un projet `premium`/`external` (403) ; vérifie via market_search, ne te fie pas à ta mémoire. Détecte loader/version via les installés ou la commande de démarrage (`read_startup`). PERFORMANCE : `analyze_performance` (Spark natif ; `with_profiler` pour le CPU) ; une URL spark.lucko.me → `parse_spark_report` (jamais un outil web dessus). NE DÉMARRE PAS / crash-loop : `diagnose_startup` AVANT de conclure (EULA, port occupé, OOM, version Java, mod fautif à renommer en .jar.disabled…). Config : server.properties, flags JVM (`set_startup_params`, Aikar). Modération joueurs : `player_action`.",
+        "minecraft" => "JEU — Minecraft. Mods/plugins via le MARKETPLACE : `market_search` (Modrinth/CurseForge/SpigotMC, filtrable `loader`/`game_version`) → `list_mod_versions` → `install_mod` (modrinth = mods ET plugins ; spigot = plugins). Ne propose JAMAIS un projet `premium`/`external` (403) ; vérifie via market_search, ne te fie pas à ta mémoire. Détecte loader/version via les installés ou la commande de démarrage (`read_startup`). MISES À JOUR : `check_updates` (lecture : version installée → nouvelle) puis l'action `update_mods` avec les clés renvoyées ; n'installe JAMAIS une proposition écartée (variante d'une autre plateforme, même version) ; redémarrage nécessaire ensuite. PERFORMANCE : `analyze_performance` (Spark natif ; `with_profiler` pour le CPU) ; une URL spark.lucko.me → `parse_spark_report` (jamais un outil web dessus). NE DÉMARRE PAS / crash-loop : `diagnose_startup` AVANT de conclure (EULA, port occupé, OOM, version Java, mod fautif à renommer en .jar.disabled…). Config : server.properties, flags JVM (`set_startup_params`, Aikar). Modération joueurs : `player_action`.",
         "satisfactory" => "JEU — Satisfactory. Les mods viennent de ficsit.app : `ficsit_search` → `ficsit_versions` → `install_ficsit_mod` (installe le mod + SML + dépendances, cible LinuxServer, et REDÉMARRE le serveur). Il N'Y A PAS de plugins/Skript/Modrinth/Spigot/Spark/joueurs ici — n'utilise PAS market_search/install_mod/analyze_performance/player_action. Config du serveur dédié : Engine.ini / Game.ini / GameUserSettings.ini via SFTP.",
         _ => "JEU — serveur générique (ni Minecraft ni Satisfactory) : NE suppose AUCUN concept Minecraft (pas de plugins, pas de marketplace de mods, pas de Spark, pas d'action joueur). Appuie-toi sur la console, les métriques et les fichiers de configuration via SFTP.",
     }

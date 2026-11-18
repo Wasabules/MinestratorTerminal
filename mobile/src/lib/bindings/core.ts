@@ -1168,6 +1168,134 @@ export type InstalledItem = {
   loader: string,
 };
 
+// --- Mises à jour des mods, plugins et datapacks (updates.rs) ---
+
+/**
+ * Type de contenu Minecraft géré par l'hébergeur.
+ */
+export type ContentKind = "mods" | "plugins" | "datapacks";
+
+/**
+ * Mise à jour applicable d'un élément installé.
+ */
+export type ContentUpdate = {
+  kind: ContentKind,
+  /**
+   * Clé de l'élément installé : nom de fichier (mods, plugins) ou nom du datapack. Sert à
+   * l'associer à la liste des installés et à demander son application.
+   */
+  key: string,
+  name: string,
+  /**
+   * Désactivé sur le serveur : la nouvelle version, elle, sera installée active.
+   */
+  enabled: boolean,
+  /**
+   * Version installée (vide si l'hébergeur ne la connaît pas, ex. datapacks).
+   */
+  current_version: string,
+  new_version: string,
+  /**
+   * Nom du fichier qui remplacera l'actuel.
+   */
+  new_filename: string,
+  /**
+   * `modrinth` | `curseforge`.
+   */
+  source: string,
+};
+
+/**
+ * Pourquoi une proposition de l'hébergeur n'est pas appliquée.
+ */
+export type IgnoreReason = "other_platform" | "same_version" | "older_version" | "incomplete" | "up_to_date";
+
+/**
+ * Proposition de l'hébergeur écartée par le garde-fou local.
+ */
+export type IgnoredUpdate = {
+  kind: ContentKind,
+  key: string,
+  name: string,
+  current_version: string,
+  new_version: string,
+  new_filename: string,
+  reason: IgnoreReason,
+};
+
+/**
+ * Échec de la vérification d'un type (les autres types restent valables).
+ */
+export type UpdateCheckError = {
+  kind: ContentKind,
+  error: AppError,
+};
+
+/**
+ * Résultat de la vérification des mises à jour d'un serveur.
+ */
+export type ContentUpdates = {
+  /**
+   * Version de Minecraft détectée par l'hébergeur ; `null` : inconnue, rien n'a pu être vérifié.
+   */
+  mc_version: string | null,
+  /**
+   * Plateforme détectée (`paper`, `fabric`…) quand l'hébergeur la donne.
+   */
+  platform: string | null,
+  /**
+   * Horodatage de la vérification (secondes Unix).
+   */
+  checked_at: number,
+  /**
+   * Éléments installés soumis à l'hébergeur.
+   */
+  examined: number,
+  /**
+   * Éléments que l'hébergeur n'a pas identifiés (projet perso, source inconnue) : leurs mises à
+   * jour ne peuvent pas être suivies.
+   */
+  untracked: number,
+  updates: Array<ContentUpdate>,
+  ignored: Array<IgnoredUpdate>,
+  errors: Array<UpdateCheckError>,
+};
+
+/**
+ * Élément à mettre à jour (argument de [`crate::Core::apply_content_updates`]).
+ */
+export type UpdateSelection = {
+  kind: ContentKind,
+  key: string,
+};
+
+/**
+ * Issue de la mise à jour d'un élément.
+ */
+export type UpdateStatus = "updated" | "old_kept" | "failed" | "skipped";
+
+export type UpdateOutcome = {
+  kind: ContentKind,
+  key: string,
+  name: string,
+  from_version: string,
+  to_version: string,
+  status: UpdateStatus,
+  reason: IgnoreReason | null,
+  error: AppError | null,
+};
+
+/**
+ * Bilan d'une mise à jour groupée.
+ */
+export type UpdateReport = {
+  outcomes: Array<UpdateOutcome>,
+  /**
+   * Au moins un fichier a changé : le serveur doit redémarrer pour charger les nouvelles versions.
+   */
+  restart_needed: boolean,
+};
+
 // --- Mods Satisfactory (ficsit.rs) ---
 
 /**
