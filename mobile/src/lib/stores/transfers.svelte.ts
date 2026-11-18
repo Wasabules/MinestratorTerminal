@@ -19,11 +19,17 @@ import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialo
 import { open as openFile } from "@tauri-apps/plugin-fs";
 import { api, humanizeError } from "../ipc";
 import { sftpEvents } from "../events";
+import { t as tr } from "../i18n";
 
 export interface Transfer {
   id: string;
   name: string;
-  direction: "up" | "down";
+  /** `server` : opération faite par le serveur (compression, extraction), sans transfert. */
+  direction: "up" | "down" | "server";
+  /** Étape d'une opération sur le serveur (`compressing`, `extracting`…), publiée par le core. */
+  phase?: string | null;
+  /** Fichiers déjà traités par le serveur (compression). */
+  files?: number;
   status: "active" | "done" | "error";
   /** Octets déjà transférés. */
   done: number;
@@ -75,7 +81,8 @@ function restore(): Transfer[] {
             t.speed = 0;
             t.lastAt = Date.now();
             t.lastDone = t.done;
-            if (t.direction === "up") return t;
+            // Une opération sur le serveur (compression, extraction) vit elle aussi côté Rust.
+            if (t.direction !== "down") return t;
             // Téléchargement mort avec la page : sa notification est `ongoing`, donc impossible à
             // écarter d'un balayage. Sans ce nettoyage, elle resterait épinglée indéfiniment.
             void api.clearTransfer(5000 + (Number(t.id.slice(1)) || 0)).catch(() => {});
@@ -100,12 +107,16 @@ function listenProgress(): void {
     .progress((p) => {
       const t = store.items.find((x) => x.id === p.id);
       if (!t) return;
+      // Annulé (ou échoué) : les derniers events du core ne le ranimeront pas, ni sa notification.
+      if (t.status === "error") return;
       // L'event TERMINAL du core porte `done: 0, total: 0` (cf. `emit_transfer_end`) : écraser
       // l'état avec ces zéros ferait afficher « — » comme taille finale de chaque envoi réussi.
       // On ne recopie donc la progression que tant que le transfert est actif.
       if (p.status === "active") {
         t.total = p.total;
         bump(t, p.done);
+        t.phase = p.phase;
+        t.files = p.files;
       }
       if (p.status === "done") {
         finish(p.id, t.total || t.done);
@@ -191,7 +202,7 @@ export function clearFinished(): void {
  */
 const CHUNK = 512 * 1024;
 
-function add(name: string, direction: "up" | "down", total: number): string {
+function add(name: string, direction: Transfer["direction"], total: number): string {
   const id = nextId();
   store.items.unshift({
     id, name, direction, status: "active", done: 0, total, size: 0, error: null, endedAt: null,
@@ -252,7 +263,8 @@ export function fmtSpeed(bytesPerSec: number): string {
 
 /** Reflète l'avancement d'un transfert dans la notification Android. */
 function notifyProgress(t: Transfer): void {
-  const label = t.direction === "up" ? "Envoi" : "Téléchargement";
+  const label =
+    t.direction === "up" ? "Envoi" : t.direction === "server" ? tr("transfers.server") : "Téléchargement";
   const speed = fmtSpeed(t.speed);
   // Taille inconnue (fournisseur Android qui ne déclare pas `statSize`) : on annonce ce qui est
   // parti, sans total. Afficher « / 0 » n'apprendrait rien et donnerait l'impression d'un bug.
@@ -285,7 +297,12 @@ function finish(id: string, size: number): void {
   t.done = size;
   t.endedAt = Date.now();
   persist();
-  const label = t.direction === "up" ? "Envoi terminé" : "Téléchargement terminé";
+  const label =
+    t.direction === "up"
+      ? "Envoi terminé"
+      : t.direction === "server"
+        ? tr("transfers.serverDone")
+        : "Téléchargement terminé";
   void api
     .notifyTransfer(notifId(id), `${label} — ${t.name}`, fmt(size), size, size, true)
     .catch(() => {});
@@ -359,16 +376,17 @@ export async function uploadTo(serverId: number, remoteDir: string, title: strin
 }
 
 /**
- * Télécharge un fichier distant vers l'emplacement choisi par l'utilisateur.
- * Renvoie `false` si le sélecteur a été annulé.
+ * Télécharge un fichier distant vers l'emplacement choisi par l'utilisateur (ou `chosen`, déjà
+ * choisi). Renvoie `false` si le sélecteur a été annulé ou le téléchargement a échoué.
  */
 export async function downloadFrom(
   serverId: number,
   remotePath: string,
   name: string,
   title: string,
+  chosen?: string,
 ): Promise<boolean> {
-  const dest = await saveDialog({ defaultPath: name, title });
+  const dest = chosen ?? (await saveDialog({ defaultPath: name, title }));
   if (!dest) return false;
 
   const id = add(name, "down", 0);
@@ -411,5 +429,51 @@ export async function downloadFrom(
     return false;
   } finally {
     await handle?.close().catch(() => {});
+  }
+}
+
+/**
+ * Opération faite **par le serveur** (compression, extraction), suivie dans le journal comme un
+ * transfert : le core en publie l'avancement par `sftp://progress` (`direction = server`).
+ * Renvoie le résultat de `run`, ou `null` en cas d'échec ou d'annulation (consignés dans le
+ * journal ; l'erreur reste lisible via le centre de transferts).
+ */
+export async function serverTask<T>(name: string, run: (id: string) => Promise<T>): Promise<T | null> {
+  listenProgress();
+  const id = add(name, "server", 0);
+  try {
+    const out = await run(id);
+    const t = store.items.find((x) => x.id === id);
+    if (t?.status === "error") return null; // annulé entre-temps
+    if (t?.status === "active") finish(id, t.done);
+    return out;
+  } catch (err) {
+    const t = store.items.find((x) => x.id === id);
+    if (t?.status !== "error") fail(id, err);
+    return null;
+  }
+}
+
+/**
+ * Télécharge un dossier (ou une sélection d'un même dossier) en `.zip` : le **serveur** construit
+ * une archive temporaire, le téléphone la rapatrie par blocs, puis elle est retirée du serveur.
+ * La destination est demandée d'abord, pour ne pas faire attendre une compression pour rien.
+ * Renvoie `false` si le sélecteur a été annulé ou si une étape a échoué (détail dans le journal).
+ */
+export async function downloadFolderZip(
+  serverId: number,
+  paths: string[],
+  name: string,
+  title: string,
+): Promise<boolean> {
+  const dest = await saveDialog({ defaultPath: name, title });
+  if (!dest) return false;
+  const archive = await serverTask(name, (id) => api.serverCompressTemp(serverId, paths, id));
+  if (!archive) return false;
+  try {
+    return await downloadFrom(serverId, archive.archive_path, name, title, dest);
+  } finally {
+    // L'archive temporaire part quoi qu'il arrive au téléchargement.
+    void api.removeTempArchive(serverId, archive.archive_path).catch(() => {});
   }
 }

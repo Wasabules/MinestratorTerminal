@@ -26,8 +26,12 @@ import type {
   AppError,
   ArchiveEntry,
   Backup,
+  CompressOutcome,
   ConsoleStats,
+  DiskSpace,
+  DiskUsage,
   Egg,
+  ExtractOutcome,
   InstalledItem,
   LiveLight,
   LivePlayers,
@@ -261,6 +265,20 @@ export const api = {
   ) => invoke<void>("sftp_upload_uri", { serverId, uri, name, remoteDir, transferId }),
   /** Demande l'arrêt d'un transfert en cours (arrêt coopératif côté Rust). */
   cancelTransfer: (transferId: string) => invoke<void>("cancel_transfer", { transferId }),
+  // --- Fichiers côté serveur (API) : noms et tailles de fichiers, rien d'identifiant ---
+  /** Compression sur le serveur (archive conservée) ; rend la main à la fin. */
+  serverCompress: (serverId: number, paths: string[], name: string | null, transferId: string) =>
+    invoke<CompressOutcome>("server_compress", { serverId, paths, name, transferId }),
+  /** Compression dans une archive temporaire, à télécharger puis retirer (`removeTempArchive`). */
+  serverCompressTemp: (serverId: number, paths: string[], transferId: string) =>
+    invoke<CompressOutcome>("server_compress_temp", { serverId, paths, transferId }),
+  removeTempArchive: (serverId: number, path: string) =>
+    invoke<void>("remove_temp_archive", { serverId, path }),
+  serverExtract: (serverId: number, path: string, destDir: string, transferId: string) =>
+    invoke<ExtractOutcome>("server_extract", { serverId, path, destDir, transferId }),
+  diskUsage: (serverId: number, path: string, limit?: number) =>
+    invoke<DiskUsage>("disk_usage", { serverId, path, limit: limit ?? null }),
+  diskSpace: (serverId: number) => invoke<DiskSpace>("disk_space", { serverId }),
   /** Taille d'un fichier distant (total d'un téléchargement, avant de lire par blocs). */
   sftpFileSize: (serverId: number, path: string) =>
     invoke<number>("sftp_file_size", { serverId, path }),

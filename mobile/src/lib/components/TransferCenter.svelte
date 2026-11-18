@@ -37,6 +37,22 @@
     if (mb >= 1) return `${mb.toFixed(1)} Mo`;
     return `${Math.max(1, Math.round(n / 1024))} Ko`;
   }
+
+  /** Étape d'une opération faite par le serveur (compression, extraction). */
+  function phaseLabel(phase: string | null | undefined, files: number | undefined): string {
+    switch (phase) {
+      case "queued":
+        return t("transfers.phase.queued");
+      case "compressing":
+        return files
+          ? t("transfers.phase.compressingCount").replace("{n}", String(files))
+          : t("transfers.phase.compressing");
+      case "extracting":
+        return t("transfers.phase.extracting");
+      default:
+        return "";
+    }
+  }
 </script>
 
 <button
@@ -80,7 +96,7 @@
           {#each items as it (it.id)}
             <li class="row" class:err={it.status === "error"}>
               <span class="dirico" class:up={it.direction === "up"}>
-                <Icon name={it.direction === "up" ? "up" : "save"} size={16} />
+                <Icon name={it.direction === "up" ? "up" : it.direction === "server" ? "archive" : "save"} size={16} />
               </span>
               <span class="body">
                 <span class="top">
@@ -116,6 +132,9 @@
                       <span class="fill"></span>
                     {/if}
                   </span>
+                  {#if it.direction === "server" && phaseLabel(it.phase, it.files)}
+                    <small class="phase dim">{phaseLabel(it.phase, it.files)}</small>
+                  {/if}
                 {:else if it.error}
                   <small class="msg selectable">{it.error}</small>
                 {/if}
@@ -326,6 +345,11 @@
     margin-top: 2px;
     font-size: 12px;
     color: var(--state-danger);
+  }
+  .phase {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
   }
 
   /* Barre indéterminée : un segment qui balaie, faute de progression mesurable. */

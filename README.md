@@ -56,7 +56,9 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
 ### 📁 SFTP natif intégré (russh) — un vrai gestionnaire de fichiers
 - Explorateur avec colonnes triables, **glisser-déposer** pour l'upload, **sélection multiple**.
 - **Éditeur intégré** (CodeMirror) : coloration JSON/YAML/TOML/Java/Properties/Shell/…, **recherche dans le fichier** (Ctrl+F), formatage/minification JSON.
-- **Téléchargement** d'un fichier, ou d'un dossier / d'une sélection **en `.zip`** (récursif côté client).
+- **Téléchargement** d'un fichier, ou d'un dossier / d'une sélection **en `.zip`** : l'archive est préparée **par le serveur**, rapatriée avec reprise puis retirée du serveur (repli : construite par l'ordinateur).
+- **Compression et extraction faites par le serveur** : sauvegarder un monde en `.zip` sur place, extraire une archive (`.zip`, `.tar.*`, `.7z`, `.rar`, `.mcworld`…) sans rien faire transiter par l'appareil.
+- **Espace disque** : ce qui occupe le plus de place, dossier par dossier (tailles calculées par le serveur), face à la limite du serveur et de la MyBox.
 - **Gestionnaire de transferts** façon navigateur : progression, upload/download suivis en parallèle.
 - **Ouverture d'archives** en lecture seule (`.zip`/`.tar`/`.tar.gz`/`.gz`) : parcourir, lire une entrée, en extraire une.
 - **Aperçu d'images** (`.png`/`.jpg`/`.gif`/`.webp`/`.svg`…), **suppression multiple**.
@@ -82,7 +84,7 @@ Client desktop **léger, rapide et cross-platform** pour piloter ses serveurs de
   - **Multi-fournisseur** : Anthropic (Claude) et tout service compatible OpenAI (GPT, Gemini, Mistral, Groq, DeepSeek, OpenRouter, Ollama / LM Studio locaux…).
   - **Agents CLI** : Claude Code, OpenCode, Gemini CLI (utilisent l'abonnement déjà configuré sur la machine, **sans clé API**), avec détection automatique de leur présence.
   - Outils de réparation : **docteur démarrage** (crash-loop), **maps corrompues** (`.mca`), **analyse de performance** (Spark).
-- **Serveur MCP intégré** (**43 outils**) : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Console, fichiers/SFTP, **transfert binaire local ↔ serveur** (`upload_file`/`download_file` : déployer jars & configs sans passer par le panel), **édition find/replace sûre** (`edit_file` — n'expose jamais les secrets au modèle), `file_stat` (sha256), métriques, mods, sauvegardes, diagnostic. Gating **par jeu** + **deny-by-default** sur les écritures. Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
+- **Serveur MCP intégré** (**45 outils**) : expose la gestion via le **Model Context Protocol** → utilisable par n'importe quel client MCP (Claude Desktop, Claude Code, Cline…). Console, fichiers/SFTP, **transfert binaire local ↔ serveur** (`upload_file`/`download_file` : déployer jars & configs sans passer par le panel), **édition find/replace sûre** (`edit_file` — n'expose jamais les secrets au modèle), `file_stat` (sha256), métriques, mods, sauvegardes, diagnostic. Gating **par jeu** + **deny-by-default** sur les écritures. Intégration du **MCP officiel MineStrator**. Voir [`MCP.md`](./MCP.md).
 
 ### ⚙️ Confort & sécurité
 - **Adaptation par jeu** : détection du jeu (Minecraft Java/Bedrock, Satisfactory, Factorio, Valheim, Rust…) → vues, autocomplétion et coloration de la console, prompts/outils du Copilote ajustés. **Réglages par jeu** (ex. compte factorio.com, stocké au trousseau) et **mode debug** (données d'egg / capacités détectées).

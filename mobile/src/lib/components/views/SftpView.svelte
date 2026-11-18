@@ -1,7 +1,16 @@
 <script lang="ts">
   import { api, humanizeError } from "../../ipc";
-  import { activeCount, uploadTo, downloadFrom, transferItems } from "../../stores/transfers.svelte";
+  import {
+    activeCount,
+    uploadTo,
+    downloadFrom,
+    downloadFolderZip,
+    serverTask,
+    transferItems,
+  } from "../../stores/transfers.svelte";
+  import { isServerExtractable, defaultArchiveName } from "../../serverFiles";
   import TransferCenter from "../TransferCenter.svelte";
+  import DiskSheet from "../DiskSheet.svelte";
   import SftpPasswordCard from "../SftpPasswordCard.svelte";
   import SftpHostKeyCard from "../SftpHostKeyCard.svelte";
   import { t } from "../../i18n";
@@ -32,6 +41,60 @@
   async function downloadEntry(entry: SftpEntry) {
     actionFor = null;
     await downloadFrom(serverId, entry.path, entry.name, t("files.download"));
+  }
+
+  /**
+   * Dossier : le serveur en fait une archive temporaire, le téléphone la télécharge, puis elle est
+   * retirée du serveur. Un échec reste lisible dans le centre de transferts.
+   */
+  async function downloadFolder(entry: SftpEntry) {
+    actionFor = null;
+    const ok = await downloadFolderZip(serverId, [entry.path], `${entry.name}.zip`, t("files.download"));
+    if (!ok) {
+      const last = transferItems().find((x) => x.status === "error");
+      if (last?.error && last.endedAt && Date.now() - last.endedAt < 5000) error = last.error;
+    }
+  }
+
+  /** Compression sur le serveur (archive conservée dans le dossier courant). */
+  async function compressOnServer(target: SftpEntry, name: string) {
+    const out = await serverTask(name.toLowerCase().endsWith(".zip") ? name : `${name}.zip`, (id) =>
+      api.serverCompress(serverId, [target.path], name, id),
+    );
+    if (!out) {
+      error = transferItems()[0]?.error ?? null;
+      return;
+    }
+    flash(out.still_running ? t("files.compressRunning") : t("files.compressed"));
+    await load();
+  }
+
+  /** Extraction par le serveur (repli : par le téléphone pour une petite archive). */
+  async function extractOnServer(target: SftpEntry, dest: string) {
+    const out = await serverTask(target.name, (id) => api.serverExtract(serverId, target.path, dest || "/", id));
+    if (!out) {
+      error = transferItems()[0]?.error ?? null;
+      return;
+    }
+    flash(
+      out.skipped > 0
+        ? t("files.extractedPartial").replace("{dest}", out.destination).replace("{n}", String(out.skipped))
+        : t("files.extracted").replace("{dest}", out.destination),
+    );
+    await load();
+  }
+
+  function flash(text: string) {
+    notice = text;
+    setTimeout(() => (notice = null), 3000);
+  }
+
+  /** Feuille « Espace disque », et menu « plus » de la barre (espace disque, mot de passe SFTP). */
+  let diskOpen = $state(false);
+  let moreOpen = $state(false);
+  function openFromDisk(path: string) {
+    diskOpen = false;
+    cd(path);
   }
 
   let loaded = $state(false);
@@ -135,8 +198,12 @@
 
   // Feuille d'actions pour une entrée.
   let actionFor = $state<SftpEntry | null>(null);
-  // Modale de saisie / confirmation.
-  let modal = $state<{ kind: "mkdir" | "rename" | "delete"; value: string; target?: SftpEntry } | null>(null);
+  // Modale de saisie / confirmation (nom de dossier, nouveau nom, nom d'archive, destination).
+  let modal = $state<{
+    kind: "mkdir" | "rename" | "delete" | "compress" | "extract";
+    value: string;
+    target?: SftpEntry;
+  } | null>(null);
 
   function parent(p: string): string {
     if (p === "/" || p === "") return "/";
@@ -249,6 +316,15 @@
     if (!modal) return;
     const m = modal;
     modal = null;
+    // Opérations sur le serveur : suivies dans le centre de transferts.
+    if (m.kind === "compress" && m.target && m.value.trim()) {
+      await compressOnServer(m.target, m.value.trim());
+      return;
+    }
+    if (m.kind === "extract" && m.target) {
+      await extractOnServer(m.target, m.value.trim());
+      return;
+    }
     try {
       if (m.kind === "mkdir" && m.value.trim()) {
         await api.sftpMkdir(serverId, join(cwd, m.value.trim()));
@@ -297,13 +373,14 @@
     <button class="ic" onclick={load} aria-label={t("servers.refresh")}>
       <Icon name="refresh" size={18} />
     </button>
+    <!-- Menu « plus » : la barre n'a pas la place d'un bouton de plus sur un téléphone. -->
     <button
       class="ic"
-      class:on={pwCard !== null}
-      onclick={() => (pwCard = pwCard ? null : "change")}
-      aria-label={t("files.password.button")}
+      class:on={pwCard !== null || moreOpen}
+      onclick={() => (moreOpen = true)}
+      aria-label={t("files.more")}
     >
-      <Icon name="key" size={18} />
+      <Icon name="more" size={18} />
     </button>
   </div>
 
@@ -444,9 +521,36 @@
   <div class="sheet" use:portal>
     <div class="sheet-title selectable">{actionFor.name}</div>
     {#if !actionFor.is_dir}
-      <!-- Dossiers exclus : le téléchargement récursif (zip) est une capacité desktop. -->
       <button onclick={() => downloadEntry(actionFor!)} disabled={busy}>
         <Icon name="save" size={18} /> {t("files.download")}
+      </button>
+    {:else}
+      <!-- Dossier : le serveur le compresse, le téléphone ne télécharge que l'archive. -->
+      <button onclick={() => downloadFolder(actionFor!)} disabled={busy}>
+        <Icon name="save" size={18} /> {t("files.downloadZip")}
+      </button>
+    {/if}
+    {#if !actionFor.is_dir && isServerExtractable(actionFor.name)}
+      <button
+        onclick={() => {
+          modal = { kind: "extract", value: cwd, target: actionFor! };
+          actionFor = null;
+        }}
+      >
+        <Icon name="package" size={18} /> {t("files.extractHere")}
+      </button>
+    {:else}
+      <button
+        onclick={() => {
+          modal = {
+            kind: "compress",
+            value: defaultArchiveName(actionFor!.name, actionFor!.is_dir),
+            target: actionFor!,
+          };
+          actionFor = null;
+        }}
+      >
+        <Icon name="archive" size={18} /> {t("files.compress")}
       </button>
     {/if}
     <button
@@ -479,6 +583,27 @@
         <button onclick={() => (modal = null)}>{t("files.cancel")}</button>
         <button class="primary danger" onclick={confirmModal}>{t("files.delete")}</button>
       </div>
+    {:else if modal.kind === "compress" || modal.kind === "extract"}
+      <p class="dlg-title">
+        {modal.kind === "compress"
+          ? t("files.compress")
+          : t("files.extractTitle").replace("{name}", modal.target?.name ?? "")}
+      </p>
+      <p class="dlg-body dim">{modal.kind === "compress" ? t("files.compressHint") : t("files.extractHint")}</p>
+      <input
+        class="selectable"
+        autocapitalize="off"
+        autocomplete="off"
+        spellcheck="false"
+        placeholder={modal.kind === "compress" ? t("files.archiveName") : t("files.extractDest")}
+        bind:value={modal.value}
+      />
+      <div class="dlg-actions">
+        <button onclick={() => (modal = null)}>{t("files.cancel")}</button>
+        <button class="primary" onclick={confirmModal} disabled={modal.kind === "compress" && !modal.value.trim()}>
+          {modal.kind === "compress" ? t("files.compressGo") : t("files.extract")}
+        </button>
+      </div>
     {:else}
       <p class="dlg-title">{modal.kind === "mkdir" ? t("files.newFolder") : t("files.rename")}</p>
       <input
@@ -497,6 +622,41 @@
       </div>
     {/if}
   </div>
+{/if}
+
+<!-- Menu « plus » de la barre de chemin -->
+{#if moreOpen}
+  <div
+    class="scrim"
+    use:portal
+    role="button"
+    tabindex="-1"
+    onclick={() => (moreOpen = false)}
+    onkeydown={(e) => e.key === "Escape" && (moreOpen = false)}
+  ></div>
+  <div class="sheet" use:portal>
+    <button
+      onclick={() => {
+        moreOpen = false;
+        diskOpen = true;
+      }}
+    >
+      <Icon name="disk" size={18} /> {t("disk.title")}
+    </button>
+    <button
+      onclick={() => {
+        moreOpen = false;
+        pwCard = pwCard ? null : "change";
+      }}
+    >
+      <Icon name="key" size={18} /> {t("files.password.button")}
+    </button>
+  </div>
+{/if}
+
+<!-- Espace disque : ce qui occupe le plus de place, calculé par le serveur. -->
+{#if diskOpen}
+  <DiskSheet {serverId} startPath={cwd} onOpen={openFromDisk} onClose={() => (diskOpen = false)} />
 {/if}
 
 <!-- Éditeur de fichier -->
@@ -769,6 +929,13 @@
     margin: 0;
     font-size: 15px;
     font-weight: 600;
+  }
+  .dlg-body {
+    margin: 0;
+    font-size: 13px;
+  }
+  .dlg-actions button:disabled {
+    opacity: 0.5;
   }
   .dialog input {
     background: var(--bg);

@@ -4,6 +4,7 @@
 use minestrator_core::{
     PanelSchedule, PanelScheduleInput,
     PanelTaskInput,
+    DiskSpace, DiskUsage, ExtractOutcome,
     Account, ActivityPage, ArchiveEntry, Backup, ChatReply, CliStatus, CopilotConfig, Core, Egg, Error, FicsitInstallItem,
     FicsitInstalledMod, FicsitModPage, FicsitVersion, GameSettings, InstalledItem, LiveLight,
     LivePlayers, MyBoxDetails, ServerLive, ServerProperties,
@@ -340,7 +341,8 @@ pub fn sftp_download(
     });
 }
 
-/// Télécharge une sélection (fichiers/dossiers) en UN `.zip` local, en tâche de fond.
+/// Télécharge une sélection (fichiers/dossiers) en UN `.zip` local, en tâche de fond : archive
+/// construite par le serveur puis rapatriée par SFTP (repli : construite par l'appareil).
 #[tauri::command]
 pub fn sftp_download_zip(
     core: State<'_, Arc<Core>>,
@@ -353,6 +355,62 @@ pub fn sftp_download_zip(
     tauri::async_runtime::spawn(async move {
         core.run_sftp_download_zip(server_id, paths, &local_zip, &transfer_id).await;
     });
+}
+
+/// Demande l'arrêt d'un transfert ou du suivi d'une opération sur le serveur. Sans effet s'il est
+/// déjà fini.
+#[tauri::command]
+pub fn cancel_transfer(core: State<'_, Arc<Core>>, transfer_id: String) {
+    core.cancel_transfer(&transfer_id);
+}
+
+// --- Fichiers côté serveur (compression, extraction, espace disque) ------------------------
+
+/// Compresse une sélection SUR LE SERVEUR (archive `.zip` conservée dans son dossier), en tâche de
+/// fond : progression et fin via `sftp://progress` (`direction = server`, corrélé par
+/// `transfer_id`). `name` absent : nom par défaut du panel.
+#[tauri::command]
+pub fn server_compress(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    paths: Vec<String>,
+    name: Option<String>,
+    transfer_id: String,
+) {
+    let core = core.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = core.server_compress(server_id, paths, name, &transfer_id).await;
+    });
+}
+
+/// Extrait une archive du serveur dans `dest_dir`, par le serveur (repli : par l'appareil). Suivie
+/// dans les transferts ; rend la main une fois l'extraction finie.
+#[tauri::command]
+pub async fn server_extract(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    dest_dir: String,
+    transfer_id: String,
+) -> Result<ExtractOutcome, Error> {
+    core.run_extract_archive(server_id, &path, &dest_dir, &transfer_id).await
+}
+
+/// Ce qui occupe le plus de place dans un dossier (tailles récursives calculées par le serveur).
+#[tauri::command]
+pub async fn disk_usage(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    limit: Option<u32>,
+) -> Result<DiskUsage, Error> {
+    core.disk_usage(server_id, &path, limit.unwrap_or(0)).await
+}
+
+/// Occupation du disque face à la limite du serveur et à celle de sa MyBox.
+#[tauri::command]
+pub async fn disk_space(core: State<'_, Arc<Core>>, server_id: i64) -> Result<DiskSpace, Error> {
+    core.disk_space(server_id).await
 }
 
 #[tauri::command]

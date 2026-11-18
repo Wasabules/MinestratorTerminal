@@ -3,6 +3,7 @@
 //! (Les arguments camelCase du frontend sont mappés en snake_case par Tauri.)
 
 use minestrator_core::{
+    CompressOutcome, DiskSpace, DiskUsage, ExtractOutcome,
     PanelSchedule, PanelScheduleInput,
     Account, ActivityPage, ArchiveEntry, Backup, ConsoleStats, Core, Egg, Error, InstalledItem,
     LiveLight, LivePlayers, MarketPage, MarketVersion, MetricSample, ServerDetails, ServerProperties,
@@ -394,6 +395,75 @@ pub async fn sftp_archive_read_text(
     entry: String,
 ) -> Result<String, Error> {
     core.sftp_archive_read_text(server_id, &path, &entry).await
+}
+
+// --- Fichiers côté serveur (compression, extraction, espace disque) ------------------------
+// Le SFTP reste le transport ; l'API fait sur le serveur ce qu'un téléphone ne peut pas faire
+// raisonnablement (compresser un monde de plusieurs Go, extraire une grosse archive).
+
+/// Compresse une sélection SUR LE SERVEUR (archive conservée). Rend la main à la fin ;
+/// progression par `sftp://progress` (`direction = server`, corrélé par `transfer_id`).
+#[tauri::command]
+pub async fn server_compress(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    paths: Vec<String>,
+    name: Option<String>,
+    transfer_id: String,
+) -> Result<CompressOutcome, Error> {
+    core.server_compress(server_id, paths, name, &transfer_id).await
+}
+
+/// Compresse une sélection sur le serveur dans une archive TEMPORAIRE, à télécharger puis à
+/// retirer avec `remove_temp_archive` (téléchargement d'un dossier).
+#[tauri::command]
+pub async fn server_compress_temp(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    paths: Vec<String>,
+    transfer_id: String,
+) -> Result<CompressOutcome, Error> {
+    core.server_compress_temp(server_id, paths, &transfer_id).await
+}
+
+/// Supprime une archive temporaire de l'app (refuse tout autre fichier).
+#[tauri::command]
+pub async fn remove_temp_archive(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+) -> Result<(), Error> {
+    core.remove_temp_archive(server_id, &path).await
+}
+
+/// Extrait une archive du serveur dans `dest_dir`, par le serveur (repli : par le téléphone, en
+/// SFTP, pour les petites archives `.zip`/`.tar`).
+#[tauri::command]
+pub async fn server_extract(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    dest_dir: String,
+    transfer_id: String,
+) -> Result<ExtractOutcome, Error> {
+    core.run_extract_archive(server_id, &path, &dest_dir, &transfer_id).await
+}
+
+/// Ce qui occupe le plus de place dans un dossier (tailles calculées par le serveur).
+#[tauri::command]
+pub async fn disk_usage(
+    core: State<'_, Arc<Core>>,
+    server_id: i64,
+    path: String,
+    limit: Option<u32>,
+) -> Result<DiskUsage, Error> {
+    core.disk_usage(server_id, &path, limit.unwrap_or(0)).await
+}
+
+/// Occupation du disque face à la limite du serveur et à celle de sa MyBox.
+#[tauri::command]
+pub async fn disk_space(core: State<'_, Arc<Core>>, server_id: i64) -> Result<DiskSpace, Error> {
+    core.disk_space(server_id).await
 }
 
 /// Demande l'arrêt d'un transfert en cours (envoi natif). Sans effet s'il est déjà fini.
