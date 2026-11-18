@@ -106,13 +106,15 @@
     }
   }
 
-  // Regroupe les onglets ADJACENTS du même serveur derrière une tête de groupe (visuel seul ;
-  // l'ordre à plat est conservé, donc drag/fermeture/détachement inchangés). Un onglet serveur
-  // seul forme un groupe d'un onglet : la tête porte le nom, l'onglet la vue. Chaque entrée garde
-  // son index à plat (pour `drop-before`).
+  // Regroupe les onglets ADJACENTS en blocs soudés (visuel seul ; l'ordre à plat est conservé,
+  // donc drag/fermeture/détachement inchangés) :
+  // - les onglets d'un même serveur forment un bloc teinté de son biome, derrière une tête
+  //   (bloc du biome + nom) ; un onglet serveur seul forme un bloc d'un onglet ;
+  // - les onglets de l'app qui se suivent (Accueil, MyBox, Réglages…) forment un bloc neutre.
+  // Chaque entrée garde son index à plat (pour `drop-before`).
   type Entry = { tab: Tab; index: number };
   type Unit =
-    | { type: 'solo'; entry: Entry }
+    | { type: 'neutral'; entries: Entry[] }
     | { type: 'group'; serverId: number; serverName: string; entries: { tab: ServerTab; index: number }[] };
   const units = $derived.by(() => {
     const out: Unit[] = [];
@@ -126,7 +128,8 @@
         }
         return;
       }
-      out.push({ type: 'solo', entry: { tab, index } });
+      if (last?.type === 'neutral') last.entries.push({ tab, index });
+      else out.push({ type: 'neutral', entries: [{ tab, index }] });
     });
     return out;
   });
@@ -166,8 +169,8 @@
 {#snippet tabEl(tab: Tab, index: number)}
   <div
     class="tab"
-    class:neutral={tab.kind !== 'server'}
     class:active={tab.id === tabs.activeId}
+    class:on-banner={tab.kind === 'server' && tab.view === 'overview'}
     class:drop-before={drag?.moved && dropIndex === index}
     class:dragging={drag?.moved && drag?.id === tab.id}
   >
@@ -204,7 +207,7 @@
 {/snippet}
 
 <div class="tabbar" role="tablist" bind:this={bar}>
-  {#each units as unit (unit.type === 'group' ? `g${unit.entries[0].tab.id}` : unit.entry.tab.id)}
+  {#each units as unit (`${unit.type === 'group' ? 'g' : 'n'}${unit.entries[0].tab.id}`)}
     {#if unit.type === 'group'}
       {@const b = serverBiome(unit.serverId)}
       {@const grt = serverRuntime(unit.serverId)}
@@ -239,7 +242,11 @@
         {/each}
       </div>
     {:else}
-      {@render tabEl(unit.entry.tab, unit.entry.index)}
+      <div class="tgroup neutral">
+        {#each unit.entries as e (e.tab.id)}
+          {@render tabEl(e.tab, e.index)}
+        {/each}
+      </div>
     {/if}
   {/each}
   {#if drag?.moved && dropIndex === tabs.tabs.length}
@@ -289,7 +296,7 @@
   .tabbar {
     display: flex;
     align-items: flex-end;
-    gap: 4px;
+    gap: 8px;
     flex: 1;
     min-width: 0;
     overflow-x: auto;
@@ -299,24 +306,56 @@
     display: none;
   }
 
-  /* --- Onglet en intercalaire : bord haut à l'accent du biome, actif = couleur de la page --- */
+  /* --- Blocs soudés : un bloc par serveur, teinté de son biome avec un liseré en haut ; ses
+     onglets y sont accolés. Les onglets de l'app forment un bloc neutre. --- */
+  .tgroup {
+    display: flex;
+    align-items: stretch;
+    height: 38px;
+    flex: 0 0 auto;
+    border-radius: var(--radius-tab) var(--radius-tab) 0 0;
+    background: color-mix(in srgb, var(--accent) 15%, var(--chrome));
+    box-shadow: inset 0 2px 0 var(--accent);
+  }
+  .tgroup.neutral {
+    background: var(--inset);
+    box-shadow: inset 0 2px 0 var(--tab-neutral);
+  }
+
+  /* --- Onglet dans son bloc : transparent ; l'actif découpe le bloc et se fond dans la page --- */
   .tab {
-    --stripe: var(--accent);
     display: flex;
     align-items: center;
-    height: 36px;
-    border-radius: var(--radius-tab) var(--radius-tab) 0 0;
     max-width: 220px;
     flex: 0 0 auto;
     position: relative;
-    background: var(--inset);
-    box-shadow: inset 0 3px 0 var(--stripe);
-  }
-  .tab.neutral {
-    --stripe: var(--tab-neutral);
   }
   .tab.active {
     background: var(--bg);
+    margin-top: 2px;
+    border-radius: calc(var(--radius-tab) - 2px) calc(var(--radius-tab) - 2px) 0 0;
+  }
+  /* Aperçu : la page commence par le paysage du biome (sombre dans les deux thèmes) ; l'onglet
+     actif prend la couleur de son ciel pour s'y fondre. */
+  .tab.active.on-banner {
+    background: var(--b-soft);
+  }
+  .tab.active.on-banner .tab-main,
+  .tab.active.on-banner .tab-close {
+    color: #f1f5f3;
+  }
+  /* Filet entre deux onglets inactifs voisins. */
+  .tab:not(.active) + .tab:not(.active)::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 11px;
+    bottom: 11px;
+    width: 1px;
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  .tgroup.neutral .tab:not(.active) + .tab:not(.active)::after {
+    background: var(--border-strong);
   }
   .tab.drop-before::before {
     content: '';
@@ -390,19 +429,11 @@
     color: var(--text);
   }
 
-  /* --- Groupe d'onglets d'un même serveur : tête (bloc du biome + nom), puis ses onglets --- */
-  .tgroup {
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    flex: 0 0 auto;
-    margin-left: 6px;
-  }
+  /* --- Tête de bloc : bloc du biome + nom du serveur, puis le chevron du menu --- */
   .ghead {
     display: flex;
     align-items: center;
-    align-self: center;
-    margin: 0 2px 4px 0;
+    padding: 2px 4px 0 6px;
   }
   .gname {
     display: flex;
