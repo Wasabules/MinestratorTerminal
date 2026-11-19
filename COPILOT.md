@@ -256,6 +256,10 @@ Dans tous les cas, l'exécution passe par la couche d'outils (mêmes garde-fous 
   clair, jamais transmises ailleurs qu'au fournisseur choisi. Seul Anthropic exige une clé.
 - **Désactivé par défaut** : rien ne part vers un LLM tant que tu ne l'as pas activé et configuré.
 - **Par serveur** : exclus n'importe quel serveur du diagnostic.
+- **Jamais le disque de l'ordinateur** (`LOCAL_DISK_TOOLS` : `download_file`, `upload_file`, et
+  tout outil qui prend un `local_path`) : ni en diagnostic, ni en chat, ni pour les agents CLI, ni
+  par « Appliquer ». Une injection dans le chat des joueurs pourrait sinon écrire un fichier
+  n'importe où sur le PC (dossier de démarrage → exécution de code) ou y lire un fichier.
 - **Liste blanche d'outils** imposée au serveur MCP par variable d'env (honorée quel que soit
   l'agent), + politique deny-by-default sur le MCP officiel (lecture + liste blanche, portée du
   serveur, §4), + permissions fines `disabled_tools`.

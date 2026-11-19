@@ -54,7 +54,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
 > `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **44 outils de lecture**
-> + **33 modifiants** (dont 17 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage). Un test vérifie que chaque
+> + **33 modifiants** (dont 17 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Un test vérifie que chaque
 > outil listé est classé lecture **ou** écriture, et que chaque outil classé a son schéma.
 
 #### Découverte & état
