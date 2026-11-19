@@ -737,6 +737,24 @@ async fn resolve_plan(core: &Core, plan: Plan) -> std::result::Result<Plan, Stri
     })
 }
 
+/// Sous-étape modifiante d'un outil composite, passée par `mcp::dispatch` pour que la garde des
+/// agents la capture (une étape annulable par sous-action). Rend la mention de la garde, s'il y en
+/// a une. Future en boîte `dyn … + Send` : casse le cycle de types dispatch → outil → dispatch.
+pub(crate) fn guarded_write<'a>(
+    core: &'a Core,
+    tool: &'a str,
+    args: Value,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::result::Result<Option<String>, String>> + Send + 'a>>
+{
+    Box::pin(async move {
+        let out = crate::mcp::dispatch(core, tool, args).await?;
+        Ok(out
+            .lines()
+            .find(|l| l.starts_with("(Garde des agents"))
+            .map(str::to_string))
+    })
+}
+
 /// Avant un outil modifiant (`mcp::dispatch`) : copie de quoi l'annuler. `None` : pas d'étape
 /// (annulation elle-même, outil composite). Ne bloque jamais l'outil.
 pub(crate) async fn before_write(core: &Core, name: &str, args: &Value) -> Option<PendingStep> {
