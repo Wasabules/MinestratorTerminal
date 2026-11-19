@@ -378,6 +378,24 @@ mod tests {
         assert!(check(&Targets::Invalid("server_id".into()), None, |_| true).is_err());
     }
 
+    /// `apply_to_servers` : `server_ids` est une clé standard, le mode constructeur voit donc
+    /// chaque serveur visé ; `sync_dir` et `upload_world` visent leur `server_id`.
+    #[test]
+    fn local_push_and_fleet_tools_target_every_server() {
+        let args = json!({ "server_ids": [9, 3, 9], "tool": "write_file", "arguments": { "path": "/a", "content": "x" } });
+        assert_eq!(write_targets("apply_to_servers", &args), Targets::Servers(vec![3, 9]));
+        let e = check(&write_targets("apply_to_servers", &args), None, |id| id == 3).unwrap_err();
+        assert!(e.contains('9'), "{e}");
+        assert_eq!(write_targets("apply_to_servers", &json!({ "tool": "write_file" })), Targets::Unknown);
+        assert_eq!(
+            write_targets("apply_to_servers", &json!({ "server_ids": [1, "x"], "tool": "write_file" })),
+            Targets::Invalid("server_ids".into())
+        );
+        for t in ["sync_dir", "upload_world"] {
+            assert_eq!(write_targets(t, &json!({ "server_id": 5, "local_dir": "C:/x" })), Targets::Servers(vec![5]), "{t}");
+        }
+    }
+
     #[test]
     fn created_server_is_read_from_the_tool_output() {
         assert_eq!(

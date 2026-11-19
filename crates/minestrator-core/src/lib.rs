@@ -85,6 +85,11 @@ mod db_connect;
 mod pregen;
 // Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`.
 mod network;
+// Depuis l'ordinateur et sur plusieurs serveurs : outils MCP `sync_dir` (dossier local
+// synchronisé), `upload_world` (monde envoyé) et `apply_to_servers` (même outil, N serveurs).
+mod fleet_apply;
+mod local_sync;
+mod world_upload;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_guard::{

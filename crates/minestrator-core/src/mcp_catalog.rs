@@ -288,6 +288,10 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
         "guard",
         "Annuler les modifications d'un agent",
     ),
+    // Depuis l'ordinateur (files) et sur plusieurs serveurs (fleet).
+    ("sync_dir", "files", "Synchroniser un dossier local"),
+    ("upload_world", "files", "Installer un monde depuis l'ordinateur"),
+    ("apply_to_servers", "fleet", "Même outil sur plusieurs serveurs"),
 ];
 
 /// Outils modifiants **non destructifs** (`destructiveHint: false`) : ils ajoutent sans rien
@@ -327,6 +331,8 @@ pub(crate) const IDEMPOTENT_TOOLS: &[&str] = &[
     "apply_manifest",
     // Fixe des valeurs finales ; le secret du proxy est réutilisé d'un appel à l'autre.
     "link_proxy",
+    // Relancée sur un dossier déjà synchronisé, rien n'est envoyé ni supprimé.
+    "sync_dir",
 ];
 
 /// Outils qui sortent du compte MineStrator (`openWorldHint: true`) : marketplaces, ficsit.app,
@@ -346,6 +352,8 @@ pub(crate) const OPEN_WORLD_TOOLS: &[&str] = &[
     "apply_manifest",
     // Chunky installé depuis Modrinth (`install_chunky`).
     "pregenerate_world",
+    // Peut relayer install_mod / update_mods (marketplaces).
+    "apply_to_servers",
 ];
 
 /// Outils locaux dont la confirmation (`confirm_name`) est demandée à l'humain quand le client

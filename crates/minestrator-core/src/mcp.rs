@@ -264,6 +264,11 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "connect_database",
     // Liaison d'un proxy à ses serveurs de jeu (voir INFRA_TOOLS) : jamais au Copilote.
     "link_proxy",
+    // Depuis l'ordinateur et sur plusieurs serveurs (local_sync.rs, world_upload.rs,
+    // fleet_apply.rs) : disque local (LOCAL_DISK_TOOLS) ; monde et multi-serveurs (INFRA_TOOLS).
+    "sync_dir",
+    "upload_world",
+    "apply_to_servers",
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -311,6 +316,10 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // Réseau proxy : écrit sur le proxy et sur plusieurs serveurs de jeu (secret de transfert,
     // online-mode) ; réservé à l'app et au MCP local.
     "link_proxy",
+    // Monde envoyé depuis l'ordinateur : arrêt du serveur, monde remplacé (l'ancien renommé).
+    // Même outil sur plusieurs serveurs : agit au-delà du serveur du Copilote.
+    "upload_world",
+    "apply_to_servers",
 ];
 
 /// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
@@ -324,6 +333,11 @@ pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
     "download_file",
     // Lit le jar local à envoyer.
     "deploy_and_verify",
+    // Dossier local synchronisé, monde local envoyé ; apply_to_servers peut relayer upload_file,
+    // sync_dir ou deploy_and_verify.
+    "sync_dir",
+    "upload_world",
+    "apply_to_servers",
 ];
 
 /// Outil interdit au Copilote (diagnostic, chat, agents CLI, « Appliquer ») : infrastructure,
@@ -370,6 +384,8 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     // Réseaux proxy Velocity / BungeeCord.
     "network_topology",
     "link_proxy",
+    // Monde Minecraft envoyé depuis l'ordinateur.
+    "upload_world",
 ];
 
 /// Outils propres à **Satisfactory** (mods via ficsit.app).
@@ -1550,6 +1566,11 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         // Réseau proxy : sorties anonymisées et secrets effacés dans le module ; futures sur le tas.
         "network_topology" => Box::pin(crate::network::network_topology_tool(core, &args)).await,
         "link_proxy" => Box::pin(crate::network::link_proxy_tool(core, &args)).await,
+        // Depuis l'ordinateur et sur plusieurs serveurs : sous-écritures par la garde
+        // (`guarded_write`, `mcp::dispatch`), sorties anonymisées dans les modules.
+        "sync_dir" => Box::pin(crate::local_sync::sync_dir_tool(core, &args)).await,
+        "upload_world" => Box::pin(crate::world_upload::upload_world_tool(core, &args)).await,
+        "apply_to_servers" => Box::pin(crate::fleet_apply::apply_to_servers_tool(core, &args)).await,
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1740,6 +1761,10 @@ fn build_tool_list() -> Value {
         // --- Monter un serveur de A à Z ---
         tool("pregenerate_world", "PRÉGÉNÈRE un monde Minecraft avec CHUNKY (plugin Paper/Spigot/Folia, mod Fabric/Forge/NeoForge) pour éviter le lag de génération quand les joueurs explorent. `action` : start | status | pause | continue | cancel. start : `radius` en BLOCS depuis le centre (requis), `world` (défaut : level-name ; alias overworld, nether, end ; identifiant de dimension sur un serveur moddé), `center` (\"spawn\" par défaut, ou \"x,z\"), `shape` (square par défaut, circle, diamond…). Chunky absent : erreur, sauf `install_chunky=true` (installé depuis Modrinth, version compatible avec la plateforme et la version du jeu, étape annulable ; redémarrage ensuite). Avant start : ESTIMATION DU DISQUE (ordre de grandeur, 6 à 20 Kio par chunk) comparée à l'espace libre du serveur et de la MyBox : avertissement, refus seulement si même l'estimation basse dépasse. Tâche déjà existante : `replace_existing=true` pour repartir de zéro (sinon action=continue). `wait_secs` (max 600) : suit la progression (pourcentage, chunks, vitesse, ETA) jusqu'à la fin ou l'échéance ; sans, rend la main tout de suite. status : progression de chaque tâche. pause/continue/cancel : `world` pour une seule tâche, sinon toutes. Serveur hors ligne : refus explicite, rien n'est envoyé. Les chunks générés restent (pas d'annulation). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start | status | pause | continue | cancel")), ("radius", prop_int("start : rayon en blocs depuis le centre (ex. 5000 = carré de 10 000 × 10 000)")), ("world", prop_str("Monde : dossier (Paper…) ou dimension (minecraft:the_nether) ; alias overworld, nether, end (défaut : level-name)")), ("center", prop_str("start : \"spawn\" (défaut) ou \"x,z\" en blocs")), ("shape", prop_str("start : square (défaut), circle, diamond, triangle, pentagon, hexagon, star")), ("install_chunky", prop_bool("Installer Chunky s'il manque (défaut false)")), ("replace_existing", prop_bool("start : remplacer une tâche Chunky existante (sa progression est perdue ; défaut false)")), ("wait_secs", prop_int("Suivre la progression au plus N secondes (défaut 0, max 600)"))], &["server_id", "action"])),
         tool("connect_database", "BRANCHE UNE BASE DE DONNÉES de la MyBox à un plugin SANS EXPOSER LE MOT DE PASSE : lit les accès de la base (hôte, port, nom, utilisateur, mot de passe) dans l'API et les écrit dans la config du plugin (édition vérifiée de set_config, étape annulable avec rollback_changeset) ; le mot de passe n'apparaît ni dans la sortie ni dans le diff. Cible : `target` = préréglage luckperms | coreprotect | litebans | plan (fichier par défaut du plugin, `path` pour un autre emplacement ; le plugin doit avoir généré sa config) OU `path` + `keys` { host | port | address (hôte:port) | database | username | password : clé de config } (+ `set` : réglages non secrets, ex. type de stockage). `database_id` : base de la MyBox (défaut : la seule ; sinon la liste est donnée) ; `mybox_id` déduit du serveur. `dry_run` (défaut TRUE) : diff sans rien écrire. Mot de passe illisible par l'API : `rotate_password=true` le réinitialise (confirmation demandée à l'utilisateur ; les autres connexions à cette base sont cassées) puis l'écrit directement. Ne crée pas de base : outil officiel create_database (passerelle) ou panel. Redémarrage du serveur ensuite. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur dont la config est modifiée")), ("mybox_id", prop_int("MyBox de la base (défaut : celle du serveur)")), ("database_id", prop_int("ID de la base (défaut : la seule de la MyBox)")), ("target", prop_str("Préréglage : luckperms, coreprotect, litebans ou plan")), ("path", prop_str("Fichier de config (YAML, TOML, JSON, .properties) ; requis avec `keys`")), ("keys", json!({ "type": "object", "description": "Rôle → clé de config : host, port, address (hôte:port), database, username, password (clé reconnue comme secrète)", "additionalProperties": { "type": "string" } })), ("set", json!({ "type": "object", "description": "Réglages non secrets écrits en plus (avec `keys`), ex. { \"storage.type\": \"mysql\" }", "additionalProperties": true })), ("rotate_password", prop_bool("Réinitialiser le mot de passe s'il n'est pas lisible (défaut false)")), ("dry_run", prop_bool("Montrer le diff sans rien écrire (défaut TRUE)"))], &["server_id"])),
+        // --- Depuis l'ordinateur et sur plusieurs serveurs ---
+        tool("sync_dir", "SYNCHRONISE UN DOSSIER DE L'ORDINATEUR vers un dossier d'un serveur (configs et plugins tenus dans un dépôt git…) : `local_dir` (chemin LOCAL absolu) → `remote_dir` (ex. /plugins/MonPlugin, ou / pour la racine du serveur). Comparaison par taille puis sha256 (le fichier distant n'est lu qu'à taille égale, plafonné : au-delà il est renvoyé, « empreinte non vérifiée »). Rapport JSON : ajoutés, modifiés (et pourquoi), inchangés, supprimés, ignorés (et pourquoi) — jamais le contenu des fichiers. `dry_run` VRAI par défaut : plan seul, rien n'est envoyé ; montre-le puis relance avec dry_run=false. `delete_extra` (défaut false) : retire les fichiers distants absents en local, seulement sous remote_dir et dans la portée des motifs (refusé à la racine /) ; un fichier présent localement n'est jamais supprimé, même ignoré. `include` / `exclude` : motifs glob (`*`, `?`, `**`, `/` final = dossier ; sans `/` = nom à toute profondeur, ex. `*.log` ; avec `/` = depuis la racine du dossier, ex. `plugins/*.jar`) ; `.git/` toujours exclu ; liens symboliques jamais suivis. Plafonds : 5 000 fichiers, 128 Mio par fichier, 1 Gio envoyé, 500 suppressions, empreintes distantes lues 32 Mio par fichier et 256 Mio au total. Envois puis suppressions, arrêt au premier échec ; chacun est une étape annulable (list_changesets, rollback_changeset). Lit le disque de la machine LOCALE : réservé au serveur MCP local. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("local_dir", prop_str("Dossier LOCAL (chemin absolu) à synchroniser")), ("remote_dir", prop_str("Dossier du serveur qui le reçoit (ex. /plugins/MonPlugin ; / = racine)")), ("delete_extra", prop_bool("Retirer les fichiers distants absents en local, sous remote_dir et dans la portée des motifs (défaut false ; refusé à la racine)")), ("include", prop_str_array("Motifs glob des fichiers retenus (défaut : tous)")), ("exclude", prop_str_array("Motifs glob écartés (en plus de .git/), des deux côtés : jamais envoyés ni supprimés")), ("dry_run", prop_bool("Plan seul, rien n'est envoyé (défaut TRUE)"))], &["server_id", "local_dir", "remote_dir"])),
+        tool("upload_world", "INSTALLE UN MONDE MINECRAFT DEPUIS L'ORDINATEUR : `local_path` = dossier du monde ou archive .zip (.mcworld pour Bedrock), qui doit contenir level.dat (un dossier racine en trop est retiré ; plusieurs mondes ou chemins dangereux refusés). Compressé sur la machine, envoyé, extrait par le serveur dans le dossier `world_name` (défaut : level-name de server.properties ; Bedrock : /worlds/<nom>), level.dat vérifié, archive temporaire supprimée. Serveur démarré : REFUSÉ, sauf `stop=true` (arrêt après confirmation de l'utilisateur). Monde existant : REFUSÉ sauf `replace=true` : l'ancien (et ses dossiers <nom>_nether / <nom>_the_end sur Java) est RENOMMÉ en <nom>.old-<date>, jamais supprimé. Snapshot préalable attendue par défaut (`snapshot=false` pour s'en passer). `set_level_name=true` : level-name réglé sur ce monde ; `start_after=true` : serveur démarré à la fin. `dry_run` VRAI par défaut : vérifications et plan (problems, warnings, steps), rien n'est fait. Plafonds : archive de 512 Mio, 50 000 fichiers, 8 Gio décompressés ; place libre du serveur vérifiée. Chaque étape (renommage, envoi, extraction, réglage) est annulable (list_changesets, rollback_changeset). Lit le disque de la machine LOCALE : réservé au serveur MCP local. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur Minecraft")), ("local_path", prop_str("Dossier du monde, ou archive .zip / .mcworld, sur la machine LOCALE (chemin absolu)")), ("world_name", prop_str("Dossier du monde sur le serveur (défaut : level-name actuel)")), ("replace", prop_bool("Remplacer un monde existant : l'ancien est renommé <nom>.old-<date>, jamais supprimé (défaut false)")), ("stop", prop_bool("Arrêter le serveur s'il tourne, après confirmation de l'utilisateur (défaut false : refus)")), ("set_level_name", prop_bool("Régler level-name sur ce monde (défaut false)")), ("start_after", prop_bool("Démarrer le serveur à la fin (défaut false)")), ("snapshot", prop_bool("Snapshot attendue avant toute modification (défaut true)")), ("dry_run", prop_bool("Vérifications et plan seulement (défaut TRUE)"))], &["server_id", "local_path"])),
+        tool("apply_to_servers", "EXÉCUTE LE MÊME OUTIL SUR PLUSIEURS SERVEURS (réseau, flotte) : `tool` parmi install_mod, update_mods, set_config, set_property, write_file, edit_file, upload_file, delete_path, rename_path, create_dir, sync_dir, deploy_and_verify, send_command ; `arguments` = ses arguments SANS server_id (injecté pour chacun des `server_ids`, 20 au plus, dans l'ordre). Mêmes contrôles qu'un appel direct (groupes actifs, liste blanche, lecture seule, mode constructeur) ; serveur introuvable ou d'un autre jeu : ignoré. `stop_on_error` (défaut true) : arrêt au premier échec, la suite « non exécutée ». `dry_run` : transmis à set_config et sync_dir ; pour les autres outils, dry_run=true n'exécute rien (« simulé »). Rapport par serveur : ok (sortie de l'outil, tronquée), erreur, ignoré (raison), simulé, non exécuté. Chaque modification est une étape annulable de la garde (list_changesets, rollback_changeset). ✎ (modifiant)", obj(&[("server_ids", json!({ "type": "array", "items": { "type": "integer" }, "description": "IDs des serveurs, dans l'ordre d'application (20 au plus)" })), ("tool", prop_str("Outil à appliquer (voir la liste ci-dessus)")), ("arguments", json!({ "type": "object", "description": "Arguments de l'outil, SANS server_id (ni autre identifiant de serveur)", "additionalProperties": true })), ("stop_on_error", prop_bool("S'arrêter au premier échec (défaut true)")), ("dry_run", prop_bool("Simulation : transmis à set_config et sync_dir ; true n'exécute pas les autres outils"))], &["server_ids", "tool"])),
     ])
 }
 
@@ -2495,5 +2520,46 @@ mod tests {
         let annotations = crate::mcp_catalog::annotations(w).unwrap();
         assert_eq!(annotations["idempotentHint"], true);
         assert_eq!(annotations["destructiveHint"], true, "réécrit des configurations");
+    }
+
+    /// Depuis l'ordinateur et sur plusieurs serveurs : modifiants, disque local (jamais au
+    /// Copilote), monde et multi-serveurs dans INFRA_TOOLS, sans étape propre (sous-écritures).
+    #[test]
+    fn local_push_and_fleet_tools_are_classified() {
+        for t in ["sync_dir", "upload_world", "apply_to_servers"] {
+            assert!(is_write_tool(t) && WRITE_TOOLS.contains(&t), "{t} doit être modifiant");
+            assert!(LOCAL_DISK_TOOLS.contains(&t) && copilot_forbidden(t), "{t} : disque local, jamais au Copilote");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&t), "{t} : hors catalogue du Copilote");
+            assert!(cache_ttl(t).is_none(), "{t} : jamais caché");
+            assert_eq!(crate::agent_guard::plan_kind(t), "prévu", "{t} : règle d'annulation");
+        }
+        for t in ["upload_world", "apply_to_servers"] {
+            assert!(INFRA_TOOLS.contains(&t), "{t} : infrastructure ou plusieurs serveurs");
+        }
+        assert!(!INFRA_TOOLS.contains(&"sync_dir"), "un seul serveur");
+        assert!(tool_for_game("upload_world", "minecraft") && !tool_for_game("upload_world", "satisfactory"));
+        for t in ["sync_dir", "apply_to_servers"] {
+            assert!(tool_for_game(t, "satisfactory") && tool_for_game(t, "minecraft"), "{t} universel");
+        }
+        assert_eq!(crate::mcp_catalog::group_of("sync_dir"), Some("files"));
+        assert_eq!(crate::mcp_catalog::group_of("upload_world"), Some("files"));
+        assert_eq!(crate::mcp_catalog::group_of("apply_to_servers"), Some("fleet"));
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        assert_eq!(schema("sync_dir")["required"], json!(["server_id", "local_dir", "remote_dir"]));
+        assert_eq!(schema("sync_dir")["properties"]["exclude"]["type"], "array");
+        assert_eq!(schema("upload_world")["required"], json!(["server_id", "local_path"]));
+        for t in ["sync_dir", "upload_world"] {
+            assert_eq!(schema(t)["properties"]["dry_run"]["type"], "boolean", "{t}");
+        }
+        assert_eq!(schema("apply_to_servers")["required"], json!(["server_ids", "tool"]));
+        assert_eq!(schema("apply_to_servers")["properties"]["server_ids"]["items"]["type"], "integer");
+        assert_eq!(schema("apply_to_servers")["properties"]["arguments"]["type"], "object");
+        // Annotations : synchroniser deux fois ne change rien ; un monde remplacé, si.
+        assert_eq!(crate::mcp_catalog::annotations("sync_dir").unwrap()["idempotentHint"], true);
+        for t in ["sync_dir", "upload_world", "apply_to_servers"] {
+            assert_eq!(crate::mcp_catalog::annotations(t).unwrap()["destructiveHint"], true, "{t}");
+        }
+        assert_eq!(crate::mcp_catalog::annotations("apply_to_servers").unwrap()["openWorldHint"], true);
     }
 }
