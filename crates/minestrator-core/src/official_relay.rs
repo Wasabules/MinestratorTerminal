@@ -777,6 +777,49 @@ pub(crate) async fn extend_tool_list(core: &Core, tools: &mut Value) {
     );
 }
 
+/// Un outil officiel **modifiant** est-il appelable maintenant par le client de ce serveur MCP ?
+/// Passerelle active, groupe `official` actif, écritures permises, outil relayé (ni masqué ni
+/// absent). `Err` : pourquoi pas, avec la marche à suivre. Sert aux étapes `manual` du manifeste
+/// (`manifest/official.rs`).
+pub(crate) async fn gateway_availability(core: &Core, name: &str) -> Result<(), String> {
+    match relay_mode(core) {
+        RelayMode::Gateway => {}
+        RelayMode::Copilot(_) => {
+            return Err("serveur MCP du Copilote : cet outil officiel ne lui est pas relayé, le changement revient à l'utilisateur".into())
+        }
+        RelayMode::Off => {
+            return Err(format!(
+                "passerelle vers le MCP officiel désactivée : l'activer dans Réglages → MCP (« Passerelle vers le MCP officiel », ou variable {MCP_OFFICIAL_ENV}=1) puis reconnecter le client MCP, ou faire le changement dans le panel"
+            ))
+        }
+    }
+    if !crate::mcp_catalog::tool_in_toolsets(
+        crate::mcp_catalog::active_toolsets(core).as_ref(),
+        crate::mcp_catalog::OFFICIAL_GROUP,
+    ) {
+        return Err(format!(
+            "groupe d'outils `{}` inactif (--toolsets, MINESTRATOR_MCP_TOOLSETS ou réglage) : l'ajouter",
+            crate::mcp_catalog::OFFICIAL_GROUP
+        ));
+    }
+    if !crate::mcp::env_allows(name) {
+        return Err("outil hors de la liste blanche de ce serveur MCP".into());
+    }
+    if !core.get_mcp_config().allow_writes {
+        return Err("actions modifiantes désactivées (mode lecture seule, Réglages → MCP)".into());
+    }
+    let Some((_, view)) = current_view(core).await else {
+        return Err("MCP officiel injoignable pour l'instant : réessayer, ou passer par le panel".into());
+    };
+    if view.tools.iter().any(|t| t.name == name) {
+        return Ok(());
+    }
+    Err(match view.masked_official.get(name) {
+        Some(why) => format!("masqué par la passerelle ({why})"),
+        None => "absent du catalogue du MCP officiel".into(),
+    })
+}
+
 fn tool_text(text: String) -> Value {
     json!({ "content": [{ "type": "text", "text": text }] })
 }

@@ -241,6 +241,16 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Manifeste : une snapshot est prise avant toute modification (sauf snapshot=false).
         "apply_manifest" => Plan::Fixed("manifeste appliqué : restaurer la snapshot prise juste avant (nom dans la sortie de l'outil)"),
         "clone_server" => Plan::Fixed("serveur créé : à supprimer avec mybox_delete_server"),
+        // Prégénération (Chunky) : lire la progression n'a pas d'étape ; le reste ne se défait pas.
+        // L'installation éventuelle de Chunky passe par `mcp::dispatch` (install_mod) : étape à
+        // part, annulable.
+        "pregenerate_world" => match text("action").map(|a| a.trim().to_ascii_lowercase()).as_deref() {
+            Some("status" | "progress") => Plan::Skip,
+            _ => Plan::Fixed("prégénération Chunky : les chunks générés restent sur le disque"),
+        },
+        // Base de données branchée : la config est écrite par `mcp::dispatch` (set_config), une
+        // étape capturée ; un mot de passe réinitialisé, lui, ne revient pas en arrière.
+        "connect_database" => Plan::Skip,
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }
@@ -1036,6 +1046,17 @@ mod tests {
         );
         assert_eq!(Plan::Rename { server: 1, from: "/a".into(), to: "/b".into() }.target(), "/a → /b");
         assert_eq!(Plan::Files { server: 1, paths: vec!["/a".into(), "/b".into()] }.target(), "/a (+1)");
+    }
+
+    #[test]
+    fn building_a_server_has_its_own_plans() {
+        // Prégénération : la progression n'a pas d'étape, le lancement n'est pas annulable.
+        assert_eq!(plan_for("pregenerate_world", &json!({ "server_id": 3, "action": "STATUS" })), Plan::Skip);
+        let start = plan_for("pregenerate_world", &json!({ "server_id": 3, "action": "start", "radius": 1000 }));
+        assert!(matches!(start, Plan::Fixed(r) if r.contains("chunks générés restent")));
+        assert!(matches!(plan_for("pregenerate_world", &json!({})), Plan::Fixed(r) if r != NO_CAPTURE));
+        // Base de données : sans étape propre, l'écriture de la config (set_config) en a une.
+        assert_eq!(plan_for("connect_database", &json!({ "server_id": 3, "target": "luckperms" })), Plan::Skip);
     }
 
     #[test]

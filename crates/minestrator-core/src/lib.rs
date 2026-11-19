@@ -79,6 +79,10 @@ mod agent_loop;
 mod config_edit;
 mod manifest;
 mod agent_guard;
+// Monter un serveur de A à Z : prégénération du monde (Chunky), base de données branchée à un
+// plugin sans exposer son mot de passe.
+mod db_connect;
+mod pregen;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_guard::{
