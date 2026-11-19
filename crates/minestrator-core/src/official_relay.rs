@@ -760,11 +760,20 @@ pub(crate) async fn extend_tool_list(core: &Core, tools: &mut Value) {
         return;
     };
     arr.retain(|t| tool_name(t).is_none_or(|n| !view.masked_local.contains(n)));
+    // Client capable d'élicitation : la confirmation d'un destructif est demandée à l'humain,
+    // `confirm_name` devient facultatif (voir `relay_call`).
+    let human = crate::mcp_ctx::elicitation_supported();
     arr.extend(
         view.tools
             .into_iter()
             .filter(|r| crate::mcp::env_allows(&r.name))
-            .map(|r| r.def),
+            .map(|r| {
+                let mut def = r.def;
+                if human && r.confirm.is_some() {
+                    crate::mcp_catalog::relax_confirmation(&mut def);
+                }
+                def
+            }),
     );
 }
 
@@ -819,12 +828,27 @@ pub(crate) async fn relay_call(
         ));
     };
     if let Some(target) = tool.confirm {
-        if let Err(e) = verify_confirmation(core, &token, target, &args).await {
-            return Some(tool_err(&e));
+        // Client capable d'élicitation : l'HUMAIN retape le nom exact (refus → rien n'est relayé) ;
+        // sinon `confirm_name` fourni par le modèle, vérifié comme avant.
+        let human = match human_confirmation(core, &token, name, target, &args).await {
+            Ok(h) => h,
+            Err(e) => return Some(tool_err(&e)),
+        };
+        if human.is_none() {
+            if let Err(e) = verify_confirmation(core, &token, target, &args).await {
+                return Some(tool_err(&e));
+            }
         }
-        if !tool.official_confirm {
-            if let Some(map) = args.as_object_mut() {
-                map.remove("confirm_name");
+        if let Some(map) = args.as_object_mut() {
+            match human {
+                // L'officiel attend lui-même la confirmation : le nom confirmé par l'humain.
+                Some(expected) if tool.official_confirm => {
+                    map.insert("confirm_name".into(), json!(expected));
+                }
+                _ if !tool.official_confirm => {
+                    map.remove("confirm_name");
+                }
+                _ => {}
             }
         }
     }
@@ -855,6 +879,40 @@ fn webhosting_domain(text: &str) -> Option<String> {
         .filter(|d| !d.trim().is_empty())
 }
 
+/// Confirmation par l'humain (élicitation MCP) quand son client sait la demander : `Ok(Some(nom))`
+/// s'il a retapé le nom exact, `Err` s'il refuse (ou si le nom est invérifiable), `Ok(None)` si le
+/// client ne gère pas l'élicitation (garde `confirm_name` habituelle).
+async fn human_confirmation(
+    core: &Core,
+    token: &str,
+    name: &str,
+    target: Target,
+    args: &Value,
+) -> Result<Option<String>, String> {
+    if !crate::mcp_ctx::elicitation_supported() {
+        return Ok(None);
+    }
+    let expected = expected_name(core, token, target, args).await?.ok_or_else(|| {
+        format!("Refusé : ressource introuvable, nom {} impossible à vérifier.", target.label())
+    })?;
+    let ids: Vec<String> = ["server_id", "snapshot_id", "mybox_id", "webhosting_id"]
+        .iter()
+        .filter_map(|k| arg_i64(args, k).map(|v| format!("{k} = {v}")))
+        .collect();
+    let message = format!(
+        "Action DESTRUCTIVE du MCP officiel MineStrator : « {name} » ({}), sur la ressource {}.",
+        ids.join(", "),
+        target.label()
+    );
+    match crate::mcp_ctx::confirm(&message, Some(&expected)).await {
+        crate::mcp_ctx::Confirmation::Accepted => Ok(Some(expected)),
+        crate::mcp_ctx::Confirmation::Declined => {
+            Err("Refusé par l'utilisateur (confirmation non donnée) : rien n'a été relayé.".into())
+        }
+        crate::mcp_ctx::Confirmation::Unsupported => Ok(None),
+    }
+}
+
 /// Vérifie `confirm_name` contre le nom réel de la ressource, lu à la source. Toute impossibilité
 /// de vérifier est un refus. Le nom attendu n'est jamais révélé dans l'erreur : il doit venir de
 /// l'utilisateur.
@@ -874,6 +932,26 @@ async fn verify_confirmation(
             target.label()
         ));
     }
+    match expected_name(core, token, target, args).await? {
+        Some(name) if confirmation_matches(&name, given) => Ok(()),
+        Some(_) => Err(format!(
+            "Refusé : `confirm_name` ne correspond pas au nom exact {} (casse comprise).",
+            target.label()
+        )),
+        None => Err(format!(
+            "Refusé : ressource introuvable, nom {} impossible à vérifier.",
+            target.label()
+        )),
+    }
+}
+
+/// Nom réel de la ressource visée, lu à la source (`None` : introuvable).
+async fn expected_name(
+    core: &Core,
+    token: &str,
+    target: Target,
+    args: &Value,
+) -> Result<Option<String>, String> {
     let id_of =
         |key: &str| arg_i64(args, key).ok_or_else(|| format!("paramètre `{key}` (entier) requis"));
     let expected: Option<String> = match target {
@@ -906,17 +984,7 @@ async fn verify_confirmation(
             webhosting_domain(&text)
         }
     };
-    match expected {
-        Some(name) if confirmation_matches(&name, given) => Ok(()),
-        Some(_) => Err(format!(
-            "Refusé : `confirm_name` ne correspond pas au nom exact {} (casse comprise).",
-            target.label()
-        )),
-        None => Err(format!(
-            "Refusé : ressource introuvable, nom {} impossible à vérifier.",
-            target.label()
-        )),
-    }
+    Ok(expected.filter(|n| !n.trim().is_empty()))
 }
 
 #[cfg(test)]

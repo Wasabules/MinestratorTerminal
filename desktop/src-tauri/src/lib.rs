@@ -394,6 +394,6 @@ pub fn run_mcp() {
     runtime.block_on(async {
         let core = Core::new();
         tracing::info!("mode MCP (stdio) prêt");
-        minestrator_core::mcp::serve_stdio(&core).await;
+        minestrator_core::mcp::serve_stdio(std::sync::Arc::new(core)).await;
     });
 }

@@ -856,6 +856,8 @@ fn now_local() -> chrono::NaiveDateTime {
 
 impl crate::Core {
     fn emit_progress(&self, p: crate::SftpProgress) {
+        // Appel d'outil MCP en cours (compress_files, copie par archive…) : progression au client.
+        crate::mcp_ctx::sftp_progress(&p);
         let _ = self.events.send(crate::CoreEvent::SftpProgress(p));
     }
 

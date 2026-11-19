@@ -27,6 +27,10 @@ pub struct McpConfig {
     #[serde(default)]
     pub official_gateway: bool,
     // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
+    /// Groupes d'outils exposés (`core`, `files`, `console`…, voir `mcp_catalog.rs`) ; vide = tous.
+    /// L'argument `--toolsets=…` puis la variable `MINESTRATOR_MCP_TOOLSETS` priment.
+    #[serde(default)]
+    pub toolsets: Vec<String>,
     // [lot:protocole] fin
     // [lot:garde] début (agent_guard.rs)
     // [lot:garde] fin
@@ -39,6 +43,7 @@ impl Default for McpConfig {
             allow_writes: true,
             official_gateway: false,
             // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
+            toolsets: Vec::new(),
             // [lot:protocole] fin
             // [lot:garde] début (agent_guard.rs)
             // [lot:garde] fin
@@ -46,45 +51,36 @@ impl Default for McpConfig {
     }
 }
 
-/// Sert le protocole MCP sur **stdio** : lit stdin ligne à ligne, délègue à [`handle_message`],
-/// écrit les réponses sur stdout. **stdout = protocole ; les logs vont sur stderr.** Partagé par
-/// le binaire `minestrator-mcp` et le mode `--mcp` de l'app.
-pub async fn serve_stdio(core: &Core) {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-
-    let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    let mut stdout = tokio::io::stdout();
-    while let Ok(Some(line)) = lines.next_line().await {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let msg = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        if let Some(response) = handle_message(core, msg).await {
-            if let Ok(mut s) = serde_json::to_string(&response) {
-                s.push('\n');
-                let _ = stdout.write_all(s.as_bytes()).await;
-                let _ = stdout.flush().await;
-            }
-        }
-    }
+/// Sert le protocole MCP sur **stdio** (transport concurrent de `mcp_transport.rs` : une tâche
+/// par requête, annulation, progression, élicitation) ; chaque requête est traitée par
+/// [`handle_message`]. **stdout = protocole ; les logs vont sur stderr.** Partagé par le binaire
+/// `minestrator-mcp` et le mode `--mcp` de l'app, qui lisent tous deux l'argument `--toolsets`.
+pub async fn serve_stdio(core: std::sync::Arc<Core>) {
+    crate::mcp_transport::serve_stdio(core).await;
 }
 
-/// Traite un message JSON-RPC MCP. Renvoie la réponse, ou `None` pour une notification.
+/// Traite un message JSON-RPC MCP. Renvoie la réponse, ou `None` pour une notification. Le
+/// transport pose autour le contexte d'appel (`mcp_ctx`) : version, client, élicitation.
 pub async fn handle_message(core: &Core, msg: Value) -> Option<Value> {
     let method = msg.get("method")?.as_str()?;
     let id = msg.get("id").cloned();
     let params = msg.get("params").cloned().unwrap_or(Value::Null);
 
     match method {
-        "initialize" => reply(id, initialize()),
+        "initialize" => reply(id, crate::mcp_catalog::initialize_result(&params)),
+        "server/discover" => reply(id, crate::mcp_catalog::discover_result()),
         "tools/list" => {
             let tools = if mcp_enabled(core) {
                 let mut tools = filter_tools_by_env(tool_list());
+                // Groupes d'outils actifs, annotations, confirmation par l'humain.
+                crate::mcp_catalog::present_tools(core, &mut tools);
                 // Passerelle / relais du Copilote vers le MCP officiel (official_relay.rs).
-                crate::official_relay::extend_tool_list(core, &mut tools).await;
+                if crate::mcp_catalog::tool_in_toolsets(
+                    crate::mcp_catalog::active_toolsets(core).as_ref(),
+                    crate::mcp_catalog::OFFICIAL_GROUP,
+                ) {
+                    crate::official_relay::extend_tool_list(core, &mut tools).await;
+                }
                 tools
             } else {
                 json!([])
@@ -92,6 +88,22 @@ pub async fn handle_message(core: &Core, msg: Value) -> Option<Value> {
             reply(id, json!({ "tools": tools }))
         }
         "tools/call" => reply(id, call(core, params).await),
+        "prompts/list" => reply(id, crate::mcp_prompts::list(mcp_enabled(core))),
+        "prompts/get" => respond(id, crate::mcp_prompts::get(mcp_enabled(core), &params)),
+        "resources/list" => reply(id, crate::mcp_resources::list(core, mcp_enabled(core))),
+        "resources/templates/list" => reply(id, crate::mcp_resources::templates(core, mcp_enabled(core))),
+        "resources/read" => {
+            let uri = params.get("uri").and_then(Value::as_str).unwrap_or_default();
+            let out = match crate::mcp_resources::resolve(uri) {
+                // Même chemin qu'un appel d'outil : mêmes gardes, même anonymisation.
+                Some(target) => {
+                    let output = call(core, json!({ "name": target.tool, "arguments": target.args })).await;
+                    crate::mcp_resources::render(&target, &output)
+                }
+                None => Err((crate::mcp_resources::not_found_code(), format!("ressource inconnue : {uri}"))),
+            };
+            respond(id, out)
+        }
         "ping" => reply(id, json!({})),
         _ if method.starts_with("notifications/") => None,
         _ => id.map(|id| {
@@ -104,12 +116,14 @@ fn reply(id: Option<Value>, result: Value) -> Option<Value> {
     id.map(|id| json!({ "jsonrpc": "2.0", "id": id, "result": result }))
 }
 
-fn initialize() -> Value {
-    json!({
-        "protocolVersion": "2024-11-05",
-        "capabilities": { "tools": {} },
-        "serverInfo": { "name": "minestrator-mcp", "version": env!("CARGO_PKG_VERSION") }
-    })
+/// Résultat, ou erreur JSON-RPC `(code, message)`.
+fn respond(id: Option<Value>, out: Result<Value, (i64, String)>) -> Option<Value> {
+    match out {
+        Ok(result) => reply(id, result),
+        Err((code, message)) => {
+            id.map(|id| json!({ "jsonrpc": "2.0", "id": id, "error": { "code": code, "message": message } }))
+        }
+    }
 }
 
 // --- Catalogue d'outils (source unique noms + genre) ----------------------
@@ -483,6 +497,12 @@ async fn call(core: &Core, params: Value) -> Value {
         .to_string();
     let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
 
+    // Groupes d'outils (`--toolsets`, `MINESTRATOR_MCP_TOOLSETS`, réglage) : un outil d'un groupe
+    // inactif n'est pas appelable, relayé ou local (voir mcp_catalog.rs).
+    if !crate::mcp_catalog::tool_in_toolsets(crate::mcp_catalog::active_toolsets(core).as_ref(), &name) {
+        return tool_err(&crate::mcp_catalog::inactive_message(&name));
+    }
+
     // Un outil atteignable par le PROTOCOLE MCP doit appartenir à la surface exposée (READ ∪ WRITE).
     // Les outils destructifs internes (restore_snapshot/restore_backup/delete_snapshot/repair_region),
     // routés uniquement via « Appliquer » (copilot_apply → dispatch, hors de ce handler), ne sont donc
@@ -825,8 +845,26 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
 
         "mybox_delete_server" => {
             let (mybox, server) = (req_i64(&args, "mybox_id")?, req_i64(&args, "server_id")?);
-            let confirm = req_str(&args, "confirm_name")?;
             let snapshot_first = args.get("snapshot_first").and_then(Value::as_bool).unwrap_or(true);
+            // Client capable d'élicitation : c'est l'HUMAIN qui retape le nom exact, lu à la source
+            // (refus → rien n'est fait). Sinon, garde historique : `confirm_name` fourni par le modèle.
+            let confirm = crate::mcp_ctx::confirm_or_given(
+                &format!(
+                    "Suppression DÉFINITIVE du serveur {server} de la MyBox {mybox} : fichiers, mondes et sauvegardes automatiques perdus{}.",
+                    if snapshot_first { " (une snapshot est créée d'abord)" } else { ", SANS snapshot préalable" }
+                ),
+                || async {
+                    let cap = core.mybox_capacity(mybox).await.map_err(mybox_es)?;
+                    cap.servers
+                        .iter()
+                        .find(|s| s.id == server)
+                        .map(|s| s.name.clone())
+                        .filter(|n| !n.trim().is_empty())
+                        .ok_or_else(|| format!("le serveur {server} n'appartient pas à la MyBox {mybox}"))
+                },
+                args.get("confirm_name").and_then(Value::as_str).map(str::to_string),
+            )
+            .await?;
             let snapshot = core
                 .mybox_delete_server_guarded(mybox, server, &confirm, snapshot_first)
                 .await
@@ -2222,6 +2260,26 @@ mod tests {
     }
 
     // [lot:protocole] début (mcp.rs)
+    #[test]
+    fn mcp_config_reads_older_files_without_toolsets() {
+        // Un `mcp.json` d'avant les groupes d'outils : tous les groupes restent exposés.
+        let cfg: McpConfig = serde_json::from_value(json!({ "enabled": true, "allow_writes": true })).unwrap();
+        assert!(cfg.toolsets.is_empty() && McpConfig::default().toolsets.is_empty());
+        let cfg: McpConfig =
+            serde_json::from_value(json!({ "enabled": true, "allow_writes": true, "toolsets": ["files"] })).unwrap();
+        assert_eq!(cfg.toolsets, ["files"]);
+    }
+
+    #[test]
+    fn destructive_deletion_keeps_its_guard_without_elicitation() {
+        // Hors transport MCP (Copilote, tests) ou client sans élicitation : `confirm_name` reste
+        // obligatoire dans le catalogue brut, et seule une action modifiante est confirmable.
+        assert!(crate::mcp_catalog::HUMAN_CONFIRMED_TOOLS.contains(&"mybox_delete_server"));
+        assert!(!crate::mcp_ctx::elicitation_supported());
+        let def = tool_list().as_array().unwrap().iter().find(|t| t["name"] == "mybox_delete_server").unwrap();
+        assert!(def["inputSchema"]["required"].as_array().unwrap().contains(&json!("confirm_name")));
+        assert!(is_write_tool("mybox_delete_server") && INFRA_TOOLS.contains(&"mybox_delete_server"));
+    }
     // [lot:protocole] fin
     // [lot:boucle] début (agent_loop.rs)
 
