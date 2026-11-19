@@ -251,6 +251,115 @@ des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA e
 <!-- [lot:boucle] fin -->
 
 <!-- [lot:manifeste] début -->
+#### Construire et reproduire un serveur
+
+Monter, reproduire ou ajuster un serveur de A à Z sans casser ses fichiers
+(`core/src/config_edit.rs`, `core/src/manifest.rs`). Absents du MCP officiel.
+
+**Configs structurées.** `get_config` et `set_config` adressent une valeur par **chemin de clé**
+au lieu de chercher et remplacer du texte (ce qui casse l'indentation YAML ou les types). Format
+d'après l'extension : YAML (`.yml`, `.yaml`, analyseur YAML 1.2 strict à positions), TOML
+(`toml_edit`), JSON (`.json`, `.json5`, `.jsonc`, `.mcmeta`, commentaires et virgules finales
+tolérés) et `.properties` (règles de `java.util.Properties`, valeurs écrites en ASCII avec
+`\uXXXX`). Chemin de clé : `a.b.c`, index de liste `a.list[0]` (`[n]` égal à la longueur ajoute
+un élément), clé contenant un point entre guillemets ou crochets
+(`forced-hosts."lobby.example.com"`, `a['b.c']`) ou échappée (`a\.b`) ; dans un `.properties`,
+la clé entière (`rcon.password`).
+
+- **Édition ciblée** : seule la plage de la valeur est réécrite (commentaire de fin de ligne,
+  guillemets d'origine gardés) ; une clé absente est insérée après la dernière ligne de sa
+  section, à l'indentation de ses sœurs (pas d'indentation et style des listes détectés). Les
+  types des scalaires YAML suivent SnakeYAML (`yes`/`on` = booléens) : un texte qui serait lu
+  autrement est écrit entre guillemets (`'true'`, `'1.20'`).
+- **Vérification avant écriture** : le résultat est relu par l'analyseur strict et comparé à
+  l'arbre attendu (l'ancien plus les seules modifications demandées). S'il ne s'analyse plus,
+  si la valeur relue diffère ou si une autre clé a bougé, **rien n'est écrit**. Fichier déjà
+  invalide : refusé (à corriger avec `edit_file`) ; `get_config` le lit alors avec l'analyseur
+  tolérant (`yaml_lite`), avec un avertissement. Refusés aussi : clé en double, nœud YAML
+  ancré (`&`) ou alias (`*`), plusieurs documents YAML.
+- **Types** : valeurs JSON typées. Un texte envoyé sur un nombre ou un booléen existant en garde
+  le type (`"10"` → `10`) sauf `keep_type=false` ; un nombre envoyé sur un texte est gardé
+  nombre (`view-distance: default` → `8`), signalé dans `warnings`.
+- **Secrets** : toute valeur sous une clé de type mot de passe, secret, jeton ou clé (`password`,
+  `secret`, `token`, `key`, `api-key`, `webhook`, `credential`, `pass`, `pwd`…, à n'importe quel
+  niveau du chemin) sort masquée en `[SECRET]` : lecture, ancien et nouvel état, diff des
+  deux côtés. Booléens et valeurs vides ne sont pas masqués. Une valeur contenant `[SECRET]`,
+  `[CREDS]`, `[IP]` ou `[EMAIL]` (masques de lecture) est refusée : elle écraserait la vraie
+  valeur. Sorties passées ensuite par l'anonymisation IA (`redact.rs`).
+
+**Manifeste.** Un agent écrit mieux une description complète qu'il n'enchaîne quarante appels :
+`export_manifest` décrit un serveur existant, `plan_manifest` compare un manifeste au serveur
+réel, `apply_manifest` exécute l'écart, `clone_server` crée une copie de test d'un serveur.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `get_config` | | `server_id`, `path`, `key?` | Avec `key` : valeur **typée** (`found`, `type`, `value` ; section trop longue → son arborescence). Clé absente : `deepest_existing` et `available_keys` (clés du niveau le plus proche). Sans `key` : arborescence aplatie (`keys[{key, type, value}]`, 300 valeurs au plus, listes de scalaires d'un bloc), `secrets_masked`. |
+| `set_config` | ✎ | `server_id`, `path`, `changes[{key, value}]`, `create_missing?`, `keep_type?`, `dry_run?` | Modifications vérifiées puis écrites (SFTP) : par clé `modifiée`, `créée` ou `inchangée` avec ancienne et nouvelle valeur (masquées si secrètes) et note de type ; diff unifié masqué ; `written` ; rien n'est écrit si tout est déjà conforme ou en `dry_run`. 100 modifications au plus par appel. `create_missing=false` : une clé absente fait tout refuser. |
+| `export_manifest` | | `server_id`, `include_configs?[chemin \| {path, keys}]`, `include_players?` | `{ manifest, notes }` : manifeste v1 du serveur — jeu (`game`, `egg_id`), `game_version` et `loader` (détectés par l'hébergeur), `java_version` (image d'exécution), `properties` (secrets en `[SECRET]` ; `server-port`, `server-ip`, `query.port`, `rcon.port`, propres à l'allocation du serveur, omis), `startup`, `content` (fichier, version, source et projet quand l'hébergeur les identifie, sinon `source: null`), `players` (alias si l'anonymisation IA est active), `schedules`, `configs` demandées (toutes les valeurs, 300 au plus, ou les clés données). Notes : contenu non identifié, secrets masqués, ce qui n'est pas exporté (mondes, fichiers). |
+| `plan_manifest` | | `server_id`, `manifest` | **Ne modifie rien.** `steps[{id, status, summary, current?, target?, diff?, depends_on?}]` dans l'ordre d'application, `counts` par statut, `to_apply`, `unlisted` (présent sur le serveur, absent du manifeste, gardé), `next`. |
+| `apply_manifest` | ✎ | `server_id`, `manifest`, `steps?`, `snapshot?` | Plan recalculé puis étapes `change`/`add`/`remove` exécutées dans l'ordre. Snapshot préalable **attendue** par défaut (15 min au plus ; sans elle rien n'est modifié). Rapport : `steps[{id, status, outcome, summary, detail?}]` (`réussie`, `conforme`, `ignorée`, `échouée` + raison, `non sélectionnée`, `non exécutée` après annulation), totaux, `manual` (ce qui reste à faire), `next`. Progression par étape, arrêt propre sur annulation. |
+| `clone_server` | ✎ | `source_server_id`, `mybox_id`, `name`, `cpu?`, `ram?`, `include_world?`, `exclude?[]`, `location_id?`, `required_fields?` | Crée un serveur du même jeu (validations de `mybox_create_server` ; CPU/RAM de la source si la MyBox a la place, sinon ce qui reste ; localisation de la source si en stock), attend la fin de l'installation (20 min au plus), l'arrête s'il a démarré, copie les fichiers de la source (`copy_between_servers`, écrasement des fichiers par défaut du serveur neuf ; mondes exclus — `level-name`, ses dimensions et tout dossier racine contenant un `level.dat` — sauf `include_world` ; `logs`, `crash-reports`, `debug` jamais ; `exclude` peut viser un sous-dossier ; ports et adresse du clone rétablis dans `server.properties` après la copie), puis applique le manifeste de la source sans snapshot. Sortie : `created_server_id`, ressources, durée d'installation, lots de copie, rapport du manifeste, `warnings`. En cas d'échec après la création, l'erreur cite `created_server_id=<id>`. |
+
+Classement : `get_config`, `export_manifest`, `plan_manifest` sont des lectures (cache de 10 s,
+purgé par toute écriture) ; avec `set_config`, ils font partie des exclusifs gardés face au MCP
+officiel (`LOCAL_KEEP_TOOLS`). `set_config` est offert au Copilote en mode autonome, borné au
+serveur de la session comme `edit_file`. `apply_manifest` (commande de démarrage, tâches
+planifiées : configuration persistante) et `clone_server` (création de serveur, copie entre
+serveurs) sont dans `INFRA_TOOLS` : jamais donnés au Copilote. Aucun ne lit ni n'écrit sur le
+disque de l'ordinateur : le manifeste passe en argument et revient en sortie.
+
+##### Format du manifeste (v1)
+
+Objet JSON passé tel quel dans `manifest` (un texte JSON est aussi accepté). Toute section est
+facultative ; un champ inconnu est refusé (faute de frappe). `[SECRET]` (ou toute valeur
+contenant un masque d'anonymisation) veut dire **« garder la valeur actuelle »** : l'étape est
+ignorée, le masque jamais écrit.
+
+```json
+{
+  "version": 1,
+  "server": { "name": "Survie", "game": "Minecraft", "game_version": "1.21.4", "loader": "paper", "java_version": 21 },
+  "properties": { "max-players": 50, "white-list": true, "rcon.password": "[SECRET]" },
+  "startup": { "parameters": "java -Xms128M -Xmx6G -jar {{SERVER_JARFILE}} nogui" },
+  "content": {
+    "items": [
+      { "kind": "plugin", "source": "modrinth", "project": "luckperms", "version": "v5.4.145-bukkit" },
+      { "kind": "plugin", "source": "spigot", "project": "34315", "file": "Vault.jar" },
+      { "kind": "datapack", "source": "modrinth", "project": "terralith" }
+    ],
+    "remove_unlisted": false
+  },
+  "configs": [ { "path": "/plugins/LuckPerms/config.yml", "set": { "storage-method": "mysql", "data.address": "db:3306" } } ],
+  "files": [ { "path": "/plugins/Essentials/motd.txt", "content": "Bienvenue sur Survie !" } ],
+  "players": { "whitelist": ["Alice", "Bob"], "ops": ["Alice"], "remove_unlisted": false },
+  "schedules": [
+    { "name": "Redémarrage nocturne", "cron": "0 4 * * *", "tasks": [
+      { "action": "command", "payload": "say Redémarrage dans 60 s" },
+      { "action": "power", "payload": "restart", "time_offset": 60 } ] }
+  ]
+}
+```
+
+| Section | Comparé à | Appliqué par | `manual` / `unsupported` |
+|---|---|---|---|
+| `server` | nom, jeu (`egg_id` ou `game`), version et plateforme détectées (`GET /server/{id}/minecraft_version`), Java (image de démarrage) | `rename_server` (nom seulement) | Autre jeu, version du jeu, plateforme, Java : **manual** (endpoints d'écriture non gérés : `POST /server/{id}/version`, `PATCH …/java/version`, `PATCH …/docker/image` ; un lot ultérieur les ajoutera). Valeur actuelle illisible : manual. |
+| `properties` | `server.properties` (API) | `set_property` ; clé absente du fichier : ajoutée par SFTP (`set_config`) | Valeur liste/objet : unsupported. Autre jeu que Minecraft : unsupported. |
+| `startup` | commande et JAR de démarrage | `set_startup_params` | `jar_file` différent : manual (`PATCH …/startup/file` non géré). Commande vide : unsupported. |
+| `content` | plugins, mods, datapacks installés (rapprochés par source + projet, puis fichier, puis nom) | installation par la marketplace (`install_mod` : Modrinth/Spigot ; CurseForge et datapacks par les mêmes endpoints que les mises à jour), version résolue au plan (identifiant, numéro de version ou fichier ; sans version : la plus récente compatible) ; changement de version = installation puis retrait de l'ancien fichier ; `remove_unlisted: true` retire le reste | Élément absent sans `source`/`project` (non identifié) : manual (à copier). (Dés)activation différente : manual. Plugin CurseForge, mod Spigot : unsupported. Version introuvable : unsupported. Un élément présent sans version imposée est conforme. |
+| `configs` | clés des fichiers (comme `set_config`, diff dans le plan) | `set_config` | Fichier absent : manual (démarrer le serveur une fois pour que le plugin le génère, puis relancer : idempotent). Fichier illisible ou édition refusée : unsupported. |
+| `files` | contenu exact | écriture SFTP (dossiers créés) | Contenu avec un masque, fichier de plus de 512 Kio (2 Mio au total) : unsupported. |
+| `players` | `/whitelist.json`, `/ops.json` | `player_action` (serveur **démarré**) ; `remove_unlisted: true` retire les autres | Alias d'anonymisation (`joueur-xxxxxx`) non reconnu sur ce serveur : manual. |
+| `schedules` | tâches du panel par nom (cron, drapeaux, actions dans l'ordre) | création, mise à jour (en-tête et actions une à une), suppression avec `remove_unlisted: true` | Cron ou action invalide, commande masquée : unsupported (vérifié au plan, avant tout envoi). |
+
+Identifiants d'étape stables : `server.name`, `startup.parameters`, `properties.<clé>`,
+`content.<plugin|mod|datapack>.<projet ou fichier>`, `configs.<chemin>`, `files.<chemin>`,
+`players.<whitelist|ops>.<pseudo>`, `schedules.<nom>`. `apply_manifest` les accepte dans `steps`,
+exactement ou en préfixe (`"properties"`, `"content.plugin"`). Une config ou un fichier sous
+`/plugins/<X>/` ou `/config/<x>` dépend de l'installation de `<X>` dans le même manifeste : si
+elle échoue, l'étape est ignorée (`depends_on`). **Idempotence** : le plan est recalculé à chaque
+application, une étape déjà conforme n'est jamais refaite ; relancer après une coupure reprend là
+où le serveur en est. Après des changements de contenu, de réglages ou de configs, un
+redémarrage les charge (`next`).
 <!-- [lot:manifeste] fin -->
 
 <!-- [lot:garde] début -->
