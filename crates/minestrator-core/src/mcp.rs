@@ -29,6 +29,15 @@ pub struct McpConfig {
     // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
     // [lot:protocole] fin
     // [lot:garde] début (agent_guard.rs)
+    /// Portée des écritures des agents : `all` (tout le compte, défaut) ou `builder` (mode
+    /// constructeur : seulement les serveurs créés pendant la session MCP et `allowed_servers`).
+    /// `MINESTRATOR_MCP_WRITE_SCOPE` prime sur ce réglage (voir `agent_guard.rs`).
+    #[serde(default)]
+    pub write_scope: crate::agent_guard::WriteScope,
+    /// Serveurs modifiables en mode constructeur en plus de ceux créés par la session.
+    /// `MINESTRATOR_MCP_ALLOWED_SERVERS` (identifiants séparés par des virgules) la remplace.
+    #[serde(default)]
+    pub allowed_servers: Vec<i64>,
     // [lot:garde] fin
 }
 
@@ -41,6 +50,8 @@ impl Default for McpConfig {
             // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
             // [lot:protocole] fin
             // [lot:garde] début (agent_guard.rs)
+            write_scope: crate::agent_guard::WriteScope::All,
+            allowed_servers: Vec::new(),
             // [lot:garde] fin
         }
     }
@@ -173,6 +184,9 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
+    // Garde des agents : journal et changesets (lectures locales, bornées au serveur du Copilote).
+    "list_agent_actions",
+    "list_changesets",
     // [lot:garde] fin
 ];
 
@@ -228,6 +242,8 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
+    // Annulation des modifications d'un agent (voir INFRA_TOOLS) : jamais au Copilote.
+    "rollback_changeset",
     // [lot:garde] fin
 ];
 
@@ -265,6 +281,9 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
+    // Annulation d'un changeset : peut défaire les modifications de n'importe quelle session,
+    // sur plusieurs serveurs ; réservée à l'app et au MCP local.
+    "rollback_changeset",
     // [lot:garde] fin
 ];
 
@@ -494,6 +513,13 @@ async fn call(core: &Core, params: Value) -> Value {
     }
 
     // [lot:garde] début (agent_guard.rs)
+    // Mode constructeur : écriture hors des serveurs permis refusée (et journalisée).
+    if let Some(refus) = crate::agent_guard::admit(core, &cfg, &name, &args).await {
+        return tool_err(&refus);
+    }
+    // Journal de l'appel et regroupement des modifications par session : l'appel à `dispatch`
+    // ci-dessous passe par la garde, qui enveloppe `mcp::dispatch` (même signature).
+    let dispatch = crate::agent_guard::protocol_dispatch;
     // [lot:garde] fin
 
     match dispatch(core, &name, args).await {
@@ -566,9 +592,11 @@ fn format_installed(items: &[InstalledItem], query: &str, kind: &str) -> String 
 /// cache après toute opération modifiante (l'état serveur lu a pu changer).
 pub(crate) async fn dispatch(core: &Core, name: &str, args: Value) -> Result<String, String> {
     if is_write_tool(name) {
+        // Garde des agents (agent_guard.rs) : de quoi annuler, capturé avant l'écriture.
+        let step = crate::agent_guard::before_write(core, name, &args).await;
         let out = dispatch_inner(core, name, args).await;
         core.cache().clear();
-        return out;
+        return crate::agent_guard::after_write(core, step, out).await;
     }
     if let Some(ttl) = cache_ttl(name) {
         let key = format!("{name}\u{1}{args}");
@@ -1446,6 +1474,9 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // [lot:manifeste] fin
         // [lot:garde] début (agent_guard.rs)
+        "list_agent_actions" => crate::agent_guard::actions_tool(core, &args),
+        "list_changesets" => crate::agent_guard::changesets_tool(core, &args),
+        "rollback_changeset" => crate::agent_guard::rollback_tool(core, &args).await,
         // [lot:garde] fin
 
         _ => Err(format!("outil inconnu : {name}")),
@@ -1620,6 +1651,10 @@ fn build_tool_list() -> Value {
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // [lot:manifeste] fin
         // [lot:garde] début (agent_guard.rs)
+        // --- Garde des agents ---
+        tool("list_agent_actions", "JOURNAL des actions des agents MCP (clients externes et agents CLI du Copilote) : horodatage, session, client, outil (✎ = modifiant), serveur(s), arguments résumés et ANONYMISÉS (contenus de fichiers remplacés par leur taille, secrets masqués), résultat (ok, erreur, refusé + motif), durée, étape de changeset créée. Du plus récent au plus ancien. Filtres : `server_id`, `session`, `since` (`30m`, `12h`, `7d`, `AAAA-MM-JJ` ou horodatage Unix), `only_writes`, `limit` (défaut 30, max 200).", obj(&[("server_id", prop_int("Seulement les appels visant ce serveur")), ("session", prop_str("Seulement cette session (identifiant affiché par list_agent_actions ou list_changesets)")), ("since", prop_str("Depuis : 30m, 12h, 7d, AAAA-MM-JJ ou horodatage Unix")), ("only_writes", prop_bool("Seulement les outils modifiants")), ("limit", prop_int("Lignes renvoyées (défaut 30, max 200)"))], &[])),
+        tool("list_changesets", "MODIFICATIONS des agents regroupées par session (« changeset » : une session MCP, ou le Copilote par serveur et par jour) : étapes dans l'ordre (outil, cible, serveur), annulable ou NON (et pourquoi : commande console, capture au-delà des plafonds, réglage secret…), déjà annulée ou non. `changeset_id` pour un seul, `server_id` pour filtrer (seulement les étapes de ce serveur), `limit` (défaut 10, max 50). À consulter avant rollback_changeset.", obj(&[("changeset_id", prop_str("Identifiant du changeset")), ("server_id", prop_int("Seulement ce serveur")), ("limit", prop_int("Changesets renvoyés (défaut 10, max 50)"))], &[])),
+        tool("rollback_changeset", "ANNULE les modifications d'un changeset (voir list_changesets), de la plus récente à la plus ancienne : fichiers écrits, édités, téléversés ou supprimés remis dans leur état précédent, renommages défaits, dossiers et fichiers créés retirés (dossier non vide conservé), réglage server.properties et commande de démarrage remis. `steps` = seulement les N dernières étapes encore en place. Une étape dont la cible a CHANGÉ depuis est REFUSÉE et l'annulation s'arrête, sauf `force` (écrase ces changements). Les étapes non annulables (commande console, power, infrastructure…) sont signalées et passées. Demande confirmation à l'utilisateur quand le client le permet. Rapport étape par étape. ✎ (modifiant)", obj(&[("changeset_id", prop_str("Identifiant du changeset (list_changesets)")), ("steps", prop_int("Seulement les N dernières étapes encore en place (défaut : toutes)")), ("force", prop_bool("Annuler même si une cible a changé depuis (écrase ces changements ; défaut false)"))], &["changeset_id"])),
         // [lot:garde] fin
     ])
 }
@@ -2203,5 +2238,51 @@ mod tests {
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
+
+    #[test]
+    fn agent_guard_tools_are_classified_and_kept_from_the_copilot() {
+        // Journal et changesets : lectures (jamais cachées : elles changent à chaque appel).
+        for r in ["list_agent_actions", "list_changesets"] {
+            assert!(!is_write_tool(r) && READ_TOOLS.contains(&r), "{r} doit être en lecture");
+            assert!(cache_ttl(r).is_none(), "{r} jamais caché");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&r), "{r} : rien à garder face à l'officiel pour le Copilote");
+        }
+        // Annulation : modifiante, et jamais au Copilote (elle défait n'importe quelle session).
+        assert!(is_write_tool("rollback_changeset") && WRITE_TOOLS.contains(&"rollback_changeset"));
+        assert!(INFRA_TOOLS.contains(&"rollback_changeset") && copilot_forbidden("rollback_changeset"));
+        for t in ["list_agent_actions", "list_changesets", "rollback_changeset"] {
+            assert!(tool_for_game(t, "minecraft") && tool_for_game(t, "satisfactory"), "{t} universel");
+        }
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        assert_eq!(schema("list_agent_actions")["required"], json!([]));
+        assert_eq!(schema("list_changesets")["required"], json!([]));
+        assert_eq!(schema("rollback_changeset")["required"], json!(["changeset_id"]));
+        assert_eq!(schema("rollback_changeset")["properties"]["force"]["type"], "boolean");
+    }
+
+    #[test]
+    fn mcp_config_reads_older_files_with_the_whole_account_scope() {
+        use crate::agent_guard::WriteScope;
+        let cfg: McpConfig = serde_json::from_value(json!({ "enabled": true, "allow_writes": true })).unwrap();
+        assert_eq!(cfg.write_scope, WriteScope::All);
+        assert!(cfg.allowed_servers.is_empty());
+        assert_eq!(McpConfig::default().write_scope, WriteScope::All);
+        let cfg: McpConfig = serde_json::from_value(
+            json!({ "enabled": true, "allow_writes": true, "write_scope": "builder", "allowed_servers": [4, 9] }),
+        )
+        .unwrap();
+        assert_eq!((cfg.write_scope, cfg.allowed_servers), (WriteScope::Builder, vec![4, 9]));
+    }
+
+    #[test]
+    fn every_write_tool_has_an_undo_plan_or_a_reason() {
+        // Garde des agents : tout outil modifiant exposé est soit capturé, soit explicitement non
+        // annulable (jamais « oublié » : la sortie par défaut le dit aussi).
+        for t in WRITE_TOOLS {
+            let plan = crate::agent_guard::plan_kind(t);
+            assert_ne!(plan, "défaut", "{t} : ajouter une arme dans agent_guard::undo::plan_for");
+        }
+    }
     // [lot:garde] fin
 }

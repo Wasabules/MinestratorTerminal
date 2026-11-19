@@ -305,6 +305,13 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   (`broadcast_command`, REST). Partie pure (validation, plan de copie et collisions, stratégie,
   comparaison, fusion des joueurs, ciblage) testée sans réseau ; les deux outils modifiants sont
   dans `INFRA_TOOLS` (jamais au Copilote).
+- **`agent_guard`** — **garde des agents MCP** : journal anonymisé de chaque appel reçu par le
+  protocole (`protocol_dispatch`, branché dans `mcp::call`), **changesets** (copie avant chaque outil
+  modifiant passé par `mcp::dispatch`, Copilote compris, puis opérations inverses ; annulation par
+  `rollback_changeset`, refusée si la cible a changé depuis) et **mode constructeur**
+  (`McpConfig::write_scope` : écritures limitées aux serveurs créés par la session ou autorisés).
+  Base `agent_guard.db` (WAL) partagée par l'app et les processus MCP, rétention et taille bornées ;
+  capture et annulation derrière le trait `Remote`, testées sur un faux serveur.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app
@@ -542,6 +549,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Configs** | `get/set_supervisor_config`, `get/set_mcp_config`, `get/set_privacy_config`, `get/set_copilot_config` |
 | **Automatisations / disponibilité** | `server_automations`, `set_auto_restart`, `save_scheduled_task`, `delete_scheduled_task`, `automation_runs`, `uptime_report` |
 | **Alertes externes** | `list_webhooks`, `save_webhook` (URL → stockage sécurisé), `delete_webhook`, `test_webhook` |
+| **Garde des agents MCP** | `agent_actions` (journal filtré), `agent_changesets`, `rollback_changeset` (après confirmation dans l'UI) ; portée des écritures dans `McpConfig` |
 | **Divers / paste / MCP** | `paste_upload`, `detect_clis`, `app_exe_path` (compose la config MCP de Claude) |
 
 > **Updater / version** : côté **front** via les plugins Tauri (`updater.ts` : `check` / `downloadAndInstall`

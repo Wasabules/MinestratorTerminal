@@ -254,6 +254,20 @@ des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA e
 <!-- [lot:manifeste] fin -->
 
 <!-- [lot:garde] début -->
+#### Garde des agents
+
+Journal et annulation des actions des agents (`crates/minestrator-core/src/agent_guard.rs`),
+absents du MCP officiel. Données locales partagées par l'app et les processus MCP
+(`agent_guard.db`) ; fonctionnement, plafonds et réglages au §6 (« Garde des agents »).
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `list_agent_actions` | | `server_id?`, `session?`, `since?`, `only_writes?`, `limit?` | **Journal** des appels reçus par le serveur MCP (clients externes, agents CLI du Copilote), du plus récent au plus ancien : horodatage, session, client, outil (✎ si modifiant), serveurs visés, arguments résumés et **anonymisés** (`redact`, contenus de fichiers remplacés par leur taille, secrets masqués), résultat (ok, erreur, refusé + motif), durée, étape de changeset créée. `since` : `30m`, `12h`, `7d`, `AAAA-MM-JJ` ou horodatage Unix ; `limit` 30 par défaut, 200 au plus. |
+| `list_changesets` | | `changeset_id?`, `server_id?`, `limit?` | **Modifications** des agents regroupées par session (changeset) : étapes dans l'ordre (outil, cible, serveur), annulable ou **non** et pourquoi, déjà annulée ou passée. `server_id` ne garde que les étapes de ce serveur ; `limit` 10 par défaut, 50 au plus. |
+| `rollback_changeset` | ✎ | `changeset_id`, `steps?`, `force?` | **Annule** les étapes encore en place (les `steps` dernières, toutes par défaut), de la plus récente à la plus ancienne. Toutes les cibles d'une étape sont vérifiées avant d'y toucher : une cible changée depuis l'action (sha256, ou taille et date) **refuse** l'étape et arrête l'annulation, sauf `force`. Étapes non annulables signalées et passées. Confirmation demandée à l'humain quand le client sait le faire (élicitation MCP) ; sinon l'annulation a lieu. Rapport étape par étape. Dans `INFRA_TOOLS` : jamais au Copilote. |
+
+Données au Copilote : `list_agent_actions` et `list_changesets` ne lui montrent que le serveur de la
+conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
 <!-- [lot:garde] fin -->
 
 ### Couverture par domaine
@@ -381,6 +395,77 @@ MCP. Politique dans `crates/minestrator-core/src/official_relay.rs`.
 <!-- [lot:protocole] début -->
 <!-- [lot:protocole] fin -->
 <!-- [lot:garde] début (réglages) -->
+### Garde des agents : journal, annulation, portée des écritures
+
+Réglages dans Réglages → MCP (persistés dans `mcp.json`) ; code dans
+`crates/minestrator-core/src/agent_guard.rs`.
+
+**Journal des actions.** Chaque appel reçu par le protocole (clients externes et agents CLI du
+Copilote) est consigné dans `<données>/agent_guard.db` (SQLite, WAL, partagé par l'app et les
+processus `minestrator-mcp` / `--mcp`) : horodatage, session, client (`clientInfo.name`), outil,
+serveurs visés, arguments **anonymisés** (`redact.rs` — commandes console comprises —, chaînes
+tronquées, contenus de fichiers remplacés par leur taille, valeurs des clés secrètes et
+`confirm_name` masqués), résultat et durée. Lectures **et** écritures sont journalisées ; les
+lectures, plus courtes, sont gardées 7 jours, les écritures 30 jours, 20 000 lignes au plus. Les
+refus de la politique générale, qui précèdent la garde dans `call()` (outil inconnu, lecture seule,
+liste blanche d'env, portée du Copilote), ne sont pas journalisés ; les appels relayés vers le MCP
+officiel non plus, sauf leurs refus en mode constructeur.
+
+**Annulation (changesets).** Avant chaque outil modifiant passé par `mcp::dispatch` — clients MCP
+**et** Copilote (diagnostic autonome, chat, « Appliquer ») — la garde copie de quoi revenir en
+arrière, puis constate l'état après l'action et enregistre une étape avec ses opérations inverses.
+Un changeset = une session MCP (par processus, et par connexion quand le transport l'identifie), ou
+`copilote:<serveur>:<jour>` pour le Copilote. Une action en échec sans effet constaté n'ajoute pas
+d'étape.
+
+| Outil | Ce qui est défait |
+|---|---|
+| `write_file`, `edit_file`, `upload_file` (et `set_config`) | contenu précédent remis, ou fichier retiré s'il n'existait pas |
+| `delete_path` | fichier recréé avec son contenu ; dossier recréé en entier s'il compte **500 entrées au plus** |
+| `rename_path` | renommage inverse, et fichier écrasé à la destination remis |
+| `create_dir` | dossier retiré s'il est vide (conservé sinon, sauf `force`) |
+| `extract_archive`, `compress_files`, `copy_between_servers` (cible) | fichiers et dossiers créés retirés (listing avant/après, 5 000 entrées au plus) ; fichiers existants **remplacés** : signalés (annulation partielle), non restaurés |
+| `install_mod` | jar ajouté dans `/mods` ou `/plugins` retiré |
+| `update_mods` | nouveaux jars retirés, anciens remis (mods et plugins ; datapacks non couverts) |
+| `set_property` | ancienne valeur remise — jamais pour un réglage **secret**, dont la valeur n'est pas conservée |
+| `set_startup_params` | ancienne commande de démarrage remise |
+
+Non annulables par nature (étape enregistrée, puis passée à l'annulation) : `send_command`,
+`broadcast_command`, `power_action`, `player_action`, `create_snapshot`, `install_ficsit_mod`,
+infrastructure MyBox, tâches planifiées, restaurations. `rollback_changeset` n'ajoute pas d'étape.
+
+**Plafonds** : 16 Mio par fichier copié, 32 Mio par étape, 64 Mio par changeset, 256 Mio pour toute
+la base (au-delà, les copies des changesets les plus anciens sont effacées et leurs étapes deviennent
+non annulables) ; copie et constat limités à 2 minutes chacun. **Rétention** : 14 jours après la
+dernière étape d'un changeset ; les copies d'une étape annulée sont effacées aussitôt. Si la copie
+échoue ou dépasse un plafond, l'écriture a **quand même lieu** : l'étape est « non annulable » et la
+sortie de l'outil le dit (`(Garde des agents : modification NON annulable — …)`) ; une annulation
+partielle est signalée de même. Les copies sont des fichiers du serveur de l'utilisateur, gardés sur
+cet ordinateur dans le dossier de données : pas des secrets de l'app (clé API et mots de passe restent
+dans le stockage sécurisé), mais une config peut en contenir ; elles ne partent jamais vers un LLM et
+disparaissent avec leur changeset.
+
+**Mode constructeur** (`write_scope`). `all` (défaut) : comportement historique. `builder` : un outil
+modifiant (infrastructure et écritures relayées par la passerelle comprises) n'est permis que sur les
+serveurs **créés pendant la session MCP** (relevés après un `mybox_create_server` réussi) ou listés
+dans `allowed_servers` ; lectures partout ; créer un serveur reste permis. Copie entre serveurs :
+seule la cible compte. Outil qui touche une MyBox entière (`rename_mybox`, `mybox_reorder_servers`,
+outil relayé qui ne désigne qu'une `mybox_id`) : permis seulement si **tous** ses serveurs le sont.
+`broadcast_command` avec `all_running=true`, outil sans serveur identifiable ou identifiant illisible :
+refusés. `rollback_changeset` : permis si tous les serveurs du changeset le sont. Refus explicite,
+journalisé (`refusé`). Surcharges : `MINESTRATOR_MCP_WRITE_SCOPE` (`all` ou `builder` ; valeur
+illisible = `builder`) et `MINESTRATOR_MCP_ALLOWED_SERVERS` (identifiants séparés par des virgules,
+remplace la liste des réglages). Les sessions du Copilote n'y sont pas soumises : elles sont déjà
+bornées au serveur de la conversation. Comme les autres réglages de `mcp.json`, la portée est lue au
+démarrage du processus MCP : un changement dans l'app vaut pour les clients MCP relancés ensuite.
+
+**Brancher un outil d'un autre module** : une arme dans `agent_guard::undo::plan_for` —
+`Plan::Files` (fichiers modifiés, par chemin), `Plan::NewFiles` (fichiers créés dans un dossier),
+`Plan::Skip` (outil composite dont chaque sous-action passe par `mcp::dispatch`, qui obtient ainsi
+une étape par sous-action), `Plan::Fixed("raison")` (effet non réversible). Un test refuse un outil
+de `WRITE_TOOLS` sans arme. Un outil qui crée un serveur appelle
+`agent_guard::record_created_server_here` après succès et reçoit la règle `Targets::Create` dans
+`agent_guard::scope::write_targets`.
 <!-- [lot:garde] fin -->
 
 ## 7. Se connecter (depuis n'importe quel client MCP)

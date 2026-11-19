@@ -76,6 +76,10 @@ mod manifest;
 mod agent_guard;
 
 pub use accounts::{Account, AccountSwitch};
+pub use agent_guard::{
+    ActionOutcome, AgentAction, AgentActionQuery, ChangeOrigin, ChangeStep, Changeset,
+    RollbackReport, RollbackStatus, RollbackStep, StepState, WriteScope,
+};
 pub use archive::ArchiveEntry;
 pub use automation::{
     AutomationConfig, AutomationRun, RestartRule, Schedule, ScheduledTask, ServerAutomations,
