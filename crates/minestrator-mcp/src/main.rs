@@ -2,7 +2,8 @@
 //! sauts de ligne) sur stdin, délègue à `minestrator_core::mcp`, écrit les réponses sur
 //! stdout. Toute la logique vit dans le core (réutilisée aussi par le mode `--mcp` du GUI).
 //!
-//! **stdout = protocole** ; les logs vont sur stderr.
+//! **stdout = protocole** ; les logs vont sur stderr. `--toolsets=a,b` restreint les groupes
+//! d'outils exposés (lu par le core, voir `MCP.md`).
 
 use minestrator_core::{mcp, Core};
 
@@ -17,5 +18,5 @@ async fn main() {
 
     let core = Core::new();
     tracing::info!("minestrator-mcp prêt (stdio)");
-    mcp::serve_stdio(&core).await;
+    mcp::serve_stdio(std::sync::Arc::new(core)).await;
 }

@@ -1790,6 +1790,11 @@ export type McpConfig = {
    * `official_relay.rs`) ; la variable `MINESTRATOR_MCP_OFFICIAL` prime sur ce réglage.
    */
   official_gateway: boolean,
+  /**
+   * Groupes d'outils exposés (`core`, `files`, `console`…, voir `mcp_catalog.rs`) ; vide = tous.
+   * L'argument `--toolsets=…` puis la variable `MINESTRATOR_MCP_TOOLSETS` priment.
+   */
+  toolsets: Array<string>,
 };
 
 /**

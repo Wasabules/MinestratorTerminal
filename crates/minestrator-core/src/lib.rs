@@ -70,6 +70,11 @@ mod server_logs;
 // Outils des agents MCP : contexte d'appel (progression, confirmation), boucle « agir puis
 // vérifier », édition structurée des configs et manifeste, garde des agents.
 pub mod mcp_ctx;
+// Protocole MCP : transport concurrent, groupes et annotations d'outils, prompts, ressources.
+mod mcp_catalog;
+mod mcp_prompts;
+mod mcp_resources;
+mod mcp_transport;
 mod agent_loop;
 mod config_edit;
 mod manifest;
