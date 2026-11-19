@@ -162,6 +162,13 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
   SFTP** vient de `GET /server/{id}/sftp` (non documenté ; `GET /server/{id}` ne le donne plus). En
   secours, saisi par serveur (`sftp-password-<id>`), vérifié avant d'être enregistré, effacé avec le compte qui l'a enregistré (`sftp_passwords.json` :
   serveur → id utilisateur, aucun secret).
+  **Secrets des agents** (`agent_secrets.rs`) : un agent n'écrit jamais un token ou un mot de passe
+  en clair, il écrit `{{secret:NOM}}` (valeur sous `agent-secret-<nom>`, index non secret
+  `agent_secrets.json`). Un outil qui écrit du contenu fourni par un agent appelle
+  `Core::resolve_secret_refs` **avant tout effet** (refus pour le Copilote, erreur sur un nom
+  inconnu) ; toute valeur résolue est ensuite masquée par `redact.rs` dans les sorties
+  (`mcp::dispatch`, `Core::redact_ai` même anonymisation désactivée). Ne contourne pas ces deux
+  points.
 - **Plusieurs comptes** (`core/src/accounts.rs`, app seulement) : la clé du compte **actif** reste
   sous `api-key` — c'est elle que lisent MCP headless, agents CLI, superviseur et activation du
   service, sans rien savoir des autres comptes ; les comptes inactifs sous `api-key-<idUtilisateur>` ;
@@ -190,7 +197,8 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
   modifiant qui touche à l'infrastructure, à plusieurs serveurs ou à une configuration persistante
   va dans `INFRA_TOOLS` (jamais donné au Copilote). Un outil qui lit ou écrit sur le disque de
   l'ordinateur (`local_path`) va dans `LOCAL_DISK_TOOLS`, jamais donné au Copilote non plus, même
-  en lecture (`copilot_forbidden`).
+  en lecture (`copilot_forbidden`). Idem pour les outils des secrets des agents
+  (`AGENT_SECRET_TOOLS`) : le Copilote ne résout jamais `{{secret:NOM}}`.
 - **Journaux** : `core::logs::init` (fichier tournant dans `<data>/logs`), initialisé par l'app. Sur
   mobile, l'initialisation se fait dans `setup`, après `MINESTRATOR_DATA_DIR`.
 - **Double point d'entrée desktop** : `desktop/src-tauri/src/main.rs` lance la boucle MCP stdio au lieu

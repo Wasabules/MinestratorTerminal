@@ -676,6 +676,22 @@ absents du MCP officiel. Données locales partagées par l'app et les processus 
 Données au Copilote : `list_agent_actions` et `list_changesets` ne lui montrent que le serveur de la
 conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
 
+#### Secrets des agents
+
+Valeurs qu'un agent écrit dans les configs **sans jamais les voir** (token d'un bot Discord, clé
+d'API d'un plugin, mot de passe RCON…), par la référence `{{secret:NOM}}`
+(`crates/minestrator-core/src/agent_secrets.rs`). Fonctionnement et règles au §6 (« Secrets des
+agents »). Absents du MCP officiel ; jamais donnés au Copilote, qui ne peut pas résoudre une
+référence.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `list_secrets` | | — | Secrets enregistrés : nom, référence `{{secret:NOM}}`, description, date de création, valeur générée ou saisie — **jamais la valeur** — et rappel de l'usage. Jamais en cache. |
+| `generate_secret` | ✎ | `name`, `description?`, `length?`, `charset?` | **Crée** un secret aléatoire (générateur du système) : `name` en `[a-z0-9_-]`, 64 caractères au plus, nom déjà pris refusé (jamais d'écrasement) ; `length` 8 à 256 (défaut 32) ; `charset` `alphanumeric` (défaut), `hex`, `url_safe`, `symbols` (premier caractère toujours alphanumérique). La valeur n'est ni renvoyée ni journalisée. Dans `INFRA_TOOLS` (configuration persistante) ; permis en mode constructeur (aucun serveur touché) ; étape non annulable (suppression dans l'app). |
+
+Pas de suppression ni d'ajout d'une valeur connue par MCP : réservés à l'app (Réglages → MCP →
+Secrets des agents).
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -728,6 +744,9 @@ conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
   à un proxy, secret réutilisé ou généré sans jamais apparaître, dry_run par défaut)
 - **Garde des agents** : `list_agent_actions` (journal), `list_changesets` → `rollback_changeset`
   (annuler ce qu'un agent a modifié)
+- **Secrets des agents** : `list_secrets` → `{{secret:NOM}}` dans `set_config`, `write_file`,
+  `edit_file`, `set_property` ou un manifeste (valeur écrite sans être vue) ; `generate_secret`
+  (secret aléatoire jamais affiché)
 
 ## 6. Contrôle & sécurité (réglages)
 
@@ -824,7 +843,7 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 | `core` | `list_servers`, `server_status` — **toujours actif** (identifiants des serveurs). |
 | `console` | `power_action`, `send_command`, `read_console` |
 | `files` | `list_files`, `read_file`, `read_gz`, `list_archive`, `read_archive_entry`, `search_files`, `disk_usage`, `download_file`, `file_stat`, `write_file`, `upload_file`, `edit_file`, `create_dir`, `delete_path`, `rename_path`, `extract_archive`, `compress_files` |
-| `config` | `read_startup`, `set_startup_params`, `read_properties`, `set_property` |
+| `config` | `read_startup`, `set_startup_params`, `read_properties`, `set_property`, `list_secrets`, `generate_secret` (secrets des agents) |
 | `content` | `list_installed_mods`, `list_installed_plugins`, `market_search`, `list_mod_versions`, `install_mod`, `check_updates`, `update_mods`, `check_plugin_deps`, `ficsit_search`, `ficsit_versions`, `install_ficsit_mod` |
 | `players` | `list_players`, `player_action`, `find_player` |
 | `backups` | `list_backups`, `list_snapshots`, `create_snapshot` |
@@ -885,7 +904,7 @@ d'étape.
 | `extract_archive`, `compress_files`, `copy_between_servers` (cible) | fichiers et dossiers créés retirés (listing avant/après, 5 000 entrées au plus) ; fichiers existants **remplacés** : signalés (annulation partielle), non restaurés |
 | `install_mod` | jar ajouté dans `/mods` ou `/plugins` retiré |
 | `update_mods` | nouveaux jars retirés, anciens remis (mods et plugins ; datapacks non couverts) |
-| `set_property` | ancienne valeur remise — jamais pour un réglage **secret**, dont la valeur n'est pas conservée |
+| `set_property` | ancienne valeur remise — jamais pour un réglage **secret**, dont la valeur n'est pas conservée, ni pour une valeur écrite par référence `{{secret:NOM}}` |
 | `set_startup_params` | ancienne commande de démarrage remise |
 
 Non annulables par nature (étape enregistrée, puis passée à l'annulation) : `send_command`,
@@ -924,6 +943,56 @@ une étape par sous-action), `Plan::Fixed("raison")` (effet non réversible). Un
 de `WRITE_TOOLS` sans arme. Un outil qui crée un serveur appelle
 `agent_guard::record_created_server_here` après succès et reçoit la règle `Targets::Create` dans
 `agent_guard::scope::write_targets`.
+
+### Secrets des agents (par référence)
+
+Un agent configure des serveurs (token d'un bot Discord, clé d'API d'un plugin, mot de passe
+RCON…) sans jamais voir ces valeurs. Code : `crates/minestrator-core/src/agent_secrets.rs`.
+
+**Stockage.** Chaque valeur est dans le stockage sécurisé natif (`secrets.rs` : trousseau de l'OS,
+Keystore Android, fichier chiffré du service), sous `agent-secret-<nom>`. L'index **non secret**
+(nom, description, date de création, généré ou saisi) est dans `<données>/agent_secrets.json`, relu
+à chaque accès : l'app et les processus `minestrator-mcp` / `--mcp` le partagent. Nom en
+`[a-z0-9_-]`, 64 caractères au plus ; valeur sur une ligne, 8 à 4096 caractères ; 100 secrets au
+plus. Ajout d'une valeur, génération et suppression dans Réglages → MCP → Secrets des agents ;
+`generate_secret` côté MCP.
+
+**Références.** `{{secret:NOM}}` est remplacée par la valeur **juste avant l'écriture**, dans :
+
+- les valeurs de `set_config` (texte entier ou partie d'un texte, à toute profondeur d'une liste ou
+  d'un objet) ;
+- le contenu de `write_file` ;
+- le remplacement (`replace`) d'`edit_file` — une référence dans `find` est refusée (la valeur d'un
+  secret ne se cherche pas) ;
+- la valeur de `set_property` (mot de passe RCON) ;
+- les valeurs de `configs` et de `properties` et le contenu de `files` d'un manifeste
+  (`plan_manifest` compare la valeur réelle, `apply_manifest` l'écrit).
+
+Règles : une référence mal formée, dans une clé ou un chemin, ou un nom inconnu est une **erreur
+avant tout effet** (l'erreur cite tous les noms inconnus ; `apply_manifest` ne prend même pas sa
+snapshot). Le **Copilote** ne résout jamais une référence : refus explicite, qu'il passe par ses
+agents CLI (`MINESTRATOR_MCP_COPILOT_SERVER`) ou par l'app (diagnostic, chat, « Appliquer ») ; un outil
+exécuté hors d'un appel du protocole MCP est traité comme lui (`agent_guard::copilot_call`). Il lit
+du contenu non fiable (chat des joueurs) et pourrait faire écrire un secret là où il le relirait.
+`list_secrets` et `generate_secret` sont hors de son catalogue.
+
+**Jamais la valeur en sortie.** Toute valeur résolue, créée ou générée est enregistrée en mémoire
+dans `redact.rs` ; au premier usage dans un processus, puis à chaque changement de l'index, les
+valeurs de tous les secrets y sont chargées (une valeur écrite par un autre processus reste masquée).
+Toute sortie d'outil (`mcp::dispatch`, erreurs comprises), tout texte passé par `Core::redact_ai`
+(même anonymisation IA désactivée) et le journal des agents remplacent chaque valeur connue par sa
+référence `{{secret:NOM}}` — sous ses formes brute et échappées (JSON, YAML, `.properties`), quelle
+que soit la clé qui la porte (`read_file`, `get_config`, console, diffs de `set_config` et des
+manifestes…). Les arguments journalisés ne contiennent que la référence. Conséquence utile : relire
+un fichier puis le réécrire tel quel conserve le secret (la référence relue est résolue à
+nouveau). Une valeur trop courte pour être cherchée sans dégâts n'est pas acceptée (8 caractères au
+moins).
+
+**Point d'accroche** pour un futur outil qui écrit du contenu fourni par un agent (`sync_dir`, par
+exemple) : `Core::resolve_secret_refs(texte) -> Result<(String, Vec<String>), String>` (texte
+résolu, noms utilisés, ou erreur à rendre telle quelle), ou `Core::resolve_secret_texts` pour
+plusieurs textes d'un même appel (toutes les références vérifiées avant la première substitution),
+à appeler avant tout effet ; `agent_secrets::used_note(&noms)` complète la sortie.
 
 ## 7. Se connecter (depuis n'importe quel client MCP)
 
