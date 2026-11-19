@@ -329,6 +329,17 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
 - **`manifest`** — **manifeste déclaratif** d'un serveur (v1) : export, plan (écart avec le serveur
   réel, étapes à identifiant stable, `manual` / `unsupported` expliqués), application idempotente
   après snapshot, et `clone_server` (`manifest/clone.rs` : création, copie, manifeste de la source).
+  Les étapes `manual` de version, plateforme, Java et JAR désignent l'outil officiel qui les fait
+  (`manifest/official.rs` : `change_version`, `manage_java`, `set_startup_config`, arguments et
+  disponibilité par la passerelle, `official_relay::gateway_availability`).
+- **`pregen`** — outil **`pregenerate_world`** : prégénération avec Chunky (détection dans le
+  contenu installé, installation depuis Modrinth par `install_mod` passé par la garde, estimation
+  du disque, commandes et réponses par la boucle d'`agent_loop`, analyse des lignes de progression,
+  suivi avec avancement MCP). Dans `INFRA_TOOLS`.
+- **`db_connect`** — outil **`connect_database`** : accès d'une base de la MyBox lus avec tolérance
+  dans `GET /mybox/{id}` (repli : `get_mybox` officiel en lecture), écrits dans la config d'un
+  plugin par `set_config` (garde des agents) sans que le mot de passe apparaisse ; réinitialisation
+  facultative par l'outil officiel `manage_database`, confirmée par l'humain. Dans `INFRA_TOOLS`.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

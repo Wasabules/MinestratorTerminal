@@ -255,6 +255,10 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "clone_server",
     // Annulation des modifications d'un agent (voir INFRA_TOOLS) : jamais au Copilote.
     "rollback_changeset",
+    // Monter un serveur de A à Z : prégénération (Chunky) et base de données branchée à un plugin
+    // (voir INFRA_TOOLS) : jamais au Copilote.
+    "pregenerate_world",
+    "connect_database",
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -293,6 +297,12 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // Annulation d'un changeset : peut défaire les modifications de n'importe quelle session,
     // sur plusieurs serveurs ; réservée à l'app et au MCP local.
     "rollback_changeset",
+    // Prégénération : opération lourde (disque, CPU pendant des heures, installation depuis une
+    // marketplace), jamais à l'initiative du Copilote. Base de données : accès d'une ressource de
+    // la MyBox écrits dans une config, réinitialisation d'un mot de passe partagé par d'autres
+    // serveurs ou sites.
+    "pregenerate_world",
+    "connect_database",
 ];
 
 /// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
@@ -347,6 +357,8 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "check_plugin_deps",
     "world_info",
     "audit_server",
+    // Prégénération avec Chunky (plugin ou mod Minecraft).
+    "pregenerate_world",
 ];
 
 /// Outils propres à **Satisfactory** (mods via ficsit.app).
@@ -1515,6 +1527,10 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "list_agent_actions" => crate::agent_guard::actions_tool(core, &args),
         "list_changesets" => crate::agent_guard::changesets_tool(core, &args),
         "rollback_changeset" => crate::agent_guard::rollback_tool(core, &args).await,
+        // Monter un serveur de A à Z (pregen.rs, db_connect.rs) : validation, sorties anonymisées
+        // et sous-étapes modifiantes (install_mod, set_config) par la garde, dans les modules.
+        "pregenerate_world" => Box::pin(crate::pregen::pregenerate_world_tool(core, &args)).await,
+        "connect_database" => Box::pin(crate::db_connect::connect_database_tool(core, &args)).await,
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1699,6 +1715,9 @@ fn build_tool_list() -> Value {
         tool("list_agent_actions", "JOURNAL des actions des agents MCP (clients externes et agents CLI du Copilote) : horodatage, session, client, outil (✎ = modifiant), serveur(s), arguments résumés et ANONYMISÉS (contenus de fichiers remplacés par leur taille, secrets masqués), résultat (ok, erreur, refusé + motif), durée, étape de changeset créée. Du plus récent au plus ancien. Filtres : `server_id`, `session`, `since` (`30m`, `12h`, `7d`, `AAAA-MM-JJ` ou horodatage Unix), `only_writes`, `limit` (défaut 30, max 200).", obj(&[("server_id", prop_int("Seulement les appels visant ce serveur")), ("session", prop_str("Seulement cette session (identifiant affiché par list_agent_actions ou list_changesets)")), ("since", prop_str("Depuis : 30m, 12h, 7d, AAAA-MM-JJ ou horodatage Unix")), ("only_writes", prop_bool("Seulement les outils modifiants")), ("limit", prop_int("Lignes renvoyées (défaut 30, max 200)"))], &[])),
         tool("list_changesets", "MODIFICATIONS des agents regroupées par session (« changeset » : une session MCP, ou le Copilote par serveur et par jour) : étapes dans l'ordre (outil, cible, serveur), annulable ou NON (et pourquoi : commande console, capture au-delà des plafonds, réglage secret…), déjà annulée ou non. `changeset_id` pour un seul, `server_id` pour filtrer (seulement les étapes de ce serveur), `limit` (défaut 10, max 50). À consulter avant rollback_changeset.", obj(&[("changeset_id", prop_str("Identifiant du changeset")), ("server_id", prop_int("Seulement ce serveur")), ("limit", prop_int("Changesets renvoyés (défaut 10, max 50)"))], &[])),
         tool("rollback_changeset", "ANNULE les modifications d'un changeset (voir list_changesets), de la plus récente à la plus ancienne : fichiers écrits, édités, téléversés ou supprimés remis dans leur état précédent, renommages défaits, dossiers et fichiers créés retirés (dossier non vide conservé), réglage server.properties et commande de démarrage remis. `steps` = seulement les N dernières étapes encore en place. Une étape dont la cible a CHANGÉ depuis est REFUSÉE et l'annulation s'arrête, sauf `force` (écrase ces changements). Les étapes non annulables (commande console, power, infrastructure…) sont signalées et passées. Demande confirmation à l'utilisateur quand le client le permet. Rapport étape par étape. ✎ (modifiant)", obj(&[("changeset_id", prop_str("Identifiant du changeset (list_changesets)")), ("steps", prop_int("Seulement les N dernières étapes encore en place (défaut : toutes)")), ("force", prop_bool("Annuler même si une cible a changé depuis (écrase ces changements ; défaut false)"))], &["changeset_id"])),
+        // --- Monter un serveur de A à Z ---
+        tool("pregenerate_world", "PRÉGÉNÈRE un monde Minecraft avec CHUNKY (plugin Paper/Spigot/Folia, mod Fabric/Forge/NeoForge) pour éviter le lag de génération quand les joueurs explorent. `action` : start | status | pause | continue | cancel. start : `radius` en BLOCS depuis le centre (requis), `world` (défaut : level-name ; alias overworld, nether, end ; identifiant de dimension sur un serveur moddé), `center` (\"spawn\" par défaut, ou \"x,z\"), `shape` (square par défaut, circle, diamond…). Chunky absent : erreur, sauf `install_chunky=true` (installé depuis Modrinth, version compatible avec la plateforme et la version du jeu, étape annulable ; redémarrage ensuite). Avant start : ESTIMATION DU DISQUE (ordre de grandeur, 6 à 20 Kio par chunk) comparée à l'espace libre du serveur et de la MyBox : avertissement, refus seulement si même l'estimation basse dépasse. Tâche déjà existante : `replace_existing=true` pour repartir de zéro (sinon action=continue). `wait_secs` (max 600) : suit la progression (pourcentage, chunks, vitesse, ETA) jusqu'à la fin ou l'échéance ; sans, rend la main tout de suite. status : progression de chaque tâche. pause/continue/cancel : `world` pour une seule tâche, sinon toutes. Serveur hors ligne : refus explicite, rien n'est envoyé. Les chunks générés restent (pas d'annulation). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("action", prop_str("start | status | pause | continue | cancel")), ("radius", prop_int("start : rayon en blocs depuis le centre (ex. 5000 = carré de 10 000 × 10 000)")), ("world", prop_str("Monde : dossier (Paper…) ou dimension (minecraft:the_nether) ; alias overworld, nether, end (défaut : level-name)")), ("center", prop_str("start : \"spawn\" (défaut) ou \"x,z\" en blocs")), ("shape", prop_str("start : square (défaut), circle, diamond, triangle, pentagon, hexagon, star")), ("install_chunky", prop_bool("Installer Chunky s'il manque (défaut false)")), ("replace_existing", prop_bool("start : remplacer une tâche Chunky existante (sa progression est perdue ; défaut false)")), ("wait_secs", prop_int("Suivre la progression au plus N secondes (défaut 0, max 600)"))], &["server_id", "action"])),
+        tool("connect_database", "BRANCHE UNE BASE DE DONNÉES de la MyBox à un plugin SANS EXPOSER LE MOT DE PASSE : lit les accès de la base (hôte, port, nom, utilisateur, mot de passe) dans l'API et les écrit dans la config du plugin (édition vérifiée de set_config, étape annulable avec rollback_changeset) ; le mot de passe n'apparaît ni dans la sortie ni dans le diff. Cible : `target` = préréglage luckperms | coreprotect | litebans | plan (fichier par défaut du plugin, `path` pour un autre emplacement ; le plugin doit avoir généré sa config) OU `path` + `keys` { host | port | address (hôte:port) | database | username | password : clé de config } (+ `set` : réglages non secrets, ex. type de stockage). `database_id` : base de la MyBox (défaut : la seule ; sinon la liste est donnée) ; `mybox_id` déduit du serveur. `dry_run` (défaut TRUE) : diff sans rien écrire. Mot de passe illisible par l'API : `rotate_password=true` le réinitialise (confirmation demandée à l'utilisateur ; les autres connexions à cette base sont cassées) puis l'écrit directement. Ne crée pas de base : outil officiel create_database (passerelle) ou panel. Redémarrage du serveur ensuite. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur dont la config est modifiée")), ("mybox_id", prop_int("MyBox de la base (défaut : celle du serveur)")), ("database_id", prop_int("ID de la base (défaut : la seule de la MyBox)")), ("target", prop_str("Préréglage : luckperms, coreprotect, litebans ou plan")), ("path", prop_str("Fichier de config (YAML, TOML, JSON, .properties) ; requis avec `keys`")), ("keys", json!({ "type": "object", "description": "Rôle → clé de config : host, port, address (hôte:port), database, username, password (clé reconnue comme secrète)", "additionalProperties": { "type": "string" } })), ("set", json!({ "type": "object", "description": "Réglages non secrets écrits en plus (avec `keys`), ex. { \"storage.type\": \"mysql\" }", "additionalProperties": true })), ("rotate_password", prop_bool("Réinitialiser le mot de passe s'il n'est pas lisible (défaut false)")), ("dry_run", prop_bool("Montrer le diff sans rien écrire (défaut TRUE)"))], &["server_id"])),
     ])
 }
 
@@ -2385,6 +2404,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!((cfg.write_scope, cfg.allowed_servers), (WriteScope::Builder, vec![4, 9]));
+    }
+
+    /// Monter un serveur de A à Z : prégénération et base de données, modifiants et jamais au
+    /// Copilote (INFRA_TOOLS : hors de son catalogue, donc rien à garder pour lui face à l'officiel).
+    #[test]
+    fn build_a_server_tools_are_classified_and_kept_from_the_copilot() {
+        for t in ["pregenerate_world", "connect_database"] {
+            assert!(is_write_tool(t) && WRITE_TOOLS.contains(&t), "{t} doit être modifiant");
+            assert!(INFRA_TOOLS.contains(&t) && copilot_forbidden(t), "{t} : jamais au Copilote");
+            assert!(!LOCAL_DISK_TOOLS.contains(&t), "{t} : pas de disque local");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&t), "{t} : hors catalogue du Copilote, comme apply_manifest");
+            assert!(cache_ttl(t).is_none(), "{t} : jamais caché");
+            assert_eq!(crate::mcp_catalog::group_of(t), Some("build"), "{t}");
+            assert_eq!(crate::agent_guard::plan_kind(t), "prévu", "{t} : règle d'annulation");
+        }
+        assert!(tool_for_game("pregenerate_world", "minecraft") && !tool_for_game("pregenerate_world", "satisfactory"));
+        assert!(tool_for_game("connect_database", "minecraft") && tool_for_game("connect_database", "generic"));
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        assert_eq!(schema("pregenerate_world")["required"], json!(["server_id", "action"]));
+        assert_eq!(schema("pregenerate_world")["properties"]["install_chunky"]["type"], "boolean");
+        assert_eq!(schema("pregenerate_world")["properties"]["wait_secs"]["type"], "integer");
+        assert_eq!(schema("connect_database")["required"], json!(["server_id"]));
+        assert_eq!(schema("connect_database")["properties"]["keys"]["type"], "object");
+        assert_eq!(schema("connect_database")["properties"]["dry_run"]["type"], "boolean");
+        // La marketplace (installation de Chunky) sort du compte ; la base, non.
+        assert!(crate::mcp_catalog::OPEN_WORLD_TOOLS.contains(&"pregenerate_world"));
+        assert!(!crate::mcp_catalog::OPEN_WORLD_TOOLS.contains(&"connect_database"));
+        // Le mot de passe ne passe jamais par les arguments de l'outil (journalisés).
+        assert!(schema("connect_database")["properties"].get("password").is_none());
     }
 
     #[test]

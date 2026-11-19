@@ -403,6 +403,23 @@ async fn scope_violation(core: &Core, cfg: &McpConfig, name: &str, args: &Value)
             .map(|d| d.servers.iter().map(|s| s.id).collect::<Vec<_>>()),
         // Changeset inconnu : l'outil le dira, il n'y a rien à protéger.
         Targets::Changeset(cs) => store().changeset_servers(cs).ok().map(Option::unwrap_or_default),
+        // Base réinitialisée : tous les serveurs de sa MyBox, plus celui dont la config est écrite.
+        Targets::Database { server, mybox } => {
+            let mybox = match mybox {
+                Some(m) => Some(*m),
+                None => core.list_servers().await.ok().and_then(|o| {
+                    o.servers.iter().find(|s| s.id == *server).map(|s| s.mybox_id).filter(|m| *m > 0)
+                }),
+            };
+            match mybox {
+                Some(m) => core.mybox_details(m).await.ok().map(|d| {
+                    let mut ids: Vec<i64> = d.servers.iter().map(|s| s.id).collect();
+                    ids.push(*server);
+                    ids
+                }),
+                None => None,
+            }
+        }
         _ => None,
     };
     let made = created_in(&protocol_identity().0);

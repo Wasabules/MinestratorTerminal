@@ -64,6 +64,9 @@ pub(crate) enum Targets {
     MyBox(i64),
     /// Annulation d'un changeset : permis si tous les serveurs de ses étapes le sont.
     Changeset(String),
+    /// Réinitialisation du mot de passe d'une base de données : la base sert à tous les serveurs
+    /// de sa MyBox (`mybox`, sinon celle de `server`), plus `server` dont la config est écrite.
+    Database { server: i64, mybox: Option<i64> },
     /// `all_running=true` : tous les serveurs démarrés, ensemble non vérifiable d'avance.
     AllRunning,
     /// Aucune cible lisible (outil au niveau du compte, ou outil inconnu).
@@ -113,7 +116,9 @@ pub(crate) fn servers_in(args: &Value) -> Result<Vec<i64>, String> {
 /// - copie entre serveurs : seule la cible compte ;
 /// - outils qui portent sur une MyBox entière (`rename_mybox`, `mybox_reorder_servers`, ou tout
 ///   outil qui ne désigne qu'une `mybox_id`) : tous les serveurs de la MyBox ;
-/// - `broadcast_command` avec `all_running=true` : refusé (ensemble non vérifiable d'avance).
+/// - `broadcast_command` avec `all_running=true` : refusé (ensemble non vérifiable d'avance) ;
+/// - `connect_database` avec `rotate_password=true` : le serveur et toute la MyBox de la base
+///   (un mot de passe réinitialisé casse les autres connexions à cette base).
 pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
     let one = |key: &str| match id_arg(args, key) {
         Ok(Some(id)) => Targets::Servers(vec![id]),
@@ -137,6 +142,13 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
         "rename_mybox" | "mybox_reorder_servers" => return mybox(),
         "broadcast_command" if args.get("all_running").and_then(Value::as_bool) == Some(true) => {
             return Targets::AllRunning
+        }
+        "connect_database" if args.get("rotate_password").and_then(Value::as_bool) == Some(true) => {
+            return match (id_arg(args, "server_id"), id_arg(args, "mybox_id")) {
+                (Err(k), _) | (_, Err(k)) => Targets::Invalid(k),
+                (Ok(Some(server)), Ok(mybox)) => Targets::Database { server, mybox },
+                (Ok(None), _) => Targets::Unknown,
+            }
         }
         _ => {}
     }
@@ -193,6 +205,20 @@ pub(crate) fn check(
                 } else {
                     Err(format!(
                         "{REFUS} ; ce changeset modifie des serveurs hors de cette portée ({}).",
+                        out.join(", ")
+                    ))
+                }
+            }
+        },
+        Targets::Database { .. } => match resolved {
+            None => Err(format!("{REFUS} ; MyBox de la base illisible, rien n'est vérifiable.")),
+            Some(ids) => {
+                let out = outside(ids);
+                if out.is_empty() {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "{REFUS} ; réinitialiser le mot de passe d'une base touche tous les serveurs de sa MyBox, dont des serveurs hors de cette portée ({}).",
                         out.join(", ")
                     ))
                 }
@@ -276,6 +302,23 @@ mod tests {
             write_targets("rollback_changeset", &json!({ "changeset_id": "mcp:p1" })),
             Targets::Changeset("mcp:p1".into())
         );
+        // Base de données : seulement le serveur, sauf réinitialisation du mot de passe.
+        assert_eq!(
+            write_targets("connect_database", &json!({ "server_id": 5, "target": "luckperms" })),
+            Targets::Servers(vec![5])
+        );
+        assert_eq!(
+            write_targets("connect_database", &json!({ "server_id": 5, "rotate_password": true })),
+            Targets::Database { server: 5, mybox: None }
+        );
+        assert_eq!(
+            write_targets("connect_database", &json!({ "server_id": 5, "mybox_id": "8", "rotate_password": true })),
+            Targets::Database { server: 5, mybox: Some(8) }
+        );
+        assert_eq!(
+            write_targets("connect_database", &json!({ "server_id": 5, "mybox_id": "x", "rotate_password": true })),
+            Targets::Invalid("mybox_id".into())
+        );
     }
 
     #[test]
@@ -294,6 +337,12 @@ mod tests {
         assert!(check(&Targets::Changeset("c".into()), Some(&[2]), permitted).is_ok());
         assert!(check(&Targets::Changeset("c".into()), Some(&[5]), permitted).is_err());
         assert!(check(&Targets::Changeset("c".into()), None, permitted).is_err());
+        // Base : le serveur et toute la MyBox (résolus par l'appelant) ; illisible = refus.
+        let db = Targets::Database { server: 1, mybox: None };
+        assert!(check(&db, Some(&[1, 2]), permitted).is_ok());
+        let e = check(&db, Some(&[1, 2, 7]), permitted).unwrap_err();
+        assert!(e.contains("mot de passe") && e.contains('7'), "{e}");
+        assert!(check(&db, None, permitted).is_err());
         assert!(check(&Targets::AllRunning, None, |_| true).is_err());
         assert!(check(&Targets::Unknown, None, |_| true).is_err());
         assert!(check(&Targets::Invalid("server_id".into()), None, |_| true).is_err());

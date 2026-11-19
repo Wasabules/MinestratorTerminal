@@ -268,6 +268,12 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
     ("plan_manifest", "build", "Comparer un serveur à un manifeste"),
     ("apply_manifest", "build", "Appliquer un manifeste"),
     ("clone_server", "build", "Cloner un serveur"),
+    ("pregenerate_world", "build", "Prégénérer un monde (Chunky)"),
+    (
+        "connect_database",
+        "build",
+        "Brancher une base de données à un plugin",
+    ),
     // guard
     (
         "list_agent_actions",
@@ -334,6 +340,8 @@ pub(crate) const OPEN_WORLD_TOOLS: &[&str] = &[
     // Contenu résolu et installé depuis les marketplaces.
     "plan_manifest",
     "apply_manifest",
+    // Chunky installé depuis Modrinth (`install_chunky`).
+    "pregenerate_world",
 ];
 
 /// Outils locaux dont la confirmation (`confirm_name`) est demandée à l'humain quand le client

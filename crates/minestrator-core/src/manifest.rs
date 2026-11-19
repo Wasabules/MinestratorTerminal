@@ -20,6 +20,7 @@
 //! l'étape est ignorée, jamais le masque écrit. `clone_server` ([`clone`]) réutilise tout cela.
 
 mod clone;
+mod official;
 #[cfg(test)]
 mod tests;
 
@@ -390,6 +391,10 @@ pub(crate) struct Step {
     pub diff: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub depends_on: Vec<String>,
+    /// Étape `manual` faisable avec un outil du MCP officiel : lequel, ses arguments, et s'il est
+    /// appelable maintenant (voir [`official`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub official: Option<official::OfficialHint>,
     #[serde(skip)]
     pub action: Option<Action>,
 }
@@ -404,6 +409,7 @@ impl Step {
             target: None,
             diff: None,
             depends_on: Vec::new(),
+            official: None,
             action: None,
         }
     }
@@ -560,22 +566,22 @@ pub(crate) fn plan_server(spec: &ServerSpec, f: &Facts) -> Vec<Step> {
         "version du jeu",
         spec.game_version.as_deref(),
         f.game_version.as_deref(),
-        "changement de version non géré par l'outil (panel → Versions, après une sauvegarde)",
+        "non appliqué par le manifeste : outil officiel change_version (voir `official`) ou panel → Versions, après une snapshot",
     );
     versioned(
         "server.loader",
         "plateforme",
         spec.loader.as_deref(),
         f.loader.as_deref(),
-        "changement de plateforme non géré par l'outil (panel → Versions)",
+        "non appliqué par le manifeste : outil officiel change_version (voir `official`) ou panel → Versions, après une snapshot",
     );
     if let Some(want) = spec.java_version {
         let have = f.startup.as_ref().and_then(|s| java_major(&s.image));
         out.push(match have {
             Some(h) if h == want => Step::new("server.java", Status::Ok, format!("Java {h}")),
-            Some(h) => Step::new("server.java", Status::Manual, format!("Java {h} au lieu de {want} : changement de version de Java non géré par l'outil (panel → Démarrage)"))
+            Some(h) => Step::new("server.java", Status::Manual, format!("Java {h} au lieu de {want} : non appliqué par le manifeste, outil officiel manage_java (voir `official`) ou panel → Démarrage"))
                 .values(Some(json!(h)), Some(json!(want))),
-            None => Step::new("server.java", Status::Manual, format!("version de Java actuelle illisible (voulue : {want}) : à vérifier dans le panel")).values(None, Some(json!(want))),
+            None => Step::new("server.java", Status::Manual, format!("version de Java actuelle illisible (voulue : {want}) : à vérifier avec l'outil officiel manage_java (voir `official`) ou dans le panel")).values(None, Some(json!(want))),
         });
     }
     out
@@ -631,7 +637,7 @@ pub(crate) fn plan_startup(spec: &StartupSpec, current: Option<&Startup>) -> Vec
         out.push(if j == cur.jar_file.trim() {
             Step::new("startup.jar_file", Status::Ok, format!("JAR {j}"))
         } else {
-            Step::new("startup.jar_file", Status::Manual, format!("JAR « {} » au lieu de « {j} » : changement du fichier de démarrage non géré par l'outil (panel → Démarrage)", cur.jar_file))
+            Step::new("startup.jar_file", Status::Manual, format!("JAR « {} » au lieu de « {j} » : non appliqué par le manifeste, outil officiel set_startup_config (voir `official`) ou panel → Démarrage", cur.jar_file))
                 .values(Some(json!(cur.jar_file)), Some(json!(j)))
         });
     }
@@ -1722,6 +1728,17 @@ pub(crate) async fn build_plan(core: &Core, server_id: i64, m: &Manifest) -> Res
         }
     }
 
+    // Étapes manuelles de version, plateforme, Java et JAR : outil officiel et disponibilité.
+    official::annotate_live(
+        core,
+        &mut plan.steps,
+        server_id,
+        m.server.as_ref(),
+        m.startup.as_ref().and_then(|s| s.jar_file.as_deref()),
+        &facts,
+    )
+    .await;
+
     // Identifiants uniques (deux éléments du même nom) : suffixe de rang.
     let mut seen: HashSet<String> = HashSet::new();
     for s in &mut plan.steps {
@@ -2225,6 +2242,15 @@ pub(crate) async fn apply(
         .collect();
     if !manual.is_empty() {
         out["manual"] = json!(manual);
+    }
+    // Ce qui reste à faire avec un outil du MCP officiel (version, plateforme, Java, JAR).
+    let official: Vec<Value> = plan
+        .steps
+        .iter()
+        .filter_map(|s| s.official.as_ref().map(|o| json!({ "step": s.id, "official": o })))
+        .collect();
+    if !official.is_empty() {
+        out["official"] = json!(official);
     }
     if restart {
         out["next"] = json!("redémarre le serveur (power_action restart) pour charger contenu, réglages et configs ; relance plan_manifest pour vérifier");
