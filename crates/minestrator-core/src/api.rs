@@ -280,6 +280,12 @@ impl ApiClient {
         Ok(ServerDetails::from(raw))
     }
 
+    /// `GET /server/{id}` brut, lu avec tolérance par l'appelant (adresse, ports secondaires :
+    /// `network.rs`). Porte aussi les identifiants WebSocket et SFTP : ne jamais le rendre tel quel.
+    pub(crate) async fn server_value(&self, token: &str, id: i64) -> Result<Value> {
+        self.get(token, &format!("/server/{id}")).await
+    }
+
     pub async fn get_live_light(&self, token: &str, id: i64) -> Result<LiveLight> {
         self.get(token, &format!("/server/{id}/live/light")).await
     }

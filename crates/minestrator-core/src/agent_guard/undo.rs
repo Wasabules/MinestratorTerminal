@@ -241,6 +241,9 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Manifeste : une snapshot est prise avant toute modification (sauf snapshot=false).
         "apply_manifest" => Plan::Fixed("manifeste appliqué : restaurer la snapshot prise juste avant (nom dans la sortie de l'outil)"),
         "clone_server" => Plan::Fixed("serveur créé : à supprimer avec mybox_delete_server"),
+        // Réseau proxy : chaque fichier (config du proxy, secret, paper-global.yml, spigot.yml) et
+        // l'online-mode passent par `mcp::dispatch` (`guarded_write`), une étape chacun.
+        "link_proxy" => Plan::Skip,
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }

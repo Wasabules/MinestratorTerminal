@@ -79,6 +79,8 @@ mod agent_loop;
 mod config_edit;
 mod manifest;
 mod agent_guard;
+// Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`.
+mod network;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_guard::{

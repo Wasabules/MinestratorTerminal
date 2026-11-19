@@ -764,6 +764,7 @@ fn friendly_tool(name: &str, input: Option<&Value>) -> String {
         "tail_console" => "Console en direct".into(),
         "run_command" => "Commande et sa réponse".into(),
         "wait_for" => "Attente du serveur".into(),
+        "network_topology" => "Réseau proxy".into(),
         other => format!("Outil : {other}"),
     }
 }

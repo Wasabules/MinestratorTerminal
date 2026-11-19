@@ -398,13 +398,17 @@ pub(crate) fn copilot_allows(cat: &Catalog, name: &str, autonomous: bool) -> boo
         && !is_destructive(def)
 }
 
-/// Clés d'arguments qui désignent UN serveur : `server_id`, et le second serveur des outils locaux
-/// qui en lisent deux (`diff_files`, copie).
-const SERVER_KEYS: &[&str] = &["server_id", "other_server_id", "source_server_id", "target_server_id"];
+/// Clés d'arguments qui désignent UN serveur : `server_id`, le second serveur des outils locaux
+/// qui en lisent deux (`diff_files`, copie), le proxy de `link_proxy`. Alignées sur
+/// `agent_guard::scope::SERVER_KEYS`.
+const SERVER_KEYS: &[&str] =
+    &["server_id", "other_server_id", "source_server_id", "target_server_id", "proxy_server_id"];
+/// Clés d'arguments qui listent des serveurs (`find_player`, `broadcast_command`, `link_proxy`).
+const SERVER_LIST_KEYS: &[&str] = &["server_ids", "backend_server_ids"];
 
 /// Refus si l'appel vise un autre serveur que celui de la session (un identifiant illisible est
-/// refusé aussi), par l'une des `SERVER_KEYS` ou par une liste `server_ids`. Sans identifiant, rien
-/// à vérifier.
+/// refusé aussi), par l'une des `SERVER_KEYS` ou par une liste de `SERVER_LIST_KEYS`. Sans
+/// identifiant, rien à vérifier.
 pub(crate) fn scope_violation(server_id: i64, args: &Value) -> Option<String> {
     let refuse = |v: &Value| {
         Some(format!("Refusé : cette conversation ne concerne que le serveur {server_id} (appel visant {v})."))
@@ -416,20 +420,23 @@ pub(crate) fn scope_violation(server_id: i64, args: &Value) -> Option<String> {
             Some(v) => return refuse(v),
         }
     }
-    match args.get("server_ids") {
-        None | Some(Value::Null) => None,
-        Some(Value::Array(ids)) if ids.iter().all(|v| v.as_i64() == Some(server_id)) => None,
-        Some(v) => refuse(v),
+    for key in SERVER_LIST_KEYS {
+        match args.get(*key) {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(ids)) if ids.iter().all(|v| v.as_i64() == Some(server_id)) => {}
+            Some(v) => return refuse(v),
+        }
     }
+    None
 }
 
 /// Outils LOCAUX de lecture qui couvrent tout le compte quand on ne leur donne pas de serveur
-/// (`find_player` sans liste, `list_incidents` sans `server_id`) : pour le Copilote, bornés au
-/// serveur de la session.
+/// (`find_player` sans liste, `list_incidents` et `network_topology` sans `server_id`) : pour le
+/// Copilote, bornés au serveur de la session.
 pub(crate) fn bound_local_args(server_id: i64, name: &str, args: Value) -> Value {
     let key = match name {
         "find_player" => "server_ids",
-        "list_incidents" => "server_id",
+        "list_incidents" | "network_topology" => "server_id",
         _ => return args,
     };
     match args {
@@ -1566,5 +1573,9 @@ mod tests {
         assert_eq!(bound_local_args(5, "find_player", json!({ "server_ids": null }))["server_ids"], json!([5]));
         assert_eq!(bound_local_args(5, "list_players", json!({ "server_id": 5 })), json!({ "server_id": 5 }));
         assert_eq!(bound_local_args(5, "list_incidents", json!({ "limit": 3 }))["server_id"], json!(5));
+        assert_eq!(bound_local_args(5, "network_topology", json!({}))["server_id"], json!(5));
+        // Proxy et serveurs de jeu de link_proxy : hors portée s'ils ne sont pas le serveur de la session.
+        assert!(scope_violation(5, &json!({ "proxy_server_id": 6, "backend_server_ids": [5] })).is_some());
+        assert!(scope_violation(5, &json!({ "proxy_server_id": 5, "backend_server_ids": [5, 7] })).is_some());
     }
 }

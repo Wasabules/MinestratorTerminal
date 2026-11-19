@@ -135,13 +135,12 @@ fn setup_velocity_network(a: &HashMap<&'static str, String>) -> String {
     format!(
         "Monte un réseau Velocity : proxy = serveur {proxy}, serveurs de jeu = {backends}.
 
-1. `list_servers` : vérifie les identifiants, l'adresse et le port de chaque serveur ; confirme que le proxy est bien un serveur Velocity (`read_startup`, `list_files` sur /).
-2. Proxy : lis `velocity.toml` (`get_config`, sinon `read_file`) : section [servers] (un nom par serveur de jeu avec son adresse:port), liste `try`, `player-info-forwarding-mode = \"modern\"`.
-3. Secret de transfert : ne lis jamais `forwarding.secret` ni le `secret` de `paper-global.yml` (ils sortiraient masqués). Réseau neuf : génère un secret aléatoire et écris-le à l'identique dans `forwarding.secret` du proxy et dans `config/paper-global.yml` de chaque serveur de jeu (`write_file`, `edit_file` ou `set_config`). Réseau existant : demande-moi de le reporter.
-4. Serveurs de jeu (Paper) : `online-mode=false` dans server.properties (`set_property`), `proxies.velocity.enabled: true` et `proxies.velocity.online-mode: true` dans `config/paper-global.yml`, `settings.bungeecord: false` dans spigot.yml.
-5. Prévisualise chaque modification (`set_config` avec dry_run, ou `plan_manifest` si un manifeste décrit le réseau), puis applique après mon accord, avec un `create_snapshot` de chaque serveur avant.
-6. Redémarre les serveurs de jeu puis le proxy (`power_action`) et vérifie : `wait_for` « Done » sur chaque serveur, `tail_console` du proxy (serveurs enregistrés, aucune erreur de transfert), `audit_server` sur un serveur de jeu (online-mode=false derrière Velocity avec secret doit être reconnu).
-7. Résume la topologie finale (nom → adresse), les fichiers modifiés et la façon de revenir en arrière."
+1. `network_topology` (server_id = {proxy}) : confirme que le serveur {proxy} est bien un proxy Velocity, et relève l'état actuel (serveurs déjà déclarés, liste `try`, mode de transfert, secret défini ou non, problèmes signalés).
+2. `link_proxy` avec proxy_server_id = {proxy} et backend_server_ids = [{backends}], dry_run=true (valeur par défaut) : montre-moi le plan (entrées du proxy nom → ip:port, liste de repli, fichiers et diffs, étapes `manual`) et attends mon accord. Noms ou ordre de repli différents : arguments `names` et `try`.
+3. Secret de transfert : ne le lis pas, ne le génère pas et ne l'écris pas toi-même (il sortirait masqué en [SECRET] et serait écrasé). `link_proxy` réutilise celui du proxy, ou en génère un, et l'écrit des deux côtés sans jamais l'afficher.
+4. Après mon accord : `link_proxy` avec dry_run=false (une snapshot de chaque serveur modifié est prise d'abord, et chaque fichier écrit reste annulable). Les étapes `manual` (Spigot, Fabric, Forge, serveur jamais démarré) restent à faire : explique-les-moi, n'improvise pas.
+5. Redémarre les serveurs de jeu puis le proxy (`power_action`) et vérifie : `wait_for` « Done » sur chaque serveur, `tail_console` du proxy (serveurs enregistrés, aucune erreur de transfert), puis `network_topology` : plus aucun problème critique.
+6. Résume la topologie finale (nom → adresse), les fichiers modifiés et la façon de revenir en arrière (`list_changesets` puis `rollback_changeset`, ou les snapshots)."
     )
 }
 
@@ -338,10 +337,11 @@ mod tests {
         );
 
         let r = get(true, &json!({ "name": "setup_velocity_network", "arguments": { "proxy_server_id": 7, "backend_server_ids": "8,9 10" } })).unwrap();
-        assert!(r["messages"][0]["content"]["text"]
-            .as_str()
-            .unwrap()
-            .contains("serveurs de jeu = 8, 9, 10"));
+        let text = r["messages"][0]["content"]["text"].as_str().unwrap();
+        assert!(text.contains("serveurs de jeu = 8, 9, 10"));
+        // Le secret passe par link_proxy, jamais par l'agent.
+        assert!(text.contains("network_topology") && text.contains("backend_server_ids = [8, 9, 10]"));
+        assert!(text.contains("dry_run=true") && !text.contains("génère un secret aléatoire"));
 
         let r = get(true, &json!({ "name": "deploy_plugin", "arguments": { "server_id": "5", "local_path": "C:\\dev\\mon.jar" } })).unwrap();
         assert!(r["messages"][0]["content"]["text"]

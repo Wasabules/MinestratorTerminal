@@ -196,6 +196,9 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     // Garde des agents : journal et changesets (lectures locales, bornées au serveur du Copilote).
     "list_agent_actions",
     "list_changesets",
+    // Réseau proxy (network.rs) : configs du proxy et des serveurs de jeu lues, secrets comparés
+    // en interne, rien n'est modifié.
+    "network_topology",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -255,6 +258,8 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "clone_server",
     // Annulation des modifications d'un agent (voir INFRA_TOOLS) : jamais au Copilote.
     "rollback_changeset",
+    // Liaison d'un proxy à ses serveurs de jeu (voir INFRA_TOOLS) : jamais au Copilote.
+    "link_proxy",
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -293,6 +298,9 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // Annulation d'un changeset : peut défaire les modifications de n'importe quelle session,
     // sur plusieurs serveurs ; réservée à l'app et au MCP local.
     "rollback_changeset",
+    // Réseau proxy : écrit sur le proxy et sur plusieurs serveurs de jeu (secret de transfert,
+    // online-mode) ; réservé à l'app et au MCP local.
+    "link_proxy",
 ];
 
 /// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
@@ -347,6 +355,9 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     "check_plugin_deps",
     "world_info",
     "audit_server",
+    // Réseaux proxy Velocity / BungeeCord.
+    "network_topology",
+    "link_proxy",
 ];
 
 /// Outils propres à **Satisfactory** (mods via ficsit.app).
@@ -426,6 +437,10 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "set_config",
     "export_manifest",
     "plan_manifest",
+    // Réseaux proxy : absents du MCP officiel (link_proxy, dans INFRA_TOOLS, reste de toute
+    // façon hors du catalogue du Copilote).
+    "network_topology",
+    "link_proxy",
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -662,6 +677,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // tail_console, wait_for : jamais (console et état en direct, curseurs).
         // Relisent SFTP et API : un instant suffit (purgés par toute écriture, set_config compris).
         "get_config" | "export_manifest" | "plan_manifest" => 10,
+        // Réseau proxy : lit les configs de plusieurs serveurs ; purgé par toute écriture.
+        "network_topology" => 15,
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1515,6 +1532,9 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "list_agent_actions" => crate::agent_guard::actions_tool(core, &args),
         "list_changesets" => crate::agent_guard::changesets_tool(core, &args),
         "rollback_changeset" => crate::agent_guard::rollback_tool(core, &args).await,
+        // Réseau proxy : sorties anonymisées et secrets effacés dans le module ; futures sur le tas.
+        "network_topology" => Box::pin(crate::network::network_topology_tool(core, &args)).await,
+        "link_proxy" => Box::pin(crate::network::link_proxy_tool(core, &args)).await,
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1695,6 +1715,9 @@ fn build_tool_list() -> Value {
         tool("plan_manifest", "COMPARE un MANIFESTE au serveur réel SANS RIEN MODIFIER : étapes ordonnées (identifiant stable, statut ok = conforme | change | add | remove | manual = action humaine ou écriture non gérée — jeu, version, Java, fichier de config pas encore généré | unsupported), valeurs actuelle et voulue, diffs des configs et fichiers (secrets masqués), contenu présent mais absent du manifeste (`unlisted`). Format v1 : {version: 1, server?: {name, game, egg_id, game_version, loader, java_version}, properties?: {clé: valeur}, startup?: {parameters, jar_file}, content?: [{kind: plugin|mod|datapack, source: modrinth|curseforge|spigot, project, version?, file?, name?, loader?}] ou {items, remove_unlisted}, configs?: [{path, set: {\"a.b\": valeur}}], files?: [{path, content}], players?: {whitelist?, ops?, remove_unlisted?}, schedules?: [{name, cron, is_active?, only_when_online?, tasks: [{action, payload, time_offset?, continue_on_failure?}]}] ou {items, remove_unlisted}} ; toute section est facultative, [SECRET] = garder la valeur actuelle. À appeler avant apply_manifest.", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema())], &["server_id", "manifest"])),
         tool("apply_manifest", "APPLIQUE un MANIFESTE (format de plan_manifest) : recalcule le plan puis exécute les étapes change/add/remove dans l'ordre — renommage, commande de démarrage, server.properties, installation/remplacement/retrait de contenu, clés de configs (comme set_config), fichiers, joueurs (serveur démarré), tâches planifiées. IDEMPOTENT : relancé après une coupure, ne refait rien de conforme. Snapshot préalable attendue (défaut ; sans elle rien n'est modifié, `snapshot=false` pour s'en passer). `steps` : identifiants ou préfixes d'étapes du plan à appliquer seuls (\"properties\", \"content.plugin\"). Une étape échouée n'arrête que celles qui en dépendent (config d'un plugin dont l'installation a échoué). Rapport étape par étape (réussie, conforme, ignorée, échouée + raison) ; manual/unsupported restent à faire. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema()), ("steps", prop_str_array("Étapes à appliquer seules : identifiants ou préfixes (défaut : toutes)")), ("snapshot", prop_bool("Snapshot préalable attendue (défaut true)"))], &["server_id", "manifest"])),
         tool("clone_server", "CLONE un serveur dans une MyBox pour tester avant la prod : crée un serveur du même jeu (vérifications de mybox_create_server ; CPU/RAM de la source par défaut si la MyBox a la place, sinon ce qui reste), attend la fin de l'installation, l'arrête s'il a démarré, copie les fichiers de la source (plugins, mods, configs, server.properties… ; MONDES EXCLUS sauf include_world=true ; journaux jamais), puis applique le manifeste de la source (commande de démarrage, réglages, tâches planifiées). Long (plusieurs minutes, progression). La sortie donne `created_server_id`, y compris si une étape suivante échoue. Le clone reste arrêté. Vérifie d'abord la place (mybox_capacity, plan_placement) et confirme avec l'utilisateur. ✎ (modifiant)", obj(&[("source_server_id", prop_int("ID du serveur à cloner")), ("mybox_id", prop_int("MyBox d'accueil (mybox_capacity)")), ("name", prop_str("Nom du clone (1 à 50 caractères)")), ("cpu", prop_int("Cœurs (défaut : ceux de la source si la place le permet)")), ("ram", prop_int("Go de RAM (défaut : ceux de la source si la place le permet)")), ("include_world", prop_bool("Copier aussi les mondes (défaut false)")), ("exclude", prop_str_array("Chemins à ne pas copier, ex. [\"/plugins/dynmap/web\"]")), ("location_id", prop_int("Localisation (server_catalog) ; défaut : celle de la source si en stock")), ("required_fields", json!({ "type": "object", "description": "Champs requis du jeu : { CLÉ: valeur } (server_catalog)", "additionalProperties": { "type": "string" } }))], &["source_server_id", "mybox_id", "name"])),
+        // --- Réseaux proxy (network.rs) ---
+        tool("network_topology", "TOPOLOGIE des réseaux proxy du compte (Velocity, BungeeCord/Waterfall), lecture seule : repère les proxys (plateforme de l'hébergeur, jar, velocity.toml ou config.yml), lit leurs entrées (servers, try, forced-hosts, mode de transfert, online-mode) et rapproche chaque adresse d'un serveur du compte (ip:port principal, port secondaire, nom DNS ; 127.0.0.1 ne mène à aucun autre serveur). Pour chaque serveur de jeu relié : online-mode, transfert Velocity de config/paper-global.yml (paper.yml avant 1.19), settings.bungeecord de spigot.yml, BungeeGuard, FabricProxy-Lite. Secret de transfert et jetons comparés EN INTERNE (identique, différent, absent), jamais affichés. Rend proxy → serveurs nommés (adresse, serveur du compte reconnu ou non, réglages) et les problèmes triés (critique, important, info) avec leur correction. `server_id` : seulement les réseaux qui contiennent ce serveur (proxy ou serveur de jeu). À appeler avant link_proxy et après pour vérifier.", obj(&[("server_id", prop_int("Proxy ou serveur de jeu à examiner (facultatif ; défaut : tout le compte)"))], &[])),
+        tool("link_proxy", "RELIE des serveurs de jeu à un proxy Velocity (transfert `modern`, défaut) ou BungeeCord (`legacy`) : déclare chaque serveur sur le proxy (nom → ip:port du compte ; nom de `names`, sinon celui d'une entrée qui le vise déjà, sinon tiré du nom du serveur), fixe la liste de repli `try` (défaut : l'actuelle si elle reste valable, sinon le premier serveur) et le mode de transfert, puis règle chaque serveur Paper : online-mode=false, proxies.velocity.enabled / online-mode / secret dans config/paper-global.yml (paper.yml avant 1.19), settings.bungeecord dans spigot.yml. SECRET : celui du proxy (forwarding.secret) est réutilisé, sinon un secret aléatoire est généré ; écrit des deux côtés, JAMAIS affiché (diffs masqués) — ne cherche pas à le lire ni à l'écrire toi-même. `dry_run` VRAI par défaut : plan et diffs, rien n'est écrit ; montre-le à l'utilisateur puis relance avec dry_run=false après son accord. À l'application : snapshot de chaque serveur modifié, attendue (snapshot=false pour s'en passer), puis une écriture par fichier, chacune annulable (list_changesets, rollback_changeset) ; arrêt au premier échec. Spigot en modern, Fabric (FabricProxy-Lite), Forge, serveur jamais démarré, BungeeGuard : étapes `manual` expliquées, rien d'improvisé. Idempotent. Effet au redémarrage des serveurs de jeu puis du proxy. ✎ (modifiant)", obj(&[("proxy_server_id", prop_int("ID du serveur proxy (Velocity ou BungeeCord)")), ("backend_server_ids", json!({ "type": "array", "items": { "type": "integer" }, "description": "IDs des serveurs de jeu à relier (dans l'ordre : le premier sert de repli par défaut)" })), ("names", json!({ "type": "array", "items": { "type": "string" }, "description": "Nom de chaque serveur dans le proxy, dans l'ordre de backend_server_ids (facultatif ; lettres, chiffres, - et _ ; objet { id: nom } accepté)" })), ("try", json!({ "type": "array", "items": { "type": "string" }, "description": "Liste de repli dans l'ordre : noms d'entrées, ou IDs de serveurs de jeu de l'appel (facultatif)" })), ("mode", json!({ "type": "string", "enum": ["modern", "legacy"], "description": "Transfert : modern (Velocity + Paper, défaut pour Velocity) ou legacy (BungeeCord ; à protéger par BungeeGuard)" })), ("dry_run", prop_bool("Plan et diffs sans rien écrire (défaut true)")), ("snapshot", prop_bool("Snapshot attendue de chaque serveur modifié avant d'écrire (défaut true)"))], &["proxy_server_id", "backend_server_ids"])),
         // --- Garde des agents ---
         tool("list_agent_actions", "JOURNAL des actions des agents MCP (clients externes et agents CLI du Copilote) : horodatage, session, client, outil (✎ = modifiant), serveur(s), arguments résumés et ANONYMISÉS (contenus de fichiers remplacés par leur taille, secrets masqués), résultat (ok, erreur, refusé + motif), durée, étape de changeset créée. Du plus récent au plus ancien. Filtres : `server_id`, `session`, `since` (`30m`, `12h`, `7d`, `AAAA-MM-JJ` ou horodatage Unix), `only_writes`, `limit` (défaut 30, max 200).", obj(&[("server_id", prop_int("Seulement les appels visant ce serveur")), ("session", prop_str("Seulement cette session (identifiant affiché par list_agent_actions ou list_changesets)")), ("since", prop_str("Depuis : 30m, 12h, 7d, AAAA-MM-JJ ou horodatage Unix")), ("only_writes", prop_bool("Seulement les outils modifiants")), ("limit", prop_int("Lignes renvoyées (défaut 30, max 200)"))], &[])),
         tool("list_changesets", "MODIFICATIONS des agents regroupées par session (« changeset » : une session MCP, ou le Copilote par serveur et par jour) : étapes dans l'ordre (outil, cible, serveur), annulable ou NON (et pourquoi : commande console, capture au-delà des plafonds, réglage secret…), déjà annulée ou non. `changeset_id` pour un seul, `server_id` pour filtrer (seulement les étapes de ce serveur), `limit` (défaut 10, max 50). À consulter avant rollback_changeset.", obj(&[("changeset_id", prop_str("Identifiant du changeset")), ("server_id", prop_int("Seulement ce serveur")), ("limit", prop_int("Changesets renvoyés (défaut 10, max 50)"))], &[])),
@@ -2395,5 +2418,34 @@ mod tests {
             let plan = crate::agent_guard::plan_kind(t);
             assert_ne!(plan, "défaut", "{t} : ajouter une arme dans agent_guard::undo::plan_for");
         }
+    }
+
+    #[test]
+    fn proxy_network_tools_are_classified() {
+        // Topologie : lecture, cachée un instant, offerte au Copilote (bornée à son serveur).
+        let r = "network_topology";
+        assert!(!is_write_tool(r) && READ_TOOLS.contains(&r) && !WRITE_TOOLS.contains(&r));
+        assert!(!copilot_forbidden(r) && LOCAL_KEEP_TOOLS.contains(&r));
+        assert!(cache_ttl(r).is_some());
+        // Liaison : modifiante, plusieurs serveurs → jamais au Copilote, jamais en cache.
+        let w = "link_proxy";
+        assert!(is_write_tool(w) && WRITE_TOOLS.contains(&w));
+        assert!(INFRA_TOOLS.contains(&w) && copilot_forbidden(w));
+        assert!(!LOCAL_DISK_TOOLS.contains(&w) && LOCAL_KEEP_TOOLS.contains(&w));
+        assert!(cache_ttl(w).is_none());
+        // Chaque écriture de fichier est une étape de la garde : l'outil composite n'en crée pas.
+        assert_eq!(crate::agent_guard::plan_kind(w), "prévu");
+        for t in [r, w] {
+            assert!(tool_for_game(t, "minecraft") && !tool_for_game(t, "satisfactory"), "{t} : Minecraft");
+            assert_eq!(crate::mcp_catalog::group_of(t), Some("build"), "{t}");
+        }
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        assert_eq!(schema(r)["required"], json!([]));
+        assert_eq!(schema(w)["required"], json!(["proxy_server_id", "backend_server_ids"]));
+        assert_eq!(schema(w)["properties"]["mode"]["enum"], json!(["modern", "legacy"]));
+        let annotations = crate::mcp_catalog::annotations(w).unwrap();
+        assert_eq!(annotations["idempotentHint"], true);
+        assert_eq!(annotations["destructiveHint"], true, "réécrit des configurations");
     }
 }
