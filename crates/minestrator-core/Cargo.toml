@@ -58,6 +58,14 @@ fastnbt = "2"
 # Descripteurs de mods Forge/NeoForge (`META-INF/mods.toml`) lus par `check_plugin_deps`
 # (`jar_meta.rs`). Déjà dans l'arbre via Tauri ; sans écriture ni affichage.
 toml = { version = "1", default-features = false, features = ["std", "parse", "serde"] }
+# Édition structurée des configs (`config_edit.rs`, outils MCP `get_config` / `set_config`) :
+# - TOML modifié en place, commentaires, ordre et mise en forme gardés (déjà dans l'arbre via Tauri) ;
+# - analyseur YAML 1.2 **strict** à positions : localise la clé à modifier et relit le résultat
+#   avant écriture (un fichier qui ne s'analyse plus n'est jamais écrit). `yaml_lite` reste
+#   l'analyseur tolérant des lectures (audit, dépendances). Pur Rust, MIT OR Apache-2.0, deux
+#   petites dépendances (`arraydeque`, `thiserror`).
+toml_edit = { version = "0.25", default-features = false, features = ["parse", "display"] }
+saphyr-parser = "0.3"
 
 # Mods Satisfactory (ficsit.app) : vérification d'intégrité sha256 des artefacts + résolution des
 # contraintes de versions (SML/dépendances, syntaxe semver `^3.12.0`).

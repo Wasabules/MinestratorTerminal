@@ -108,8 +108,8 @@ pub(crate) fn servers_in(args: &Value) -> Result<Vec<i64>, String> {
 }
 
 /// Cibles d'un outil modifiant. Règles particulières :
-/// - `mybox_create_server` crée (permis) ; l'intégrateur ajoute ici les autres créations
-///   (`clone_server`) et appelle [`super::record_created_server`] après succès ;
+/// - `mybox_create_server` et `clone_server` créent (permis) ; le serveur créé est enregistré
+///   pour la session ([`super::record_created_server`]) ;
 /// - copie entre serveurs : seule la cible compte ;
 /// - outils qui portent sur une MyBox entière (`rename_mybox`, `mybox_reorder_servers`, ou tout
 ///   outil qui ne désigne qu'une `mybox_id`) : tous les serveurs de la MyBox ;
@@ -126,7 +126,7 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
         Err(k) => Targets::Invalid(k),
     };
     match name {
-        "mybox_create_server" => return Targets::Create,
+        "mybox_create_server" | "clone_server" => return Targets::Create,
         "rollback_changeset" => {
             return match args.get("changeset_id").and_then(Value::as_str) {
                 Some(id) => Targets::Changeset(id.to_string()),
@@ -241,6 +241,8 @@ mod tests {
     #[test]
     fn targets_follow_the_tool_rules() {
         assert_eq!(write_targets("mybox_create_server", &json!({ "mybox_id": 3 })), Targets::Create);
+        // Le clone ne lit que la source : seule la création compte.
+        assert_eq!(write_targets("clone_server", &json!({ "server_id": 5, "mybox_id": 3 })), Targets::Create);
         assert_eq!(write_targets("write_file", &json!({ "server_id": 5, "path": "/a" })), Targets::Servers(vec![5]));
         assert_eq!(write_targets("write_file", &json!({ "server_id": "5" })), Targets::Servers(vec![5]));
         // Copie : seule la cible compte.

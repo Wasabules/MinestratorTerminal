@@ -238,6 +238,9 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // `mcp::dispatch` (upload_file, rename_path), une étape chacun ; le redémarrage n'a rien
         // à défaire.
         "deploy_and_verify" => Plan::Skip,
+        // Manifeste : une snapshot est prise avant toute modification (sauf snapshot=false).
+        "apply_manifest" => Plan::Fixed("manifeste appliqué : restaurer la snapshot prise juste avant (nom dans la sortie de l'outil)"),
+        "clone_server" => Plan::Fixed("serveur créé : à supprimer avec mybox_delete_server"),
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }

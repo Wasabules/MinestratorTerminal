@@ -365,7 +365,6 @@ pub fn record_created_server(session: &str, server_id: i64) {
 }
 
 /// [`record_created_server`] pour la session de l'appel en cours (sans effet hors appel MCP).
-#[allow(dead_code)] // point d'extension : outils de création des autres lots (`clone_server`)
 pub(crate) fn record_created_server_here(server_id: i64) {
     if let Some(session) = current_session() {
         record_created_server(&session, server_id);

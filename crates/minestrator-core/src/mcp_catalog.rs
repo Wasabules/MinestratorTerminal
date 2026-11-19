@@ -261,6 +261,13 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
         "agent",
         "Déployer un plugin et vérifier",
     ),
+    // build
+    ("get_config", "build", "Lire une configuration structurée"),
+    ("set_config", "build", "Modifier une configuration"),
+    ("export_manifest", "build", "Exporter le manifeste d'un serveur"),
+    ("plan_manifest", "build", "Comparer un serveur à un manifeste"),
+    ("apply_manifest", "build", "Appliquer un manifeste"),
+    ("clone_server", "build", "Cloner un serveur"),
     // guard
     (
         "list_agent_actions",
@@ -289,6 +296,7 @@ pub(crate) const NON_DESTRUCTIVE_TOOLS: &[&str] = &[
     "create_schedule",
     "add_schedule_task",
     "reorder_schedule_tasks",
+    "clone_server",
 ];
 
 /// Outils modifiants **idempotents** (`idempotentHint: true`) : les rappeler avec les mêmes
@@ -307,6 +315,8 @@ pub(crate) const IDEMPOTENT_TOOLS: &[&str] = &[
     "update_schedule",
     "update_schedule_task",
     "reorder_schedule_tasks",
+    "set_config",
+    "apply_manifest",
 ];
 
 /// Outils qui sortent du compte MineStrator (`openWorldHint: true`) : marketplaces, ficsit.app,
@@ -321,6 +331,9 @@ pub(crate) const OPEN_WORLD_TOOLS: &[&str] = &[
     "install_ficsit_mod",
     "analyze_performance",
     "parse_spark_report",
+    // Contenu résolu et installé depuis les marketplaces.
+    "plan_manifest",
+    "apply_manifest",
 ];
 
 /// Outils locaux dont la confirmation (`confirm_name`) est demandée à l'humain quand le client
