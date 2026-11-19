@@ -1,10 +1,12 @@
 //! Étapes `manual` du plan reliées aux **outils du MCP officiel** qui les réalisent : version du
 //! jeu et plateforme (`change_version`), Java (`manage_java`), fichier de démarrage
-//! (`set_startup_config`). Le manifeste ne les applique pas lui-même (endpoints d'écriture non
-//! documentés, jamais essayés : `POST /server/{id}/version`, `PATCH …/java/version`, `PATCH
-//! …/startup/file`), mais l'étape dit quel outil appeler, avec quels arguments, et s'il est
-//! appelable **maintenant** par ce client : passerelle vers le MCP officiel active
-//! (`McpConfig.official_gateway`, Réglages → MCP), groupe `official` actif et outil relayé.
+//! (`set_startup_config`). Le manifeste ne les applique pas lui-même par défaut (endpoints
+//! d'écriture non documentés, jamais essayés : `POST /server/{id}/version`, `PATCH
+//! …/java/version`, `PATCH …/startup/file`), mais l'étape dit quel outil appeler, avec quels
+//! arguments, et s'il est appelable **maintenant** par ce client : passerelle vers le MCP officiel
+//! active (`McpConfig.official_gateway`, Réglages → MCP), groupe `official` actif et outil relayé.
+//! Avec `apply_official: true`, `apply_manifest` les applique par la logique de
+//! `set_server_platform` (`platform.rs`), sans passer par la passerelle.
 //!
 //! Arguments tirés des schémas de l'officiel (relevé `tools/list` du 2026-11-19, voir
 //! `official_relay.rs`) :

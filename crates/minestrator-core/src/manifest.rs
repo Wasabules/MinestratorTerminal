@@ -25,6 +25,8 @@ mod official;
 mod tests;
 
 pub(crate) use clone::clone_server_tool;
+// Comparaison de versions de Minecraft, partagée avec `set_server_platform` (platform.rs).
+pub(crate) use official::older;
 
 use crate::config_edit::{self, EditOptions, EditRequest, Format};
 use crate::models::Startup;
@@ -482,7 +484,7 @@ pub(crate) fn java_major(image: &str) -> Option<i64> {
         while let Some(p) = lower[from..].find(marker) {
             let rest = &lower[from + p + marker.len()..];
             let digits: String = rest
-                .trim_start_matches(['_', ':', '-', '.'])
+                .trim_start_matches(['_', ':', '-', '.', '/'])
                 .chars()
                 .take_while(char::is_ascii_digit)
                 .collect();
@@ -566,20 +568,20 @@ pub(crate) fn plan_server(spec: &ServerSpec, f: &Facts) -> Vec<Step> {
         "version du jeu",
         spec.game_version.as_deref(),
         f.game_version.as_deref(),
-        "non appliqué par le manifeste : outil officiel change_version (voir `official`) ou panel → Versions, après une snapshot",
+        "appliqué seulement avec apply_official=true (apply_manifest), sinon outil officiel change_version (voir `official`) ou panel → Versions, après une snapshot",
     );
     versioned(
         "server.loader",
         "plateforme",
         spec.loader.as_deref(),
         f.loader.as_deref(),
-        "non appliqué par le manifeste : outil officiel change_version (voir `official`) ou panel → Versions, après une snapshot",
+        "appliqué seulement avec apply_official=true (apply_manifest), sinon outil officiel change_version (voir `official`) ou panel → Versions, après une snapshot",
     );
     if let Some(want) = spec.java_version {
         let have = f.startup.as_ref().and_then(|s| java_major(&s.image));
         out.push(match have {
             Some(h) if h == want => Step::new("server.java", Status::Ok, format!("Java {h}")),
-            Some(h) => Step::new("server.java", Status::Manual, format!("Java {h} au lieu de {want} : non appliqué par le manifeste, outil officiel manage_java (voir `official`) ou panel → Démarrage"))
+            Some(h) => Step::new("server.java", Status::Manual, format!("Java {h} au lieu de {want} : appliqué seulement avec apply_official=true (apply_manifest), sinon outil officiel manage_java (voir `official`) ou panel → Démarrage"))
                 .values(Some(json!(h)), Some(json!(want))),
             None => Step::new("server.java", Status::Manual, format!("version de Java actuelle illisible (voulue : {want}) : à vérifier avec l'outil officiel manage_java (voir `official`) ou dans le panel")).values(None, Some(json!(want))),
         });
@@ -637,7 +639,7 @@ pub(crate) fn plan_startup(spec: &StartupSpec, current: Option<&Startup>) -> Vec
         out.push(if j == cur.jar_file.trim() {
             Step::new("startup.jar_file", Status::Ok, format!("JAR {j}"))
         } else {
-            Step::new("startup.jar_file", Status::Manual, format!("JAR « {} » au lieu de « {j} » : non appliqué par le manifeste, outil officiel set_startup_config (voir `official`) ou panel → Démarrage", cur.jar_file))
+            Step::new("startup.jar_file", Status::Manual, format!("JAR « {} » au lieu de « {j} » : appliqué seulement avec apply_official=true (apply_manifest), sinon outil officiel set_startup_config (voir `official`) ou panel → Démarrage", cur.jar_file))
                 .values(Some(json!(cur.jar_file)), Some(json!(j)))
         });
     }
@@ -1778,12 +1780,34 @@ pub(crate) fn render_plan(server_id: i64, plan: &Plan) -> Value {
     if !plan.warnings.is_empty() {
         out["warnings"] = json!(plan.warnings);
     }
-    out["next"] = json!(if todo == 0 {
-        "rien à appliquer : le serveur est conforme (étapes manual/unsupported éventuelles à traiter à la main)"
-    } else {
-        "apply_manifest avec le même manifeste applique les étapes change/add/remove (snapshot préalable par défaut) ; `steps` pour n'en appliquer qu'une partie (identifiants ou préfixes : \"properties\", \"content.plugin\")"
+    // Étapes manuelles que `apply_official: true` ferait appliquer (logique de set_server_platform).
+    let official = official_applicable(&plan.steps);
+    if !official.is_empty() {
+        out["apply_official"] = json!({
+            "steps": official,
+            "how": "apply_manifest avec apply_official=true applique aussi ces étapes (version, plateforme, Java, JAR) par la logique de set_server_platform, sans passer par la passerelle : catalogue de l'hébergeur (change_version) ou JAR officiel, Java (manage_java), fichier de démarrage (set_startup_config). change_version est DESTRUCTIF : confirmation de l'utilisateur avant tout effet (ou `confirm_name` = nom exact du serveur, donné par lui). Détail résolu (identifiants, build, JAR) : set_server_platform en dry_run.",
+        });
+    }
+    out["next"] = json!(match (todo, official.is_empty()) {
+        (0, true) => "rien à appliquer : le serveur est conforme (étapes manual/unsupported éventuelles à traiter à la main)",
+        (0, false) => "rien à appliquer par défaut ; les étapes de `apply_official` s'appliquent avec apply_manifest apply_official=true (confirmation de l'utilisateur pour change_version)",
+        _ => "apply_manifest avec le même manifeste applique les étapes change/add/remove (snapshot préalable par défaut) ; `steps` pour n'en appliquer qu'une partie (identifiants ou préfixes : \"properties\", \"content.plugin\") ; apply_official=true pour les étapes de version, plateforme, Java et JAR",
     });
     out
+}
+
+/// Étapes `manual` que `apply_official` applique : version, plateforme, Java, JAR, quand une voie
+/// existe (l'étape porte un outil officiel ; Quilt, par exemple, n'en a pas).
+pub(crate) fn official_applicable(steps: &[Step]) -> Vec<&str> {
+    steps
+        .iter()
+        .filter(|s| {
+            s.status == Status::Manual
+                && s.official.is_some()
+                && crate::platform::MANIFEST_STEPS.contains(&s.id.as_str())
+        })
+        .map(|s| s.id.as_str())
+        .collect()
 }
 
 // --- Application ---------------------------------------------------------------------------------------
@@ -2132,6 +2156,47 @@ pub(crate) async fn wait_snapshot(core: &Core, job: i64, name: &str) -> Result<(
 pub(crate) struct ApplyOptions {
     pub steps: Vec<String>,
     pub snapshot: bool,
+    /// Étapes `manual` de version, plateforme, Java et JAR appliquées par la logique de
+    /// `set_server_platform` (`platform.rs`). Faux : comportement historique (manual).
+    pub apply_official: bool,
+    /// Confirmation de `change_version` (nom exact du serveur, donné par l'utilisateur) quand son
+    /// client ne sait pas la lui demander directement.
+    pub confirm_name: Option<String>,
+}
+
+/// `apply_official` : étapes concernées, plan résolu (lectures seules) et confirmation de
+/// l'humain obtenue AVANT tout effet. `Err` : refus de confirmation (rien n'est fait).
+async fn prepare_official(
+    core: &Core,
+    server_id: i64,
+    m: &Manifest,
+    plan: &Plan,
+    opts: &ApplyOptions,
+) -> Result<(Vec<String>, Result<crate::platform::Prepared, String>), String> {
+    if !opts.apply_official {
+        return Ok((Vec::new(), Err(String::new())));
+    }
+    let ids: Vec<String> = official_applicable(&plan.steps)
+        .into_iter()
+        .filter(|id| selected(id, &opts.steps))
+        .map(str::to_string)
+        .collect();
+    let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+    let jar = m.startup.as_ref().and_then(|s| s.jar_file.as_deref());
+    let Some(req) = crate::platform::Request::from_manifest(server_id, m.server.as_ref(), jar, &refs) else {
+        return Ok((Vec::new(), Err(String::new())));
+    };
+    let prepared = match Box::pin(crate::platform::prepare(core, &req)).await {
+        Ok(p) if !p.blocking.is_empty() => Err(p.blocking.join(" ; ")),
+        Ok(p) => {
+            if crate::platform::needs_confirmation(&p) {
+                crate::platform::confirm(&p, opts.confirm_name.clone()).await?;
+            }
+            Ok(p)
+        }
+        Err(e) => Err(e),
+    };
+    Ok((ids, prepared))
 }
 
 /// Applique un manifeste : plan recalculé, étapes sélectionnées exécutées dans l'ordre.
@@ -2148,7 +2213,10 @@ pub(crate) async fn apply(
         .iter()
         .filter(|s| s.status.actionable() && selected(&s.id, &opts.steps) && s.action.is_some())
         .collect();
-    let total = todo.len();
+    // Version, plateforme, Java, JAR (apply_official) : résolus et confirmés avant tout effet.
+    let (official_ids, platform) = Box::pin(prepare_official(core, server_id, m, &plan, opts)).await?;
+    let official_ops = platform.as_ref().map(|p| crate::platform::ops(p).len()).unwrap_or(0);
+    let total = todo.len() + official_ops;
     let mut results: Vec<StepResult> = Vec::new();
     let mut snapshot = Value::Null;
     if total > 0 && opts.snapshot {
@@ -2161,8 +2229,32 @@ pub(crate) async fn apply(
         wait_snapshot(core, job, &name).await.map_err(|e| format!("{e} : rien n'a été modifié ; relance plus tard (idempotent) ou avec snapshot=false"))?;
         snapshot = json!({ "name": name, "job_id": job });
     }
+    // apply_official : d'abord (Java avant le changement de version, qui redémarre le serveur).
+    let mut official_outcomes: BTreeMap<String, (&'static str, Option<String>)> = BTreeMap::new();
+    let mut deferred: Option<String> = None;
+    if !official_ids.is_empty() {
+        let refs: Vec<&str> = official_ids.iter().map(String::as_str).collect();
+        match &platform {
+            Ok(p) => {
+                let (res, _) = Box::pin(crate::platform::execute(core, p, false)).await;
+                for (id, outcome, detail) in crate::platform::outcomes_for_steps(p, &refs, &res) {
+                    official_outcomes.insert(id, (outcome, detail));
+                }
+                if crate::platform::changes_platform(p) && res.iter().any(|r| r.outcome == "réussie") {
+                    deferred = Some("plateforme ou version en cours de changement : relance apply_manifest une fois l'opération terminée (idempotent ; contenu résolu pour la nouvelle version)".into());
+                }
+            }
+            Err(e) => {
+                for id in refs {
+                    official_outcomes.insert(id.to_string(), ("échouée", Some(e.clone())));
+                }
+            }
+        }
+    }
     let mut failed: HashSet<String> = HashSet::new();
-    let mut done = 0usize;
+    let mut postponed: HashSet<String> = HashSet::new();
+    // La progression reprend après les opérations d'apply_official.
+    let mut done = official_ops;
     let mut cancelled = false;
     for s in &plan.steps {
         let base = |outcome: &'static str, detail: Option<String>| StepResult {
@@ -2172,6 +2264,19 @@ pub(crate) async fn apply(
             summary: s.summary.clone(),
             detail,
         };
+        if let Some((outcome, detail)) = official_outcomes.get(&s.id) {
+            results.push(base(outcome, detail.clone()));
+            continue;
+        }
+        if let Some(why) = &deferred {
+            if s.status.actionable()
+                && (s.id.starts_with("content.") || s.depends_on.iter().any(|d| postponed.contains(d)))
+            {
+                postponed.insert(s.id.clone());
+                results.push(base("non exécutée", Some(why.clone())));
+                continue;
+            }
+        }
         if !s.status.actionable() {
             results.push(base(
                 if s.status == Status::Ok {
@@ -2220,8 +2325,10 @@ pub(crate) async fn apply(
             && (r.id.starts_with("content.")
                 || r.id.starts_with("properties.")
                 || r.id.starts_with("startup.")
-                || r.id.starts_with("configs."))
+                || r.id.starts_with("configs.")
+                || r.id == "server.java")
     });
+    let handled = |id: &str| official_outcomes.get(id).is_some_and(|(o, _)| *o == "réussie");
     let mut out = json!({
         "server_id": server_id,
         "status": if cancelled { "annulé" } else if count("échouée") > 0 { "terminé avec des échecs" } else { "terminé" },
@@ -2238,7 +2345,7 @@ pub(crate) async fn apply(
     let manual: Vec<&str> = plan
         .steps
         .iter()
-        .filter(|s| matches!(s.status, Status::Manual | Status::Unsupported))
+        .filter(|s| matches!(s.status, Status::Manual | Status::Unsupported) && !handled(&s.id))
         .map(|s| s.summary.as_str())
         .collect();
     if !manual.is_empty() {
@@ -2248,13 +2355,24 @@ pub(crate) async fn apply(
     let official: Vec<Value> = plan
         .steps
         .iter()
+        .filter(|s| !handled(&s.id))
         .filter_map(|s| s.official.as_ref().map(|o| json!({ "step": s.id, "official": o })))
         .collect();
     if !official.is_empty() {
         out["official"] = json!(official);
     }
+    if !opts.apply_official && !official_applicable(&plan.steps).is_empty() {
+        out["apply_official"] = json!("ces étapes (version, plateforme, Java, JAR) s'appliquent avec apply_official=true (logique de set_server_platform ; confirmation de l'utilisateur pour change_version)");
+    }
+    let mut next: Vec<&str> = Vec::new();
+    if deferred.is_some() {
+        next.push("changement de plateforme ou de version lancé (asynchrone) : suis-le avec server_status ou wait_for, puis relance apply_manifest avec le même manifeste pour le contenu reporté");
+    }
     if restart {
-        out["next"] = json!("redémarre le serveur (power_action restart) pour charger contenu, réglages et configs ; relance plan_manifest pour vérifier");
+        next.push("redémarre le serveur (power_action restart) pour charger contenu, réglages, configs, Java et fichier de démarrage ; relance plan_manifest pour vérifier");
+    }
+    if !next.is_empty() {
+        out["next"] = json!(next.join(" ; "));
     }
     Ok(out)
 }
@@ -2616,6 +2734,16 @@ pub(crate) async fn apply_manifest_tool(core: &Core, args: &Value) -> Result<Str
             .get("snapshot")
             .and_then(Value::as_bool)
             .unwrap_or(true),
+        apply_official: args
+            .get("apply_official")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        confirm_name: args
+            .get("confirm_name")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
     };
     let out = Box::pin(apply(core, id, &m, &opts)).await?;
     Ok(config_edit::render_for_ai(core, out))

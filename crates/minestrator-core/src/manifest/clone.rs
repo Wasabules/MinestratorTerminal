@@ -549,6 +549,8 @@ pub(crate) async fn clone_server_tool(core: &Core, args: &Value) -> Result<Strin
         &ApplyOptions {
             steps: Vec::new(),
             snapshot: false,
+            // Version, plateforme, Java, JAR : jamais appliqués au clone (même jeu que la source).
+            ..Default::default()
         },
     ))
     .await

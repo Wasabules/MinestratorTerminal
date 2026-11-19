@@ -954,6 +954,15 @@ impl ApiClient {
         Ok(server_files::parse_mybox_disk(&data))
     }
 
+    /// Supprime DÉFINITIVEMENT une base de données d'une MyBox (`DELETE
+    /// /mybox/{id_mybox}/database/{id}`, non documenté). Relevé réel du 2026-11-19 : réponse `0`
+    /// (job asynchrone), la base disparaît ensuite de `GET /mybox/{id}`. Renvoie l'identifiant du
+    /// job (0 si la réponse n'en porte pas). Garde (nom exact confirmé) dans `db_connect.rs`.
+    pub async fn delete_mybox_database(&self, token: &str, mybox_id: i64, database_id: i64) -> Result<i64> {
+        self.send_job_no_body(reqwest::Method::DELETE, token, &mybox_database_path(mybox_id, database_id))
+            .await
+    }
+
     /// Lance une compression sur le serveur (`POST /server/{id}/files/compress/jobs`) : renvoie
     /// le job créé, à suivre avec [`Self::compress_job`].
     pub async fn compress_start(&self, token: &str, id: i64, body: &Value) -> Result<CompressJob> {
@@ -1029,6 +1038,11 @@ impl ApiClient {
 }
 
 /// Extrait `data.job_id` d'une enveloppe (les opérations async de MineStrator le renvoient) ; 0 sinon.
+/// Chemin d'une base de données d'une MyBox.
+fn mybox_database_path(mybox_id: i64, database_id: i64) -> String {
+    format!("/mybox/{mybox_id}/database/{database_id}")
+}
+
 fn job_id(data: &Option<Value>) -> i64 {
     data.as_ref()
         .and_then(|d| d.get("job_id"))
@@ -1195,5 +1209,12 @@ mod tests {
     #[tokio::test]
     async fn bulk_players_with_no_ids_skips_the_request() {
         assert!(ApiClient::new().live_players_bulk("t", &[]).await.unwrap().is_empty());
+    }
+
+    #[test]
+    fn mybox_database_path_matches_the_panel() {
+        // Relevé réel (2026-11-19) : DELETE /mybox/{id_mybox}/database/{id} → « 0 » (job).
+        assert_eq!(mybox_database_path(111068, 7395), "/mybox/111068/database/7395");
+        assert_eq!(job_id(&Some(json!(0))), 0);
     }
 }

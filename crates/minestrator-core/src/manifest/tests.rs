@@ -114,6 +114,8 @@ fn java_major_reads_common_images() {
     assert_eq!(java_major("eclipse-temurin:8-jre"), Some(8));
     assert_eq!(java_major("openjdk-11"), Some(11));
     assert_eq!(java_major("ghcr.io/parkervcp/yolks:debian"), None);
+    // Image réelle de MineStrator (relevé du 2026-11-19, « Java 25 - Performance »).
+    assert_eq!(java_major("reg.sttr.io/java/25_perf:latest"), Some(25));
 }
 
 #[test]
@@ -569,4 +571,60 @@ fn clone_copy_skips_worlds_and_expands_partial_exclusions() {
         decide("/server.properties", false, &excluded),
         CopyDecision::Copy
     );
+}
+
+// --- apply_official (lot plateforme) ---------------------------------------------------------------
+
+/// `plan_manifest` dit quelles étapes `manual` `apply_official: true` appliquerait : version,
+/// plateforme, Java et JAR qui ont un outil officiel (Quilt n'en a pas).
+#[test]
+fn the_plan_lists_the_steps_apply_official_would_apply() {
+    let f = facts();
+    let spec = ServerSpec {
+        game_version: Some("1.21.11".into()),
+        loader: Some("purpur".into()),
+        java_version: Some(25),
+        ..Default::default()
+    };
+    let mut steps = plan_server(&spec, &f);
+    let all: std::collections::HashMap<&'static str, Result<(), String>> =
+        ["change_version", "manage_java", "set_startup_config"]
+            .into_iter()
+            .map(|t| (t, Err("passerelle désactivée".to_string())))
+            .collect();
+    official::annotate(&mut steps, 1, Some(&spec), None, &f, &all);
+    let plan = Plan {
+        steps,
+        ..Default::default()
+    };
+    let out = render_plan(1, &plan);
+    assert_eq!(
+        out["apply_official"]["steps"],
+        json!(["server.game_version", "server.loader", "server.java"])
+    );
+    assert!(out["apply_official"]["how"]
+        .as_str()
+        .unwrap()
+        .contains("confirmation"));
+    assert!(out["next"].as_str().unwrap().contains("apply_official=true"));
+    assert!(out["steps"][0]["summary"]
+        .as_str()
+        .unwrap()
+        .contains("apply_official=true"));
+    // Quilt : aucune voie, rien d'applicable ; pas de clé.
+    let quilt = ServerSpec {
+        loader: Some("quilt".into()),
+        ..Default::default()
+    };
+    let mut steps = plan_server(&quilt, &f);
+    official::annotate(&mut steps, 1, Some(&quilt), None, &f, &all);
+    assert!(official_applicable(&steps).is_empty());
+    let out = render_plan(
+        1,
+        &Plan {
+            steps,
+            ..Default::default()
+        },
+    );
+    assert!(out.get("apply_official").is_none());
 }

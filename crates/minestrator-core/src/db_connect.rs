@@ -29,6 +29,12 @@
 //!
 //! L'outil ne crée pas de base : `create_database` (outil officiel, passerelle `official_gateway`)
 //! ou le panel.
+//!
+//! **Suppression** (`delete_database`, [`delete_database_tool`]) : `DELETE
+//! /mybox/{id}/database/{id}` (essayé en réel le 2026-11-19 : réponse `0`, la base disparaît de
+//! `GET /mybox/{id}`), seulement si la base est listée dans la MyBox et après confirmation de son
+//! nom exact (`dbname`) par l'humain (élicitation) ou par `confirm_name` donné par l'utilisateur ;
+//! le nom attendu n'est jamais révélé dans un refus, le mot de passe jamais affiché.
 
 use crate::config_edit;
 use crate::mcp_ctx::{self, Confirmation};
@@ -365,8 +371,9 @@ pub(crate) fn read_creds(entry: &Value) -> Result<Creds, String> {
     })
 }
 
-/// Lit le JSON d'une sortie texte (l'outil officiel peut l'entourer de texte).
-fn json_in_text(text: &str) -> Option<Value> {
+/// Lit le JSON d'une sortie texte (l'outil officiel peut l'entourer de texte). Partagé avec
+/// `platform.rs` (sorties de `search_game_content`, `get_content_files`).
+pub(crate) fn json_in_text(text: &str) -> Option<Value> {
     if let Ok(v) = serde_json::from_str::<Value>(text.trim()) {
         return Some(v);
     }
@@ -890,6 +897,154 @@ pub(crate) async fn connect_database_tool(core: &Core, args: &Value) -> Result<S
     Ok(scrub(&text, &secrets_now))
 }
 
+// --- Suppression d'une base (`delete_database`) ------------------------------------------------------
+
+/// Arguments validés de `delete_database`.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DeleteRequest {
+    pub mybox_id: i64,
+    pub database_id: i64,
+    pub confirm_name: Option<String>,
+}
+
+impl DeleteRequest {
+    pub(crate) fn parse(args: &Value) -> Result<Self, String> {
+        Ok(DeleteRequest {
+            mybox_id: int_arg(args, "mybox_id")?.ok_or("paramètre `mybox_id` (entier) requis")?,
+            database_id: int_arg(args, "database_id")?
+                .ok_or("paramètre `database_id` (entier) requis (voir get_mybox → databases, ou l'erreur de connect_database)")?,
+            confirm_name: args
+                .get("confirm_name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+        })
+    }
+}
+
+/// Nom exact d'une base (`dbname`) : ce que l'utilisateur retape pour confirmer.
+pub(crate) fn database_name(entry: &Value) -> Option<String> {
+    pick(&leaves(entry), NAME_KEYS)
+}
+
+/// La confirmation reprend-elle exactement le nom de la base (espaces de bord ignorés, casse
+/// comprise) ?
+pub(crate) fn delete_confirmed(expected: &str, given: &str) -> bool {
+    let expected = expected.trim();
+    !expected.is_empty() && given.trim() == expected
+}
+
+/// Message d'une confirmation manquante : ne révèle jamais le nom attendu.
+const DELETE_CONFIRM_MISSING: &str = "Confirmation requise : `confirm_name` = nom exact de la base (son `dbname`, tel qu'affiché dans le panel → MyBox → Bases de données), donné par l'utilisateur — jamais deviné. Rien n'a été supprimé. Avant de supprimer : sauvegardes de la base avec l'outil officiel list_db_backups.";
+
+/// La base est-elle encore listée par `GET /mybox/{id}` ?
+async fn database_listed(core: &Core, mybox_id: i64, database_id: i64) -> Result<bool, String> {
+    let token = core.token().map_err(|e| e.to_string())?;
+    let data = core
+        .api
+        .get_data(&token, &format!("/mybox/{mybox_id}"))
+        .await
+        .map_err(|e| format!("MyBox {mybox_id} illisible : {e}"))?;
+    Ok(database_entries(&data)
+        .iter()
+        .any(|e| entry_id(e) == Some(database_id)))
+}
+
+/// Outil MCP `delete_database` : supprime DÉFINITIVEMENT une base de données d'une MyBox, après
+/// vérification qu'elle existe et confirmation de son nom exact par l'humain (élicitation) ou par
+/// `confirm_name`. Le mot de passe de la base n'apparaît jamais.
+pub(crate) async fn delete_database_tool(core: &Core, args: &Value) -> Result<String, String> {
+    let req = DeleteRequest::parse(args)?;
+    let (mybox_id, id) = (req.mybox_id, req.database_id);
+    let token = core.token().map_err(|e| e.to_string())?;
+    let data = core
+        .api
+        .get_data(&token, &format!("/mybox/{mybox_id}"))
+        .await
+        .map_err(|e| format!("MyBox {mybox_id} illisible : {e}"))?;
+    let entries = database_entries(&data);
+    let entry = select_entry(&entries, Some(id), mybox_id).map_err(|e| {
+        if entries.is_empty() {
+            format!("La MyBox {mybox_id} n'a aucune base de données : rien à supprimer.")
+        } else {
+            e
+        }
+    })?;
+    let name = database_name(entry).ok_or_else(|| {
+        format!(
+            "nom de la base {id} illisible dans la réponse de l'API (champs vus : {}) : confirmation impossible, rien n'est supprimé",
+            field_names(entry)
+        )
+    })?;
+    // Lecture tolérante : de quoi décrire la base (jamais le mot de passe) et nettoyer les sorties.
+    let creds = read_creds(entry).ok();
+    let password = creds
+        .as_ref()
+        .and_then(|c| c.password.clone())
+        .unwrap_or_default();
+    let secrets = [password.as_str()];
+    let label = creds.as_ref().and_then(|c| c.label.clone());
+    let host = creds.as_ref().map(|c| c.host.clone());
+
+    // Confirmation AVANT tout effet (seules des lectures précèdent : rejouables sans risque).
+    let message = format!(
+        "Suppression DÉFINITIVE de la base de données {id}{} de la MyBox {mybox_id} : toutes ses tables et données sont perdues, et tout ce qui s'y connecte (plugins, sites) cessera de fonctionner. Sauvegardes éventuelles : outil officiel list_db_backups.",
+        label.as_deref().map(|l| format!(" (« {l} »)")).unwrap_or_default()
+    );
+    let expected = name.clone();
+    let typed = mcp_ctx::confirm_or_given(&message, || async move { Ok(expected) }, req.confirm_name.clone())
+        .await
+        .map_err(|e| {
+            if e.contains("requis") {
+                DELETE_CONFIRM_MISSING.to_string()
+            } else {
+                e
+            }
+        })?;
+    if !delete_confirmed(&name, &typed) {
+        return Err("Refusé : `confirm_name` ne correspond pas au nom exact de la base (casse comprise). Rien n'a été supprimé.".into());
+    }
+
+    let job = core
+        .api
+        .delete_mybox_database(&token, mybox_id, id)
+        .await
+        .map_err(|e| scrub(&format!("suppression de la base {id} refusée par l'API : {e}"), &secrets))?;
+    core.cache().clear();
+    // Suppression asynchrone : la base doit disparaître de la MyBox (relevé : immédiat).
+    let mut verified = None;
+    for attempt in 0..4 {
+        if attempt > 0 {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+        }
+        match database_listed(core, mybox_id, id).await {
+            Ok(false) => {
+                verified = Some(true);
+                break;
+            }
+            Ok(true) => verified = Some(false),
+            Err(_) => {}
+        }
+    }
+    let out = json!({
+        "mybox_id": mybox_id,
+        "database": { "id": id, "name": name, "label": label, "host": host },
+        "deleted": true,
+        "job_id": job,
+        "verified": verified,
+        "note": match verified {
+            Some(true) => "la base n'est plus listée dans la MyBox",
+            Some(false) => "la base est encore listée (suppression asynchrone en cours) : vérifie dans quelques instants (mybox_info ou connect_database)",
+            None => "MyBox illisible après la suppression : vérification impossible",
+        },
+        "undo": "irréversible : seule une sauvegarde automatique (outil officiel list_db_backups / restore_db_backup, si la base en avait) permet de retrouver des données",
+        "next": "retire les accès de cette base des configs des plugins qui l'utilisaient (get_config / set_config), sinon ils échoueront au démarrage",
+    });
+    let text = config_edit::render_for_ai(core, out);
+    Ok(scrub(&text, &secrets))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1254,5 +1409,37 @@ mod tests {
             json_in_text("Voici : {\"databases\": []} fin").unwrap(),
             json!({ "databases": [] })
         );
+    }
+
+    /// `delete_database` : la base visée est retrouvée par son identifiant dans la vraie forme de
+    /// `GET /mybox/{id}` → `databases[]` (relevé du 2026-11-19), son nom exact (`dbname`) est ce
+    /// que l'utilisateur retape ; le refus ne révèle jamais le nom ni le mot de passe.
+    #[test]
+    fn database_deletion_needs_the_exact_dbname() {
+        let data = json!({ "databases": [
+            { "id": 7395, "dbname": "minesr_abcdefgh", "description": "", "host": "mariadb1.mystrator.com", "port": 3306, "username": "minesr_abcdefgh", "password": SECRET },
+            { "id": 7396, "dbname": "minesr_zyxwvuts", "description": "Plan", "host": "mariadb1.mystrator.com", "port": 3306, "username": "minesr_zyxwvuts", "password": SECRET }
+        ] });
+        let entries = database_entries(&data);
+        let entry = select_entry(&entries, Some(7396), 111).unwrap();
+        assert_eq!(database_name(entry).as_deref(), Some("minesr_zyxwvuts"));
+        assert!(select_entry(&entries, Some(1), 111).unwrap_err().contains("introuvable"));
+        assert!(delete_confirmed("minesr_zyxwvuts", " minesr_zyxwvuts "));
+        assert!(!delete_confirmed("minesr_zyxwvuts", "MINESR_ZYXWVUTS"), "casse comprise");
+        assert!(!delete_confirmed("minesr_zyxwvuts", "Plan"), "le libellé n'est pas le nom");
+        assert!(!delete_confirmed("", ""));
+        assert!(!DELETE_CONFIRM_MISSING.contains("minesr") && DELETE_CONFIRM_MISSING.contains("list_db_backups"));
+        let r = DeleteRequest::parse(&json!({ "mybox_id": "111", "database_id": 7396, "confirm_name": "  minesr_zyxwvuts " })).unwrap();
+        assert_eq!((r.mybox_id, r.database_id, r.confirm_name.as_deref()), (111, 7396, Some("minesr_zyxwvuts")));
+        assert!(DeleteRequest::parse(&json!({ "mybox_id": 111 })).unwrap_err().contains("database_id"));
+        assert!(DeleteRequest::parse(&json!({ "database_id": 1 })).unwrap_err().contains("mybox_id"));
+        assert_eq!(DeleteRequest::parse(&json!({ "mybox_id": 1, "database_id": 2, "confirm_name": " " })).unwrap().confirm_name, None);
+    }
+
+    /// Hors MCP (pas d'élicitation) : sans `confirm_name`, la confirmation échoue avant tout effet.
+    #[tokio::test]
+    async fn database_deletion_without_confirmation_is_refused() {
+        let out = mcp_ctx::confirm_or_given("x", || async { Ok("minesr_x".to_string()) }, None).await;
+        assert!(out.unwrap_err().contains("requis"), "remplacé par DELETE_CONFIRM_MISSING dans l'outil");
     }
 }

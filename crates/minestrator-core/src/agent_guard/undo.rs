@@ -277,6 +277,15 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Réseau proxy : chaque fichier (config du proxy, secret, paper-global.yml, spigot.yml) et
         // l'online-mode passent par `mcp::dispatch` (`guarded_write`), une étape chacun.
         "link_proxy" => Plan::Skip,
+        // Plateforme et version (platform.rs) : outil composite ; le JAR envoyé passe par
+        // `mcp::dispatch` (upload_file, annulable), chaque outil officiel est une étape à part
+        // (`platform::official_write`), non annulable par nature :
+        "set_server_platform" => Plan::Skip,
+        "change_version" => Plan::Fixed("version ou plateforme installée par l'hébergeur : restaurer la snapshot prise juste avant"),
+        "manage_java" => Plan::Fixed("version de Java changée : la remettre avec set_server_platform java=<ancienne>"),
+        "set_startup_config" => Plan::Fixed("fichier de démarrage changé : le remettre avec set_server_platform jar_file=<ancien>"),
+        // Base de données supprimée : seule une sauvegarde automatique de l'hébergeur la rend.
+        "delete_database" => Plan::Fixed("base de données supprimée : seule une sauvegarde (outil officiel restore_db_backup) peut la rendre"),
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }

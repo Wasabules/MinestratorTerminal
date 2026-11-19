@@ -85,6 +85,9 @@ mod db_connect;
 mod pregen;
 // Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`.
 mod network;
+// Plateforme et version d'un serveur sans le panel : outil MCP `set_server_platform` (catalogue de
+// l'hébergeur ou JAR officiel), aussi utilisé par `apply_manifest` (`apply_official`).
+mod platform;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_guard::{
