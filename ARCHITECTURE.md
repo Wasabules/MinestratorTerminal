@@ -329,6 +329,11 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
 - **`manifest`** — **manifeste déclaratif** d'un serveur (v1) : export, plan (écart avec le serveur
   réel, étapes à identifiant stable, `manual` / `unsupported` expliqués), application idempotente
   après snapshot, et `clone_server` (`manifest/clone.rs` : création, copie, manifeste de la source).
+- **`network`** — **réseaux proxy** Velocity / BungeeCord : repérage des proxys, rapprochement de
+  leurs entrées avec les serveurs du compte (`GET /server/{id}` : ip, port, DNS, ports secondaires),
+  cohérence des serveurs de jeu (`network_topology`) ; liaison (`network/link.rs`, `link_proxy`) :
+  plan pur avec diffs masqués, secret de transfert réutilisé ou généré (CSPRNG) et jamais rendu,
+  écritures par `agent_guard::guarded_write`.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

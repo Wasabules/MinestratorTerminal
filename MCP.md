@@ -96,7 +96,7 @@ outils. Arguments vérifiés (identifiants entiers, texte court sur une ligne).
 |---|---|---|
 | `diagnose_crash` | `server_id` | Trouver la cause d'un crash ou d'un démarrage impossible, corriger, vérifier. |
 | `prepare_public_launch` | `server_id` | Liste de contrôle avant l'ouverture aux joueurs (sécurité, stabilité, capacité, filets). |
-| `setup_velocity_network` | `proxy_server_id`, `backend_server_ids` | Proxy Velocity + serveurs Paper (transfert moderne, secret jamais lu). |
+| `setup_velocity_network` | `proxy_server_id`, `backend_server_ids` | Proxy Velocity + serveurs Paper : `network_topology`, puis `link_proxy` en dry_run et application après accord (transfert moderne ; secret réutilisé ou généré par l'outil, jamais lu ni écrit par l'agent). |
 | `deploy_plugin` | `server_id`, `local_path`, `plugin_name?` | Déployer un plugin en développement, redémarrer, vérifier, revenir en arrière. |
 | `optimize_performance` | `server_id` | Mesurer, proposer, appliquer un réglage à la fois et mesurer à nouveau. |
 | `security_audit` | `server_id` | Accès, opérateurs, plugins, journaux, actions récentes des agents. |
@@ -480,6 +480,78 @@ application, une étape déjà conforme n'est jamais refaite ; relancer après u
 où le serveur en est. Après des changements de contenu, de réglages ou de configs, un
 redémarrage les charge (`next`).
 
+#### Réseaux proxy (Velocity, BungeeCord)
+
+Monter et contrôler un réseau proxy → serveurs de jeu sans que l'agent voie jamais le secret de
+transfert (`crates/minestrator-core/src/network.rs`, `network/link.rs`). Absents du MCP officiel.
+Minecraft Java seulement.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `network_topology` | | `server_id?` | **Lecture seule.** Proxys du compte, repérés par la plateforme de l'hébergeur (`GET /server/{id}/minecraft_version`), le nom du jar de démarrage, ou leurs fichiers (`velocity.toml`, `config.yml` de BungeeCord avec `listeners`). Pour chacun : type, config, `online_mode`, mode de transfert, secret **défini ou absent** (Velocity) ou BungeeGuard (BungeeCord), liste de repli `try`, et chaque entrée : nom, adresse, `in_try`, serveur du compte reconnu (`account_server` : id, nom, rapprochement) et ses réglages (`settings` : plateforme, version, `online_mode`, transfert Velocity, secret **identique / DIFFÉRENT / absent**, `spigot_bungeecord`, BungeeGuard, FabricProxy-Lite). `problems[]` triés (critique, important, info) avec la correction, `summary`, `not_read` (serveurs suspendus, proxys illisibles). `server_id` : seulement les réseaux qui contiennent ce serveur (proxy ou serveur de jeu) ; un serveur réglé pour un proxy que rien ne référence est signalé. Cache de 15 s. |
+| `link_proxy` | ✎ | `proxy_server_id`, `backend_server_ids[]`, `names?`, `try?`, `mode?`, `dry_run?` (défaut **true**), `snapshot?` (défaut true) | Plan puis, sans `dry_run`, application : entrées du proxy (`servers[{name, address, server_id, entry: ajoutée \| mise à jour \| inchangée}]`), liste de repli, `secret` (réutilisé ou généré, jamais affiché), `steps[{id, server_id, status: ok \| change \| manual \| refused, summary, changes?, diff?, outcome?}]`, `counts`, `manual`, `warnings`, `snapshots`, `status`, `next`. |
+
+**Rapprochement des adresses.** Une entrée est associée à un serveur du compte par son IP et son
+port principal (`GET /server/{id}` : `server.ip`, `server.port` ; repli sur l'adresse de
+`list_servers`), un port secondaire (`ports[]`), le nom DNS du serveur (`server.dns`, avec le bon
+port), un nom d'hôte résolu, ou le port seul pour une adresse privée (signalé à confirmer). Une
+adresse locale (`127.0.0.1`, `localhost`) ne mène à aucun autre serveur : chaque serveur
+MineStrator a son conteneur, et deux serveurs d'une même MyBox peuvent tourner sur des machines
+différentes (`id_daemon`). L'API ne publie pas d'adresse interne entre serveurs (le type
+`internal` des ports, côté MCP officiel `manage_ports`, n'apparaît pas dans `ports[]`) :
+`link_proxy` écrit donc l'`ip:port` publique.
+
+**Problèmes signalés** : proxy en `online-mode=false` ; transfert désactivé alors que des serveurs
+sont reliés ; transfert moderne sans secret (Velocity refuse de démarrer) ; serveur de repli ou hôte
+forcé non déclaré ; entrée locale, inconnue du compte, sans le bon port, ou qui vise le proxy
+lui-même ; serveur de jeu en `online-mode=true` derrière le proxy ; transfert Velocity désactivé
+(critique s'il est aussi en `online-mode=false`) ; secret différent ou absent ;
+`settings.bungeecord: true` avec le transfert moderne ; Spigot ou vanilla derrière le transfert
+moderne, Minecraft < 1.13 ; FabricProxy-Lite absent ou secret différent ; transfert legacy sans
+BungeeGuard alors que le serveur est joignable directement (usurpation) ; jeton BungeeGuard
+absent des `allowed-tokens`.
+
+**`link_proxy`.** Modes : `modern` (défaut pour Velocity : transfert signé, Paper 1.13+) ou
+`legacy` (défaut et seul mode de BungeeCord ; Velocity `legacy`). Côté proxy, en une édition
+vérifiée comme `set_config` : `servers.<nom>` (Velocity) ou `servers.<nom>.address` (BungeeCord,
+avec `motd` et `restricted` pour une entrée neuve), liste de repli (`servers.try`,
+`listeners[0].priorities`), `player-info-forwarding-mode` (casse de la valeur actuelle gardée) ou
+`ip_forward: true`. Nom d'une entrée : `names`, sinon celui d'une entrée qui vise déjà le serveur,
+sinon tiré du nom du serveur (`Serveur Créatif` → `serveur-creatif`) ; une entrée locale du même
+nom (exemple `lobby` de la configuration par défaut) est reprise, les autres entrées locales sont
+gardées et signalées. Liste de repli : `try` (noms ou IDs des serveurs de l'appel), sinon
+l'actuelle si tous ses noms restent déclarés et qu'au moins un mène à un serveur, sinon le premier
+serveur de jeu. Côté serveurs Paper : `proxies.velocity.enabled`, `online-mode` (celui du proxy) et
+`secret` dans `config/paper-global.yml` (`settings.velocity-support.*` de `paper.yml` avant 1.19),
+`settings.bungeecord` dans `spigot.yml` (à `false` en modern, `true` en legacy, avec
+`proxies.bungee-cord.online-mode`), `online-mode=false` (`set_property`).
+
+- **Secret** : celui du proxy (`forwarding-secret-file`, défaut `forwarding.secret`, ou
+  `forwarding-secret` des anciennes versions) est lu en interne et réutilisé ; à défaut, 32
+  caractères tirés du générateur aléatoire du système (`ring`, via rustls), écrits d'abord dans le
+  fichier du proxy (une relance après coupure réutilise donc le même), puis dans chaque
+  `paper-global.yml`. Il ne figure ni dans la sortie, ni dans les diffs (masqués par
+  `config_edit`), ni dans le journal des agents (qui ne consigne que l'appel `link_proxy`, sans
+  secret) ; toute valeur lue est en plus effacée des sorties. La garde copie l'ancien contenu des
+  fichiers modifiés dans `agent_guard.db` (local) pour pouvoir les rétablir, comme pour toute
+  écriture.
+- **Application** : rien n'est écrit si une étape est `refused` (fichier invalide, chemin du secret
+  hors du serveur) ; snapshot de chaque serveur modifié, **attendue** (sans elle rien n'est
+  modifié ; `snapshot=false` pour s'en passer) ; puis une écriture par fichier, proxy d'abord, par
+  `set_config`, `write_file` et `set_property` via la garde des agents : chacune est une étape
+  annulable (`rollback_changeset`). Arrêt au premier échec ; progression et annulation suivies.
+  Effet au redémarrage des serveurs de jeu puis du proxy (`next`).
+- **`manual`** (expliqué, rien d'improvisé) : Spigot ou vanilla en modern, Minecraft < 1.13,
+  Fabric (FabricProxy-Lite et son secret, à recopier à la main), Forge/NeoForge (mod de transfert),
+  serveur jamais démarré (`paper-global.yml` ou `spigot.yml` absent : le démarrer une fois, puis
+  relancer), serveur illisible ou suspendu, BungeeGuard à installer en legacy. Les serveurs restent
+  déclarés sur le proxy. **Idempotent** : relancé sur un réseau relié, tout est `ok`.
+
+Classement : `network_topology` est une lecture (offerte au Copilote, bornée au serveur de sa
+session) ; `link_proxy` est dans `INFRA_TOOLS` (plusieurs serveurs, secret) : jamais donné au
+Copilote. En mode constructeur, `link_proxy` vise le proxy **et** chaque serveur de jeu. Le
+prompt `setup_velocity_network` enchaîne `network_topology` puis `link_proxy`.
+
 #### Garde des agents
 
 Journal et annulation des actions des agents (`crates/minestrator-core/src/agent_guard.rs`),
@@ -538,6 +610,9 @@ conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
 - **Construire et reproduire** : `get_config` / `set_config` (configs YAML, TOML, JSON, properties
   sans casser la mise en forme), `export_manifest` → `plan_manifest` → `apply_manifest` (serveur
   déclaratif, idempotent), `clone_server` (copie de test d'un serveur)
+- **Réseaux proxy** : `network_topology` (proxys Velocity / BungeeCord → serveurs du compte,
+  cohérence et problèmes, secrets comparés sans être montrés) → `link_proxy` (relier des serveurs
+  à un proxy, secret réutilisé ou généré sans jamais apparaître, dry_run par défaut)
 - **Garde des agents** : `list_agent_actions` (journal), `list_changesets` → `rollback_changeset`
   (annuler ce qu'un agent a modifié)
 
@@ -645,7 +720,7 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 | `schedules` | `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `add_schedule_task`, `update_schedule_task`, `delete_schedule_task`, `reorder_schedule_tasks` |
 | `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command` |
 | `agent` | Boucle « agir puis vérifier » (`run_command`, `wait_for`, `tail_console`, `deploy_and_verify`…). |
-| `build` | Configurations structurées et manifestes (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`…). |
+| `build` | Configurations structurées, manifestes et réseaux proxy (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`, `network_topology`, `link_proxy`…). |
 | `guard` | Garde des agents (`list_agent_actions`, `rollback_changeset`…). |
 | `official` | Outils du MCP officiel relayés par la passerelle (si elle est activée). |
 
