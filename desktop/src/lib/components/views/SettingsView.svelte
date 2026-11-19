@@ -34,6 +34,7 @@
   import ServiceSection from '../settings/ServiceSection.svelte';
   import AccountsSection from '../settings/AccountsSection.svelte';
   import WebhooksSection from '../settings/WebhooksSection.svelte';
+  import AgentGuardSection from '../settings/AgentGuardSection.svelte';
 
   type Section =
     | 'general'
@@ -810,6 +811,9 @@
         </button>
       </div>
       <p class="cmd dim">{t('settings.mcpCommand')} <code>{exePath} --mcp</code></p>
+
+      <!-- Garde des agents : portée des écritures, journal, modifications annulables. -->
+      <AgentGuardSection bind:config={mcp} {servers} onsave={saveMcp} />
     {:else if section === 'copilot' && copilot}
       <h1>{t('settings.copilot')}</h1>
 
