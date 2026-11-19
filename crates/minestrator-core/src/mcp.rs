@@ -169,6 +169,9 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "uptime_report",
     "list_incidents",
     // [lot:boucle] début (agent_loop.rs)
+    // Console par curseur et attente d'un état, d'un motif ou d'une tâche : lectures en direct.
+    "tail_console",
+    "wait_for",
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
@@ -224,6 +227,9 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "copy_between_servers",
     "broadcast_command",
     // [lot:boucle] début (agent_loop.rs)
+    // Commande avec sa réponse (comme send_command) ; déploiement vérifié (LOCAL_DISK_TOOLS).
+    "run_command",
+    "deploy_and_verify",
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
@@ -278,6 +284,8 @@ pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
     "upload_file",
     "download_file",
     // [lot:boucle] début (agent_loop.rs)
+    // Lit le jar local à envoyer.
+    "deploy_and_verify",
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
@@ -391,6 +399,12 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "uptime_report",
     "list_incidents",
     // [lot:boucle] début (agent_loop.rs)
+    // Agir puis vérifier : console par curseur, commande avec réponse, attentes, déploiement
+    // vérifié — rien de tel dans l'officiel.
+    "tail_console",
+    "run_command",
+    "wait_for",
+    "deploy_and_verify",
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin
@@ -618,6 +632,7 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "search_logs" | "error_digest" => 15,
         "uptime_report" | "list_incidents" => 10,
         // [lot:boucle] début (agent_loop.rs)
+        // tail_console, wait_for : jamais (console et état en direct, curseurs).
         // [lot:boucle] fin
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // [lot:manifeste] fin
@@ -1442,6 +1457,12 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             .map_err(es),
 
         // [lot:boucle] début (agent_loop.rs)
+        // Agir puis vérifier : sorties anonymisées (redact) dans le module. Futures sur le tas :
+        // elles n'alourdissent ni l'état ni la pile de ce `match` (déjà proche de 1 Mio en debug).
+        "tail_console" => Box::pin(core.agent_tail_console(&args)).await,
+        "run_command" => Box::pin(core.agent_run_command(&args)).await,
+        "wait_for" => Box::pin(core.agent_wait_for(&args)).await,
+        "deploy_and_verify" => Box::pin(core.agent_deploy(&args)).await,
         // [lot:boucle] fin
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // [lot:manifeste] fin
@@ -1616,6 +1637,10 @@ fn build_tool_list() -> Value {
         tool("uptime_report", "DISPONIBILITÉ d'un serveur sur 24 h, 7 j et 30 j (% du temps SURVEILLÉ) et liste des coupures (début, fin, durée, cause : crash, stop ou inconnue), d'après la surveillance de l'app et du service d'arrière-plan, complétée par les statistiques de l'hébergeur là où rien ne surveillait (`host_share_pct` : part déduite de l'hébergeur, qui ne prouve jamais une coupure). Même calcul que la carte Disponibilité de l'app ; `warning` si aucune surveillance locale n'existe.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_incidents", "HISTORIQUE DES INCIDENTS détectés par la surveillance : crash (arrêt inattendu), surcharge (cpu, ram, disk), échéance de MyBox (expiry), redémarrage automatique, tâche planifiée — avec les DIAGNOSTICS du Copilote rattachés (résumé, cause, correctif, actions proposées), du plus récent au plus ancien. Un serveur (`server_id`) ou tous ceux du compte. Sources : journal local de l'app, service d'arrière-plan, crashs du suivi de disponibilité ; `coverage` dit ce qui a été consulté (un journal vide n'est pas « aucun incident »).", obj(&[("server_id", prop_int("ID du serveur (optionnel : tous les serveurs du compte)")), ("limit", prop_int("Incidents renvoyés (défaut 20, max 100)")), ("since_days", prop_int("Période en jours (défaut 30, max 32)")), ("kind", prop_str("Filtre : crash | cpu | ram | disk | expiry | auto_restart | task | diagnosis"))], &[])),
         // [lot:boucle] début (agent_loop.rs)
+        tool("tail_console", "CONSOLE EN DIRECT PAR CURSEUR (à préférer à read_console pour suivre la console) : sans `after`, les dernières lignes et un `cursor` ; avec `after` (le `cursor` rendu par l'appel précédent, tel quel), SEULEMENT les lignes apparues depuis — `wait_secs` attend la première (max 60 s). Rend `cursor`, `state` (running | starting | stopping | offline), `missed` (lignes perdues : le tampon de 5 000 lignes a débordé entre deux lectures), `history` (lignes rejouées à la connexion, antérieures au suivi), `more` (plafond atteint : relire avec le nouveau curseur), `notes`. `filter` : texte (ou expression régulière avec `regex`), casse ignorée. Connexion WebSocket dédiée, fermée après 10 min sans lecture ; repli sur l'API (sans curseur) signalé par `source: rest`. Sortie anonymisée.", obj(&[("server_id", prop_int("ID du serveur")), ("after", prop_str("Curseur rendu par l'appel précédent (optionnel : dernières lignes)")), ("wait_secs", prop_int("Avec `after` : attendre au plus N s une nouvelle ligne (défaut 0, max 60)")), ("max_lines", prop_int("Lignes renvoyées au plus (défaut 100, max 1000)")), ("filter", prop_str("Ne garder que les lignes qui contiennent ce texte (optionnel)")), ("regex", prop_bool("`filter` est une expression régulière (défaut false)"))], &["server_id"])),
+        tool("run_command", "ENVOIE UNE COMMANDE ET REND SA RÉPONSE (à préférer à send_command) : envoi par l'API REST, puis lignes de console apparues APRÈS l'envoi, jusqu'au motif `until` (texte, ou expression régulière avec `regex` ; casse ignorée) ou, sans `until`, jusqu'à un court silence après la première ligne ; au plus `timeout_secs` (défaut 5, max 60). Rend `lines`, `matched` (motif vu ; null sans `until`), `matched_line`, `timed_out`, `cursor` (lire la suite avec tail_console), `state`. Serveur hors ligne : refus explicite, rien n'est envoyé. Une seule ligne de commande. Sortie anonymisée. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("command", prop_str("Commande console (une ligne, sans `/` initial)")), ("until", prop_str("Fin de la réponse attendue : texte (optionnel)")), ("regex", prop_bool("`until` est une expression régulière (défaut false)")), ("timeout_secs", prop_int("Attente maximale en secondes (défaut 5, max 60)")), ("max_lines", prop_int("Lignes renvoyées au plus (défaut 200, max 1000)"))], &["server_id", "command"])),
+        tool("wait_for", "ATTEND UNE CONDITION, une seule parmi : `state` (running | offline | starting | stopping), `pattern` (ligne de console : texte, ou expression régulière avec `regex` ; casse ignorée ; lignes après `after` si fourni, sinon à venir), `job_id` (tâche de sauvegarde, snapshot ou reprise d'un serveur en pause). `timeout_secs` défaut 60, max 600. Rend `reached`, `elapsed_secs`, `state`, `reason` (timeout, cancelled, arrêt pendant le démarrage…), `matched_line`, `job`, `cursor`. `state=running` juste après power_action restart : l'ancien « running » n'est pas retenu ; un arrêt pendant le démarrage rend la main aussitôt ; résumé `startup` (durée, ligne « Done », erreurs et avertissements de la console regroupés par signature, avec le plugin ou mod probable). Avancement signalé pendant l'attente.", obj(&[("server_id", prop_int("ID du serveur")), ("state", prop_str("État attendu : running | offline | starting | stopping")), ("pattern", prop_str("Texte attendu dans la console")), ("regex", prop_bool("`pattern` est une expression régulière (défaut false)")), ("after", prop_str("Avec `pattern` : curseur à partir duquel chercher (optionnel)")), ("job_id", prop_int("Tâche de sauvegarde à attendre (create_snapshot, reprise…)")), ("timeout_secs", prop_int("Attente maximale en secondes (défaut 60, max 600)"))], &["server_id"])),
+        tool("deploy_and_verify", "DÉPLOIE UN PLUGIN OU MOD COMPILÉ ET VÉRIFIE QU'IL S'ACTIVE (boucle de développement) : lit le .jar LOCAL (`local_path`) et son descripteur (plugin.yml, paper-plugin.yml, fabric.mod.json, mods.toml… : nom, version, plateforme), l'envoie par SFTP (`remote_path`, défaut /plugins/<fichier> pour un plugin, /mods/<fichier> pour un mod), repère un autre jar du MÊME plugin sous un autre nom (mis de côté en .old avec `replace_previous`, sinon signalé), redémarre (`restart` : restart | none ; démarre un serveur éteint), attend `running` (`timeout_secs` défaut 180, max 600) puis analyse la console du démarrage. Verdict JSON : `ok`, `plugin`, `version`, `uploaded_bytes`, `startup_secs`, `enabled` (ligne « Enabling … » de Bukkit/Paper, liste des mods de Fabric, déduit pour Forge/NeoForge) et `evidence`, `loaded_version`, `errors` et `warnings` qui le concernent (source probable = ce plugin), `other_errors`, `deploy_warnings`, `console_tail`. Lit un fichier de la machine LOCALE : réservé au serveur MCP local. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("local_path", prop_str("Chemin LOCAL du .jar compilé")), ("remote_path", prop_str("Chemin distant (défaut : /plugins/ ou /mods/ selon le descripteur ; un dossier finissant par / reçoit le nom du fichier)")), ("restart", prop_str("restart (défaut) | none")), ("replace_previous", prop_bool("Renommer en .old un autre jar du même plugin (défaut false : seulement le signaler)")), ("timeout_secs", prop_int("Attente du démarrage en secondes (défaut 180, max 600)"))], &["server_id", "local_path"])),
         // [lot:boucle] fin
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // [lot:manifeste] fin
@@ -2199,6 +2224,35 @@ mod tests {
     // [lot:protocole] début (mcp.rs)
     // [lot:protocole] fin
     // [lot:boucle] début (agent_loop.rs)
+
+    /// Agir puis vérifier : lectures en direct (jamais en cache), commande et déploiement
+    /// modifiants, déploiement hors de portée du Copilote (disque local), tous exclusifs.
+    #[test]
+    fn agent_loop_tools_are_classified() {
+        for r in ["tail_console", "wait_for"] {
+            assert!(READ_TOOLS.contains(&r) && !is_write_tool(r), "{r} doit être en lecture");
+        }
+        for w in ["run_command", "deploy_and_verify"] {
+            assert!(WRITE_TOOLS.contains(&w) && is_write_tool(w), "{w} doit être modifiant");
+        }
+        assert!(LOCAL_DISK_TOOLS.contains(&"deploy_and_verify") && copilot_forbidden("deploy_and_verify"));
+        for t in ["tail_console", "wait_for", "run_command"] {
+            assert!(!copilot_forbidden(t), "{t} reste offert au Copilote (borné à son serveur)");
+            assert!(!INFRA_TOOLS.contains(&t));
+        }
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        for t in ["tail_console", "run_command", "wait_for", "deploy_and_verify"] {
+            assert!(LOCAL_KEEP_TOOLS.contains(&t), "{t} : exclusif, gardé face au MCP officiel");
+            assert!(cache_ttl(t).is_none(), "{t} : jamais en cache");
+            assert!(tool_for_game(t, "satisfactory") && tool_for_game(t, "minecraft"), "{t} est universel");
+            assert!(schema(t)["required"].as_array().unwrap().contains(&json!("server_id")), "{t}");
+        }
+        assert_eq!(schema("run_command")["required"], json!(["server_id", "command"]));
+        assert_eq!(schema("deploy_and_verify")["required"], json!(["server_id", "local_path"]));
+        assert_eq!(schema("wait_for")["required"], json!(["server_id"]));
+    }
+
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // [lot:manifeste] fin

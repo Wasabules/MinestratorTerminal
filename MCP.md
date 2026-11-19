@@ -248,6 +248,39 @@ présentés comme un bilan. Sorties anonymisées comme `read_console`/`read_file
 des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA est active.
 
 <!-- [lot:boucle] début -->
+#### Agir puis vérifier
+
+Ce qui manquait à un agent pour ne plus agir à l'aveugle (`core/src/agent_loop.rs`) : lire la
+console **par curseur** au lieu de relire les 100 dernières lignes, obtenir la **réponse** d'une
+commande, **attendre** un état, une ligne ou une tâche, et **déployer puis vérifier** un plugin en
+développement. Absents du MCP officiel : gardés quand il prend la gestion (`LOCAL_KEEP_TOOLS`),
+jamais mis en cache. Universels (tous les jeux), sauf l'analyse du déploiement, propre à Minecraft
+Java.
+
+**Console en direct.** À la première demande pour un serveur, le processus MCP ouvre sa propre
+connexion WebSocket (`agent:<id>:<époque>`, distincte des onglets et du superviseur) et tient un
+tampon de **5 000 lignes** numérotées. Les lignes que Wings rejoue à la connexion sont marquées
+historiques (`history`) ; une reconnexion est raccordée sans doublon (recouvrement des dernières
+lignes) ou signalée dans `notes` ; un tampon qui déborde entre deux lectures le dit (`missed`).
+Curseur `<époque>-<numéro>` : celui d'une connexion fermée depuis est accepté et signalé
+(`cursor_reset`), pas une erreur. Fermeture après **10 min** sans lecture, au changement de compte
+ou de clé. Sans WebSocket (connexion impossible, serveur suspendu), repli sur l'API REST
+(`source: rest`, sans curseur), dit dans la sortie. Envoi toujours par REST, WebSocket en lecture
+seule ; tout passe par l'anonymisation IA, et les motifs (`filter`, `until`, `pattern` : texte, ou
+expression régulière avec `regex`, casse ignorée) s'appliquent au texte anonymisé, celui que voit
+l'agent.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `tail_console` | | `server_id`, `after?`, `wait_secs?`, `max_lines?`, `filter?`, `regex?` | Sans `after` : les dernières lignes (100 par défaut, max 1 000) et un `cursor`. Avec `after` : **seulement** les lignes apparues depuis, en attendant au plus `wait_secs` (max 60 s, 30 s pour le Copilote) la première ; `more` si le plafond (lignes ou 48 Kio) coupe la lecture, à reprendre avec le nouveau curseur. Toujours `state` (`running`, `starting`, `stopping`, `offline`), `missed`, `history`, `notes` au besoin. |
+| `run_command` | ✎ | `server_id`, `command`, `until?`, `regex?`, `timeout_secs?`, `max_lines?` | Attend la console prête (historique reçu), **refuse sans rien envoyer** si le serveur est hors ligne, envoie par `PUT /server/{id}/command`, puis rend les lignes apparues **après l'envoi** : jusqu'à `until`, ou sans `until` jusqu'à 0,8 s de silence après la première ligne, au plus `timeout_secs` (défaut 5, max 60). `{ sent, lines, matched, matched_line, timed_out, cursor, state }` ; le curseur permet de lire la suite avec `tail_console`. Une seule ligne de commande. |
+| `wait_for` | | `server_id`, une condition : `state` \| `pattern` (+ `regex?`, `after?`) \| `job_id` ; `timeout_secs?` | Attente bornée (défaut 60 s, max 600, **120 pour le Copilote**), avancement signalé, arrêt si le client annule. `{ reached, elapsed_secs, state, reason?, matched_line?, job?, cursor }`. **`state=running`** : juste après un arrêt ou un redémarrage demandé (moins de 2 min), l'ancien « running » n'est retenu qu'après un passage par un autre état ou si le processus a démarré après la demande ; un arrêt pendant le démarrage (`starting` → `offline` sans `stopping`) rend la main aussitôt (`reason`) ; résumé **`startup`** : durée, ligne « Done » et durée annoncée, erreurs et avertissements de la console regroupés par signature avec leur plugin ou mod probable (regroupement d'`error_digest`). État lu sur le WebSocket, sinon sondé par l'API toutes les 4 s. `job_id` : `GET /user/{id}/backup_job/{job}` toutes les 3 s (snapshot, reprise d'un serveur en pause). |
+| `deploy_and_verify` | ✎ | `server_id`, `local_path`, `remote_path?`, `restart?`, `replace_previous?`, `timeout_secs?` | Boucle d'un agent qui développe un plugin : lit le `.jar` **local** et son descripteur (nom, version, plateforme ; avertit si le serveur charge une autre plateforme), l'envoie par SFTP (défaut `/plugins/<fichier>` pour un plugin, `/mods/<fichier>` pour un mod), cherche dans le dossier un **autre jar du même plugin** (même identifiant de descripteur) : mis de côté en `.old` avec `replace_previous=true`, sinon signalé. Puis redémarre (démarre un serveur éteint ; `restart=none` : envoi seul, non vérifié), attend `running` (défaut 180 s, max 600) et analyse la console **du démarrage seulement**. Verdict : `ok`, `plugin`, `version`, `uploaded_bytes`, `startup_secs`, `server_reported_secs`, `enabled` + `evidence` (Bukkit/Paper : « Enabling Nom vX » ; Spigot « Could not load », « Error occurred while enabling », désactivation juste après l'activation ; Velocity, BungeeCord ; Fabric : liste des mods chargés ; Forge/NeoForge : **déduit** d'un démarrage complet sans erreur liée au mod), `loaded_version` (une autre version chargée = un autre jar a gagné), `errors` et `warnings` dont la source probable est ce plugin, `other_errors`, `deploy_warnings`, `console_tail`. `ok` exige le démarrage, l'activation confirmée, aucune erreur du plugin, ni doublon ni autre version chargée. Avancement à chaque étape. |
+
+`deploy_and_verify` lit un fichier de l'ordinateur : il rejoint `LOCAL_DISK_TOOLS` et n'est
+**jamais** donné au Copilote. `run_command` est modifiant comme `send_command` : offert au Copilote
+en mode autonome, borné au serveur de la session ; `tail_console` et `wait_for` sont des lectures,
+offertes même au diagnostic automatique (délais plafonnés plus bas hors transport MCP).
 <!-- [lot:boucle] fin -->
 
 <!-- [lot:manifeste] début -->

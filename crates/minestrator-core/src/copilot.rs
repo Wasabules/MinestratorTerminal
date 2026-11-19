@@ -761,6 +761,9 @@ fn friendly_tool(name: &str, input: Option<&Value>) -> String {
         "disk_usage" => format!("Espace disque : {}", if path.is_empty() { "/" } else { path }),
         "compress_files" => "Compression sur le serveur".into(),
         "extract_archive" => format!("Extraction : {}", if path.is_empty() { "archive" } else { path }),
+        "tail_console" => "Console en direct".into(),
+        "run_command" => "Commande et sa réponse".into(),
+        "wait_for" => "Attente du serveur".into(),
         other => format!("Outil : {other}"),
     }
 }

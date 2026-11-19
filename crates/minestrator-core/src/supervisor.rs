@@ -234,6 +234,12 @@ impl SupervisorState {
         self.expected_stops.lock().unwrap().insert(id, now_secs());
     }
 
+    /// Dernier arrêt ou redémarrage demandé par l'app (secondes Unix). Sert à `wait_for` : un
+    /// « running » lu juste après un redémarrage est encore celui d'avant.
+    pub(crate) fn last_expected_stop(&self, id: i64) -> Option<i64> {
+        self.expected_stops.lock().unwrap().get(&id).copied()
+    }
+
     fn name(&self, id: i64) -> String {
         self.names
             .lock()
