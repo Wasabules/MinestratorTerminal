@@ -268,6 +268,27 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // [lot:garde] fin
 ];
 
+/// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
+/// (`local_path`). Jamais au Copilote, même en lecture : il lit du contenu non fiable (chat des
+/// joueurs, journaux) et ses agents CLI sont justement privés de disque. Une injection pourrait
+/// sinon écrire un fichier choisi n'importe où sur l'ordinateur (dossier de démarrage → exécution
+/// de code) ou envoyer un fichier local sur le serveur. Réservés au serveur MCP local, utilisé par
+/// un client de confiance.
+pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
+    "upload_file",
+    "download_file",
+    // [lot:boucle] début (agent_loop.rs)
+    // [lot:boucle] fin
+    // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // [lot:manifeste] fin
+];
+
+/// Outil interdit au Copilote (diagnostic, chat, agents CLI, « Appliquer ») : infrastructure,
+/// actions multi-serveurs, configuration persistante, ou accès au disque de l'ordinateur.
+pub(crate) fn copilot_forbidden(name: &str) -> bool {
+    INFRA_TOOLS.contains(&name) || LOCAL_DISK_TOOLS.contains(&name)
+}
+
 /// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
 const MYBOX_UNITS: &str = "CPU en cœurs entiers (1 = un cœur, pas un pourcentage) ; RAM en Go entiers (pas en Mo) ; disque total en Go, occupation en Mo. Le disque est partagé par toute la MyBox ; seuls les serveurs actifs consomment CPU et RAM (un serveur en pause les rend) ; FlexCore = cœurs de rafale partagés, non allouables.";
 

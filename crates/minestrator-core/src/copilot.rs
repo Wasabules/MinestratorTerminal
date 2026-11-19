@@ -73,14 +73,18 @@ fn tool_disabled(name: &str, disabled: &[String]) -> bool {
 /// `autonomous`, moins ceux interdits par la politique. `official_up` : le MCP officiel répond, le
 /// catalogue local est alors recentré (voir [`cli_allowed_tools`], qui y ajoute les outils officiels).
 fn allowed_tool_names(cfg: &CopilotConfig, autonomous: bool, official_up: bool) -> Vec<String> {
-    let mut v: Vec<String> = READ_TOOLS.iter().map(|s| s.to_string()).collect();
+    // Jamais l'infrastructure MyBox (créer/supprimer des serveurs…) ni le disque de l'ordinateur :
+    // le Copilote lit du contenu non fiable.
+    let mut v: Vec<String> = READ_TOOLS
+        .iter()
+        .filter(|n| !crate::mcp::copilot_forbidden(n))
+        .map(|s| s.to_string())
+        .collect();
     if autonomous {
-        // Jamais la gestion de l'infrastructure MyBox (créer/supprimer des serveurs…) : le
-        // Copilote lit du contenu non fiable.
         v.extend(
             WRITE_TOOLS
                 .iter()
-                .filter(|n| !crate::mcp::INFRA_TOOLS.contains(n))
+                .filter(|n| !crate::mcp::copilot_forbidden(n))
                 .map(|s| s.to_string()),
         );
     }
@@ -134,7 +138,7 @@ pub(crate) fn is_local_tool(name: &str) -> bool {
 /// Message renvoyé au modèle pour un outil hors de son catalogue (nom halluciné, outil réservé,
 /// action modifiante en mode suggestion) : refus explicite, rien n'est exécuté.
 fn refusal(name: &str, autonomous: bool) -> String {
-    if crate::mcp::INFRA_TOOLS.contains(&name) {
+    if crate::mcp::copilot_forbidden(name) {
         format!("Action refusée : « {name} » est réservé à l'app et au serveur MCP local (jamais exécuté par le Copilote).")
     } else if !autonomous
         && (WRITE_TOOLS.contains(&name) || official_relay::COPILOT_OFFICIAL_WRITES.contains(&name))
@@ -160,7 +164,7 @@ fn action_enum() -> Value {
     Value::Array(
         WRITE_TOOLS
             .iter()
-            .filter(|n| !crate::mcp::INFRA_TOOLS.contains(n))
+            .filter(|n| !crate::mcp::copilot_forbidden(n))
             .map(|n| json!(n))
             .collect(),
     )
@@ -966,7 +970,10 @@ fn tool_specs(keep: impl Fn(&str) -> bool) -> Vec<ToolSpec> {
 /// Outils de lecture (dérivés du catalogue MCP), filtrés par jeu, + `report_diagnosis`.
 fn agent_tools(disabled: &[String], family: &str) -> Vec<ToolSpec> {
     let mut tools = tool_specs(|n| {
-        !tool_disabled(n, disabled) && READ_TOOLS.contains(&n) && crate::mcp::tool_for_game(n, family)
+        !tool_disabled(n, disabled)
+            && READ_TOOLS.contains(&n)
+            && !crate::mcp::copilot_forbidden(n)
+            && crate::mcp::tool_for_game(n, family)
     });
     tools.push(report_tool());
     tools
@@ -1747,7 +1754,7 @@ fn chat_tools(autonomous: bool, disabled: &[String], family: &str) -> Vec<ToolSp
     tool_specs(|n| {
         !tool_disabled(n, disabled)
             && crate::mcp::tool_for_game(n, family)
-            && !crate::mcp::INFRA_TOOLS.contains(&n)
+            && !crate::mcp::copilot_forbidden(n)
             && (READ_TOOLS.contains(&n) || (autonomous && is_write_tool(n)))
     })
 }
@@ -1837,6 +1844,26 @@ pub(crate) fn extract_session_id(ndjson: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// Le disque de l'ordinateur n'est jamais à portée du Copilote, quel que soit le chemin :
+    /// diagnostic, chat (suggestion ou autonome), liste blanche des agents CLI, « Appliquer ».
+    #[test]
+    fn local_disk_tools_never_reach_the_copilot() {
+        let names = |t: Vec<ToolSpec>| t.into_iter().map(|t| t.name).collect::<HashSet<_>>();
+        let diag = names(agent_tools(&[], "minecraft"));
+        let chat = names(chat_tools(false, &[], "minecraft"));
+        let chat_auto = names(chat_tools(true, &[], "minecraft"));
+        let cfg = CopilotConfig::default();
+        let cli: HashSet<String> = allowed_tool_names(&cfg, true, false).into_iter().collect();
+        let apply = action_enum();
+        for t in crate::mcp::LOCAL_DISK_TOOLS {
+            assert!(!diag.contains(*t) && !chat.contains(*t) && !chat_auto.contains(*t), "{t}");
+            assert!(!cli.contains(*t), "{t} dans la liste blanche des agents CLI");
+            assert!(!apply.as_array().unwrap().contains(&json!(t)), "{t} proposable à « Appliquer »");
+        }
+        // Le reste des outils de fichiers reste disponible (lecture distante, édition partielle).
+        assert!(diag.contains("read_file") && chat_auto.contains("edit_file"));
+    }
+
     /// Extrait du catalogue officiel : lectures, actions de la liste blanche et hors liste.
     fn catalog() -> Catalog {
         let tool = |name: &str, read: bool, destructive: bool| {
@@ -1883,7 +1910,11 @@ mod tests {
             assert!(!offered.contains(n), "{n} ne doit pas être proposé au Copilote");
         }
         // Ni infrastructure, ni outils internes destructifs (atteints seulement par « Appliquer »).
-        for n in crate::mcp::INFRA_TOOLS.iter().chain(APPLY_ONLY_TOOLS) {
+        for n in crate::mcp::INFRA_TOOLS
+            .iter()
+            .chain(crate::mcp::LOCAL_DISK_TOOLS)
+            .chain(APPLY_ONLY_TOOLS)
+        {
             assert!(!offered.contains(n), "{n}");
         }
         // Doublons : le meilleur de chaque paire, une seule fois.

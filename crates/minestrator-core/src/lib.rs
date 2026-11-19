@@ -350,9 +350,10 @@ impl Core {
         tool: &str,
         args: serde_json::Value,
     ) -> Result<String> {
-        // Infrastructure, actions multi-serveurs, configuration persistante (INFRA_TOOLS) : jamais
-        // par le Copilote, qui lit du contenu non fiable (chat des joueurs). MCP local et app seulement.
-        if mcp::INFRA_TOOLS.contains(&tool) {
+        // Infrastructure, actions multi-serveurs, configuration persistante (INFRA_TOOLS), disque de
+        // l'ordinateur (LOCAL_DISK_TOOLS) : jamais par le Copilote, qui lit du contenu non fiable
+        // (chat des joueurs). MCP local et app seulement.
+        if mcp::copilot_forbidden(tool) {
             return Err(Error::Invalid(format!(
                 "« {tool} » est réservé à l'app et au serveur MCP local : le Copilote ne l'exécute jamais."
             )));

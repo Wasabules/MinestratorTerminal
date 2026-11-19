@@ -183,7 +183,9 @@ Le mobile a son propre `humanizeError()` (`mobile/src/lib/ipc.ts`) qui lit des c
   (liste `readonly=1`) ; en écriture, seule la liste blanche `COPILOT_OFFICIAL_WRITES` ; portée
   limitée au serveur de la session (toutes les clés qui désignent un serveur). Un outil local
   modifiant qui touche à l'infrastructure, à plusieurs serveurs ou à une configuration persistante
-  va dans `INFRA_TOOLS` (jamais donné au Copilote).
+  va dans `INFRA_TOOLS` (jamais donné au Copilote). Un outil qui lit ou écrit sur le disque de
+  l'ordinateur (`local_path`) va dans `LOCAL_DISK_TOOLS`, jamais donné au Copilote non plus, même
+  en lecture (`copilot_forbidden`).
 - **Journaux** : `core::logs::init` (fichier tournant dans `<data>/logs`), initialisé par l'app. Sur
   mobile, l'initialisation se fait dans `setup`, après `MINESTRATOR_DATA_DIR`.
 - **Double point d'entrée desktop** : `desktop/src-tauri/src/main.rs` lance la boucle MCP stdio au lieu
