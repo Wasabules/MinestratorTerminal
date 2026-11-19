@@ -2070,8 +2070,9 @@ async fn install(core: &Core, server_id: i64, i: &Install) -> Result<Option<Stri
 }
 
 /// Attend la fin d'une snapshot, avec progression : suivi du job de sauvegarde, et à défaut la
-/// liste des snapshots (la snapshot nommée `name` devient disponible).
-async fn wait_snapshot(core: &Core, job: i64, name: &str) -> Result<(), String> {
+/// liste des snapshots (la snapshot nommée `name` devient disponible). Partagée avec
+/// `link_proxy` (`network/link.rs`).
+pub(crate) async fn wait_snapshot(core: &Core, job: i64, name: &str) -> Result<(), String> {
     let start = Instant::now();
     loop {
         tokio::time::sleep(SNAPSHOT_POLL).await;

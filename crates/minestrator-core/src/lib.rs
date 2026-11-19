@@ -83,6 +83,8 @@ mod agent_guard;
 // plugin sans exposer son mot de passe.
 mod db_connect;
 mod pregen;
+// Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`.
+mod network;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_guard::{

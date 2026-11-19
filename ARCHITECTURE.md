@@ -340,6 +340,11 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   dans `GET /mybox/{id}` (repli : `get_mybox` officiel en lecture), écrits dans la config d'un
   plugin par `set_config` (garde des agents) sans que le mot de passe apparaisse ; réinitialisation
   facultative par l'outil officiel `manage_database`, confirmée par l'humain. Dans `INFRA_TOOLS`.
+- **`network`** — **réseaux proxy** Velocity / BungeeCord : repérage des proxys, rapprochement de
+  leurs entrées avec les serveurs du compte (`GET /server/{id}` : ip, port, DNS, ports secondaires),
+  cohérence des serveurs de jeu (`network_topology`) ; liaison (`network/link.rs`, `link_proxy`) :
+  plan pur avec diffs masqués, secret de transfert réutilisé ou généré (CSPRNG) et jamais rendu,
+  écritures par `agent_guard::guarded_write`.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

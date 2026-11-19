@@ -30,7 +30,11 @@ pub const MCP_ALLOWED_SERVERS_ENV: &str = "MINESTRATOR_MCP_ALLOWED_SERVERS";
 
 /// Clés d'arguments qui désignent un serveur. Même liste que `official_relay::SERVER_KEYS`
 /// (privée là-bas) : à garder alignées.
-pub(crate) const SERVER_KEYS: &[&str] = &["server_id", "other_server_id", "source_server_id", "target_server_id"];
+pub(crate) const SERVER_KEYS: &[&str] =
+    &["server_id", "other_server_id", "source_server_id", "target_server_id", "proxy_server_id"];
+/// Clés d'arguments qui listent des serveurs (`broadcast_command`, `link_proxy`). Alignées sur
+/// `official_relay::SERVER_LIST_KEYS`.
+pub(crate) const SERVER_LIST_KEYS: &[&str] = &["server_ids", "backend_server_ids"];
 
 /// Portée effective : la variable d'environnement prime sur le réglage, la liste d'env aussi.
 pub(crate) fn effective(
@@ -88,7 +92,8 @@ fn id_arg(args: &Value, key: &str) -> Result<Option<i64>, String> {
     }
 }
 
-/// Tous les serveurs désignés par les clés connues (`SERVER_KEYS` et la liste `server_ids`).
+/// Tous les serveurs désignés par les clés connues (`SERVER_KEYS` et les listes
+/// `SERVER_LIST_KEYS`).
 pub(crate) fn servers_in(args: &Value) -> Result<Vec<i64>, String> {
     let mut out = Vec::new();
     for key in SERVER_KEYS {
@@ -96,14 +101,16 @@ pub(crate) fn servers_in(args: &Value) -> Result<Vec<i64>, String> {
             out.push(id);
         }
     }
-    match args.get("server_ids") {
-        None | Some(Value::Null) => {}
-        Some(Value::Array(items)) => {
-            for v in items {
-                out.push(v.as_i64().ok_or_else(|| "server_ids".to_string())?);
+    for key in SERVER_LIST_KEYS {
+        match args.get(*key) {
+            None | Some(Value::Null) => {}
+            Some(Value::Array(items)) => {
+                for v in items {
+                    out.push(v.as_i64().ok_or_else(|| (*key).to_string())?);
+                }
             }
+            Some(_) => return Err((*key).to_string()),
         }
-        Some(_) => return Err("server_ids".into()),
     }
     out.sort_unstable();
     out.dedup();
@@ -119,6 +126,8 @@ pub(crate) fn servers_in(args: &Value) -> Result<Vec<i64>, String> {
 /// - `broadcast_command` avec `all_running=true` : refusé (ensemble non vérifiable d'avance) ;
 /// - `connect_database` avec `rotate_password=true` : le serveur et toute la MyBox de la base
 ///   (un mot de passe réinitialisé casse les autres connexions à cette base).
+/// - `link_proxy` : le proxy **et** chaque serveur de jeu (tous reçoivent des écritures) ; sans
+///   proxy lisible, rien n'est vérifiable.
 pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
     let one = |key: &str| match id_arg(args, key) {
         Ok(Some(id)) => Targets::Servers(vec![id]),
@@ -148,6 +157,13 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
                 (Err(k), _) | (_, Err(k)) => Targets::Invalid(k),
                 (Ok(Some(server)), Ok(mybox)) => Targets::Database { server, mybox },
                 (Ok(None), _) => Targets::Unknown,
+            }
+        }
+        "link_proxy" => {
+            return match (id_arg(args, "proxy_server_id"), servers_in(args)) {
+                (Err(k), _) | (_, Err(k)) => Targets::Invalid(k),
+                (Ok(None), _) => Targets::Unknown,
+                (Ok(Some(_)), Ok(ids)) => Targets::Servers(ids),
             }
         }
         _ => {}
@@ -318,6 +334,20 @@ mod tests {
         assert_eq!(
             write_targets("connect_database", &json!({ "server_id": 5, "mybox_id": "x", "rotate_password": true })),
             Targets::Invalid("mybox_id".into())
+        );
+        // Réseau proxy : le proxy et tous les serveurs de jeu.
+        assert_eq!(
+            write_targets("link_proxy", &json!({ "proxy_server_id": 9, "backend_server_ids": [4, 2] })),
+            Targets::Servers(vec![2, 4, 9])
+        );
+        assert_eq!(write_targets("link_proxy", &json!({ "backend_server_ids": [4] })), Targets::Unknown);
+        assert_eq!(
+            write_targets("link_proxy", &json!({ "proxy_server_id": 9, "backend_server_ids": [4, "x"] })),
+            Targets::Invalid("backend_server_ids".into())
+        );
+        assert_eq!(
+            write_targets("link_proxy", &json!({ "proxy_server_id": "p", "backend_server_ids": [4] })),
+            Targets::Invalid("proxy_server_id".into())
         );
     }
 

@@ -251,6 +251,9 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Base de données branchée : la config est écrite par `mcp::dispatch` (set_config), une
         // étape capturée ; un mot de passe réinitialisé, lui, ne revient pas en arrière.
         "connect_database" => Plan::Skip,
+        // Réseau proxy : chaque fichier (config du proxy, secret, paper-global.yml, spigot.yml) et
+        // l'online-mode passent par `mcp::dispatch` (`guarded_write`), une étape chacun.
+        "link_proxy" => Plan::Skip,
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }

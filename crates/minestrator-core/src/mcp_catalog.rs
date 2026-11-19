@@ -274,6 +274,8 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
         "build",
         "Brancher une base de données à un plugin",
     ),
+    ("network_topology", "build", "Topologie d'un réseau proxy"),
+    ("link_proxy", "build", "Relier des serveurs à un proxy"),
     // guard
     (
         "list_agent_actions",
@@ -323,6 +325,8 @@ pub(crate) const IDEMPOTENT_TOOLS: &[&str] = &[
     "reorder_schedule_tasks",
     "set_config",
     "apply_manifest",
+    // Fixe des valeurs finales ; le secret du proxy est réutilisé d'un appel à l'autre.
+    "link_proxy",
 ];
 
 /// Outils qui sortent du compte MineStrator (`openWorldHint: true`) : marketplaces, ficsit.app,
@@ -357,6 +361,7 @@ Enchaînements recommandés :
 - Avant une intervention risquée (mods, configuration, monde) : create_snapshot.
 - Après chaque action, vérifie son effet au lieu de le supposer : wait_for (message attendu dans la console), tail_console, run_command (commande et sa sortie), server_status.
 - Configuration : get_config puis set_config avec dry_run pour prévisualiser ; plan_manifest avant apply_manifest.
+- Réseau Velocity ou BungeeCord : network_topology, puis link_proxy (dry_run d'abord) ; ne manipule jamais le secret de transfert toi-même.
 - Fichier qui contient des secrets : edit_file (remplacement ciblé) plutôt que read_file + write_file, car les secrets lus sont masqués en [SECRET].
 - Action destructive (suppression de serveur…) : seulement à la demande explicite de l'utilisateur ; la confirmation peut lui être demandée directement par ton client.
 - MyBox : CPU en cœurs entiers, RAM en Go entiers.
