@@ -32,12 +32,16 @@
 //! [Chunky] Task finished for minecraft:overworld. Processed: 1089 chunks (100.00%), Total time: 0:00:44
 //! ```
 //!
-//! Les autres réponses n'ont pas pu être capturées (aucune commande envoyée pendant le
-//! développement) : leurs formats sont **supposés**, d'après les textes anglais de Chunky —
-//! `Task started for <monde> at <x>, <z> with radius <r>.`, `Task paused|continuing|cancelled for
-//! <monde>.`, `Task already started for <monde>.`, une demande contenant `/chunky confirm`,
-//! `No tasks running.` — et les réponses des commandes de sélection (`chunky world`…) ne sont pas
-//! analysées, seulement attendues (une ligne `[Chunky]` qui n'est pas une progression).
+//! Relevées aussi en réel (Chunky 1.5.66, Paper 26.1.2, essai du 2026-11-19) : `Task started in
+//! minecraft:overworld for the square region centered at 0, 0 with radius 200.`, `No tasks
+//! running.`, et les réponses de sélection (`World changed to minecraft:overworld.`, `Shape
+//! changed to square.`, `Center changed to 0, 0.`, `Radius changed to 200.`), qui ne sont pas
+//! analysées, seulement attendues (une ligne `[Chunky]` qui n'est pas une progression). Relevés
+//! aussi : `Task paused for minecraft:overworld.`, `No tasks to continue.`, la demande de
+//! confirmation de `chunky cancel` (`… type '/chunky confirm'.`), puis `Cancelling all tasks.` et
+//! `Task stopped for minecraft:overworld.`. Encore **supposés**, d'après les textes anglais de
+//! Chunky : `Task continuing for <monde>.` et `Task already started for <monde>.`. L'ancienne
+//! forme `Task started for <monde> at <x>, <z> with radius <r>.` reste reconnue.
 //!
 //! L'analyse est tolérante (casse, séparateurs de milliers, virgule décimale, préfixe de journal) ;
 //! une réponse non reconnue est rendue telle quelle avec une note, jamais interprétée au hasard.
@@ -637,7 +641,7 @@ static DONE_RE: LazyLock<Regex> = LazyLock::new(|| {
 });
 static STARTED_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"(?i)task started for (?P<world>\S+?) at (?P<x>-?{NUM})\s*,\s*(?P<z>-?{NUM}) with radius (?P<r>{NUM})"
+        r"(?i)task started (?:for|in) (?P<world>\S+?)(?: for the \S+ region)? (?:centered )?at (?P<x>-?{NUM})\s*,\s*(?P<z>-?{NUM}) with radius (?P<r>{NUM})"
     ))
     .expect("regex de démarrage")
 });
@@ -679,7 +683,7 @@ const CHUNKY_FILTER: &str =
 /// Réponse à une commande de sélection : une ligne de Chunky qui n'est pas une progression
 /// (« [Chunky] Task running… » d'une autre tâche ne compte pas), ou un refus de la commande.
 const UNTIL_SETTING: &str = r"(?i)\[chunky\]\s*(?:[^t\s]|t[^a]|ta[^s]|tas[^k])|unknown (?:or incomplete )?command|incorrect argument for command";
-const UNTIL_START: &str = r"(?i)task started for|already (?:started|running|exists)|chunky confirm|unknown (?:or incomplete )?command|incorrect argument for command|\[chunky\]\s*(?:invalid|no |not |error)";
+const UNTIL_START: &str = r"(?i)task started (?:for|in) |already (?:started|running|exists)|chunky confirm|unknown (?:or incomplete )?command|incorrect argument for command|\[chunky\]\s*(?:invalid|no |not |error)";
 const UNTIL_STATE: &str = r"(?i)task (?:paused|continuing|continued|resumed|cancell?ed|stopped) for|\bno tasks?\b|chunky confirm|unknown (?:or incomplete )?command|incorrect argument for command";
 const UNTIL_PROGRESS: &str = r"(?i)task (?:running|finished) for|\bno tasks?\b|unknown (?:or incomplete )?command|incorrect argument for command";
 const UNTIL_CONFIRM: &str = r"(?i)task (?:started|cancell?ed|stopped) for|\bno (?:action|pending|tasks?)\b|nothing to confirm|unknown (?:or incomplete )?command|incorrect argument for command";
@@ -978,6 +982,28 @@ impl Followed<'_> {
     }
 }
 
+/// État d'arrêt d'une tâche (`continuing` n'en est pas un : la tâche repart).
+fn is_stop(state: &str) -> bool {
+    matches!(state, "paused" | "cancelled" | "stopped")
+}
+
+/// La tâche suivie est-elle déjà terminée ou arrêtée d'après les lignes déjà lues ? Seul le dernier
+/// événement qui la concerne compte. Sert à ne pas attendre une fin déjà passée : une petite zone
+/// se termine souvent dans la réponse même à `chunky start`.
+fn ended(events: &[Event], followed: Followed<'_>) -> bool {
+    events
+        .iter()
+        .rev()
+        .find_map(|e| match e {
+            Event::Finished(p) if followed.covers(&p.world) => Some(true),
+            Event::State { world, state } if followed.covers(world) => Some(is_stop(state)),
+            Event::Progress(p) if followed.covers(&p.world) => Some(false),
+            Event::Started { world, .. } if followed.covers(world) => Some(false),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
 /// Suit la progression jusqu'à la fin de la tâche suivie (toutes si aucun monde), l'échéance ou
 /// l'annulation par le client. Renvoie les événements vus.
 async fn follow(
@@ -1038,9 +1064,7 @@ async fn follow(
                     mcp_ctx::progress(100.0, Some(100.0), &format!("{} : terminé", p.world)).await;
                     finished = true;
                 }
-                Event::State { world: w, state } if ours(w) && *state != "running" => {
-                    finished = true
-                }
+                Event::State { world: w, state } if ours(w) && is_stop(state) => finished = true,
                 _ => {}
             }
             events.push(e);
@@ -1288,7 +1312,7 @@ pub(crate) async fn pregenerate_world_tool(core: &Core, args: &Value) -> Result<
         }
         out["started"] = json!(started);
         let mut events = reply.events();
-        if req.wait_secs > 0.0 && started {
+        if req.wait_secs > 0.0 && started && !ended(&events, followed) {
             events.extend(
                 follow(
                     core,
@@ -1384,16 +1408,17 @@ pub(crate) async fn pregenerate_world_tool(core: &Core, args: &Value) -> Result<
                     }
                 )
         });
-        if running {
+        let followed = Followed {
+            world: target.as_deref(),
+            level_name: &level_name,
+        };
+        if running && !ended(&events, followed) {
             events.extend(
                 follow(
                     core,
                     id,
                     cursor.clone(),
-                    Followed {
-                        world: target.as_deref(),
-                        level_name: &level_name,
-                    },
+                    followed,
                     req.wait_secs,
                     &mut notes,
                 )
@@ -1419,6 +1444,30 @@ mod tests {
 
     fn line(s: &str) -> Option<Event> {
         parse_line(s)
+    }
+
+    /// Réponse réelle à `chunky start` sur une petite zone (Chunky 1.5.66, Paper 26.1.2) : la tâche
+    /// se termine avant la fin de la réponse, le suivi ne doit pas attendre son échéance.
+    #[test]
+    fn a_task_finished_in_the_start_reply_is_not_followed() {
+        let lines = [
+            "[00:05:17 INFO]: [Chunky] Task started in minecraft:overworld for the square region centered at 0, 0 with radius 200.",
+            "[00:05:17 INFO]: [Chunky] Task running for minecraft:overworld. Processed: 391 chunks (53.64%), ETA: 0:00:00, Rate: 925.9 cps, Current: 0, 0",
+            "[00:05:21 INFO]: [Chunky] Task finished for minecraft:overworld. Processed: 729 chunks (100.00%), Total time: 0:00:04",
+        ];
+        let events: Vec<Event> = lines.iter().filter_map(|l| line(l)).collect();
+        let world = Followed { world: Some("world"), level_name: "world" };
+        assert!(ended(&events, world));
+        // Encore en cours : suivi.
+        assert!(!ended(&events[..2], world));
+        // Une autre dimension terminée ne compte pas.
+        let nether = Followed { world: Some("world_nether"), level_name: "world" };
+        assert!(!ended(&events, nether));
+        // Reprise : pas un arrêt.
+        let resumed = [Event::State { world: "minecraft:overworld".into(), state: "continuing" }];
+        assert!(!ended(&resumed, world));
+        let paused = [Event::State { world: "minecraft:overworld".into(), state: "paused" }];
+        assert!(ended(&paused, world));
     }
 
     #[test]
@@ -1471,6 +1520,15 @@ mod tests {
                 center: (0, 0),
                 radius: 5000
             })
+        );
+        // Forme réelle de Chunky 1.5.66.
+        assert_eq!(
+            line("[00:05:17 INFO]: [Chunky] Task started in minecraft:overworld for the square region centered at 0, 0 with radius 200."),
+            Some(Event::Started { world: "minecraft:overworld".into(), center: (0, 0), radius: 200 })
+        );
+        assert_eq!(
+            line("[Chunky] Task started in world_nether for the circle region centered at -16, 32 with radius 1000."),
+            Some(Event::Started { world: "world_nether".into(), center: (-16, 32), radius: 1000 })
         );
         assert_eq!(
             line("[Chunky] Task started for minecraft:overworld at -250.0, 1000.0 with radius 2000.0."),
@@ -1574,6 +1632,7 @@ mod tests {
         .is_none());
         let start = Regex::new(UNTIL_START).unwrap();
         assert!(start.is_match("[Chunky] Task started for world at 0, 0 with radius 10."));
+        assert!(start.is_match("[Chunky] Task started in minecraft:overworld for the square region centered at 0, 0 with radius 200."));
         assert!(start.is_match(
             "[Chunky] Task already exists for world. Type /chunky confirm to start over."
         ));

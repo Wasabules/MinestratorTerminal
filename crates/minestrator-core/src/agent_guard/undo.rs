@@ -77,6 +77,10 @@ pub(crate) enum Plan {
     Unreadable,
     /// Fichiers modifiés en place : contenu précédent (ou absence).
     Files { server: i64, paths: Vec<String> },
+    /// Config structurée éditée par clés (`set_config`) : comme `Files`, plus l'empreinte des clés
+    /// visées après l'action. Un serveur qui réécrit sa config au démarrage (Paper) ne bloque alors
+    /// plus l'annulation : seules ces clés sont remises, si elles n'ont pas bougé depuis.
+    Config { server: i64, path: String, keys: Vec<String> },
     /// Suppression d'un fichier (contenu) ou d'un dossier (arborescence, plafonnée).
     Delete { server: i64, path: String },
     Rename { server: i64, from: String, to: String },
@@ -97,6 +101,7 @@ impl Plan {
         match self {
             Plan::Skip | Plan::Fixed(_) | Plan::Unreadable => None,
             Plan::Files { server, .. }
+            | Plan::Config { server, .. }
             | Plan::Delete { server, .. }
             | Plan::Rename { server, .. }
             | Plan::CreateDir { server, .. }
@@ -118,7 +123,9 @@ impl Plan {
         match self {
             Plan::Skip | Plan::Fixed(_) | Plan::Unreadable => String::new(),
             Plan::Files { paths, .. } => list(paths),
-            Plan::Delete { path, .. } | Plan::CreateDir { path, .. } => path.clone(),
+            Plan::Delete { path, .. } | Plan::CreateDir { path, .. } | Plan::Config { path, .. } => {
+                path.clone()
+            }
             Plan::Rename { from, to, .. } => format!("{from} → {to}"),
             Plan::NewFiles { dirs, .. } => list(dirs),
             Plan::Property { key, .. } => key.clone(),
@@ -126,6 +133,17 @@ impl Plan {
             Plan::ModUpdates { .. } | Plan::ModFiles { .. } => "mods et plugins".into(),
         }
     }
+}
+
+/// Clés visées par `set_config` (`changes[].key`) ; `None` si illisibles.
+fn config_keys(args: &Value) -> Option<Vec<String>> {
+    let keys: Vec<String> = args
+        .get("changes")?
+        .as_array()?
+        .iter()
+        .map(|c| c.get("key").and_then(Value::as_str).map(str::to_string))
+        .collect::<Option<_>>()?;
+    (!keys.is_empty()).then_some(keys)
 }
 
 /// Dossier parent d'un chemin distant (`/` pour un nom à la racine).
@@ -231,7 +249,12 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         }
         // --- Points d'extension : outils des autres lots ----------------------------------------
         // Fichier de configuration modifié en place (édition structurée) : contenu précédent.
-        "set_config" => files("path"),
+        // Simulation : rien n'est écrit, aucune étape (elle s'afficherait « annulable »).
+        "set_config" if args.get("dry_run").and_then(Value::as_bool) == Some(true) => Plan::Skip,
+        "set_config" => match (int("server_id"), text("path"), config_keys(args)) {
+            (Some(server), Some(path), Some(keys)) => Plan::Config { server, path, keys },
+            _ => files("path"),
+        },
         // Commande console avec sa sortie : effet non réversible.
         "run_command" => Plan::Fixed("commande console : effet non réversible"),
         // Déploiement vérifié : envoi du jar et mise de côté de l'ancien passent par
@@ -351,6 +374,7 @@ fn is_before(cur: &Fp, before: Option<&BlobFp>) -> bool {
 pub(crate) enum Pre {
     Nothing,
     Files(Vec<(String, Option<BlobFp>)>),
+    Config { path: String, before: Option<BlobFp>, keys: Vec<String> },
     Tree { root: String, dirs: Vec<String>, files: Vec<(String, BlobFp)> },
     Rename { from: String, to: String, overwritten: Option<BlobFp> },
     Dir { path: String, existed: bool },
@@ -442,6 +466,26 @@ async fn capture_files<R: Remote>(
     Ok(out)
 }
 
+/// Dossiers parents qu'un fichier nouveau va faire créer (l'écriture crée les parents manquants) :
+/// ajoutés à l'étape pour être retirés, s'ils sont vides, après le fichier.
+async fn with_new_dirs<R: Remote>(r: &R, pre: Pre, new_files: &[String]) -> Result<Pre, String> {
+    let mut dirs: Vec<String> = Vec::new();
+    for f in new_files {
+        let mut dir = parent_dir(f);
+        while dir != "/" && !dirs.contains(&dir) && r.probe(&dir).await?.is_none() {
+            dirs.push(dir.clone());
+            dir = parent_dir(&dir);
+        }
+    }
+    if dirs.is_empty() {
+        return Ok(pre);
+    }
+    dirs.sort_by_key(|d| (depth(d), d.clone()));
+    let mut parts: Vec<Pre> = dirs.into_iter().map(|path| Pre::Dir { path, existed: false }).collect();
+    parts.push(pre);
+    Ok(Pre::Many(parts))
+}
+
 async fn capture_listing<R: Remote>(r: &R, dirs: &[String], recursive: bool) -> Result<Pre, String> {
     let mut roots = Vec::new();
     let mut before = BTreeMap::new();
@@ -472,7 +516,17 @@ async fn capture_inner<R: Remote>(
     match plan {
         Plan::Skip | Plan::Fixed(_) | Plan::Unreadable => Ok(Pre::Nothing),
         Plan::ModUpdates { .. } => Err("mises à jour non résolues".into()),
-        Plan::Files { paths, .. } => Ok(Pre::Files(capture_files(r, paths, budget, blobs).await?)),
+        Plan::Files { paths, .. } => {
+            let files = capture_files(r, paths, budget, blobs).await?;
+            let new: Vec<String> = files.iter().filter(|(_, b)| b.is_none()).map(|(p, _)| p.clone()).collect();
+            with_new_dirs(r, Pre::Files(files), &new).await
+        }
+        Plan::Config { path, keys, .. } => {
+            let mut files = capture_files(r, std::slice::from_ref(path), budget, blobs).await?;
+            let (path, before) = files.pop().ok_or("capture vide")?;
+            let new: Vec<String> = before.is_none().then(|| path.clone()).into_iter().collect();
+            with_new_dirs(r, Pre::Config { path, before, keys: keys.clone() }, &new).await
+        }
         Plan::Delete { path, .. } => match r.probe(path).await? {
             None => Ok(Pre::Nothing),
             Some(m) if !m.is_dir => Ok(Pre::Files(vec![(path.clone(), Some(copy_file(r, &m, budget, blobs).await?))])),
@@ -547,12 +601,95 @@ async fn capture_inner<R: Remote>(
 
 // --- Après l'action : opérations inverses ------------------------------------------------------
 
+/// Empreinte d'une clé de config après l'action : sha256 de sa valeur JSON (`None` : absente).
+/// Jamais la valeur elle-même (elle peut être secrète).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct KeyFp {
+    pub key: String,
+    pub after: Option<String>,
+}
+
+/// Arbre d'un texte de config (analyseur strict du format de `path`).
+fn config_tree(path: &str, data: &[u8]) -> Result<Value, String> {
+    let format = crate::config_edit::Format::detect(path).ok_or("format de config non pris en charge")?;
+    let text = std::str::from_utf8(data).map_err(|_| "fichier non UTF-8".to_string())?;
+    format.tree(text.trim_start_matches('\u{feff}'))
+}
+
+/// Valeur d'une clé dans un arbre de config.
+fn key_value<'a>(tree: &'a Value, key: &str) -> Result<Option<&'a Value>, String> {
+    let segs = crate::config_edit::parse_key_path(key)?;
+    Ok(crate::config_edit::get_path(tree, &segs))
+}
+
+fn value_hash(v: Option<&Value>) -> Option<String> {
+    v.map(|v| sha_hex(v.to_string().as_bytes()))
+}
+
+/// Empreinte des clés après l'action ; `None` si le fichier ne s'analyse pas (annulation par
+/// fichier entier seulement).
+async fn key_fps<R: Remote>(r: &R, path: &str, keys: &[String]) -> Option<Vec<KeyFp>> {
+    let data = r.read(path, FILE_CAP).await.ok()?;
+    let tree = config_tree(path, &data).ok()?;
+    keys.iter()
+        .map(|k| key_value(&tree, k).ok().map(|v| KeyFp { key: k.clone(), after: value_hash(v) }))
+        .collect()
+}
+
+/// Annulation clé par clé d'un fichier réécrit depuis l'action : `Ok(None)` si les clés ont déjà
+/// leur valeur d'avant, `Ok(Some(texte))` = contenu actuel avec ces seules clés remises. `Err` :
+/// pourquoi c'est impossible (clé modifiée depuis, clé créée par l'action, fichier illisible).
+async fn revert_keys<R: Remote>(
+    r: &R,
+    path: &str,
+    before: &[u8],
+    keys: &[KeyFp],
+) -> Result<Option<String>, String> {
+    let current = r.read(path, FILE_CAP).await?;
+    let cur_tree = config_tree(path, &current)?;
+    let before_tree = config_tree(path, before)?;
+    let mut requests = Vec::new();
+    for k in keys {
+        let now = key_value(&cur_tree, &k.key)?;
+        let then = key_value(&before_tree, &k.key)?;
+        if value_hash(now) == value_hash(then) {
+            continue;
+        }
+        if value_hash(now) != k.after {
+            return Err(format!("la clé « {} » a changé depuis", k.key));
+        }
+        let Some(then) = then else {
+            return Err(format!(
+                "la clé « {} » a été créée par l'action (retrait clé par clé non pris en charge)",
+                k.key
+            ));
+        };
+        requests.push(crate::config_edit::EditRequest { key: k.key.clone(), value: then.clone() });
+    }
+    if requests.is_empty() {
+        return Ok(None);
+    }
+    let format = crate::config_edit::Format::detect(path).ok_or("format de config non pris en charge")?;
+    let text = String::from_utf8(current).map_err(|_| "fichier non UTF-8".to_string())?;
+    let opts = crate::config_edit::EditOptions { create_missing: false, keep_type: false, skip_masked: false };
+    let out = crate::config_edit::edit_text(format, path, &text, &requests, opts, &|l: &str| l.to_string())?;
+    Ok(Some(out.new_text))
+}
+
 /// Une opération inverse, sérialisée dans l'étape (sans contenu : les copies sont à part).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum UndoOp {
-    /// Remettre `path` dans son état d'avant : copie `before`, ou absence.
-    File { path: String, before: Option<BlobFp>, after: Fp },
+    /// Remettre `path` dans son état d'avant : copie `before`, ou absence. `keys` (config éditée
+    /// par clés) : empreinte des valeurs écrites, pour remettre seulement ces clés si le fichier a
+    /// été réécrit ailleurs depuis.
+    File {
+        path: String,
+        before: Option<BlobFp>,
+        after: Fp,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        keys: Option<Vec<KeyFp>>,
+    },
     /// Dossier créé par l'action : le retirer s'il est vide (ou de force).
     RemoveDir { path: String },
     /// Dossier supprimé par l'action : le recréer avec son contenu.
@@ -585,12 +722,15 @@ pub(crate) async fn finalize<R: Remote>(r: &R, pre: &Pre) -> Result<(Vec<UndoOp>
     let mut ops = Vec::new();
     let mut notes = Vec::new();
     let mut covered = BTreeSet::new();
-    // Composé (mises à jour de mods) : les fichiers copiés d'abord, pour qu'un listing ne les compte
-    // pas comme « remplacés ». Pas d'imbrication plus profonde.
+    // Composé : les dossiers créés d'abord (défaits en dernier, une fois vides), puis les fichiers
+    // copiés, pour qu'un listing ne les compte pas comme « remplacés ». Pas d'imbrication plus
+    // profonde.
     let parts: Vec<&Pre> = match pre {
         Pre::Many(parts) => {
-            let (files, rest): (Vec<&Pre>, Vec<&Pre>) = parts.iter().partition(|p| matches!(p, Pre::Files(_)));
-            files.into_iter().chain(rest).collect()
+            let (dirs, others): (Vec<&Pre>, Vec<&Pre>) = parts.iter().partition(|p| matches!(p, Pre::Dir { .. }));
+            let (files, rest): (Vec<&Pre>, Vec<&Pre>) =
+                others.into_iter().partition(|p| matches!(p, Pre::Files(_) | Pre::Config { .. }));
+            dirs.into_iter().chain(files).chain(rest).collect()
         }
         one => vec![one],
     };
@@ -616,7 +756,18 @@ async fn finalize_part<R: Remote>(
                 if is_before(&after, before.as_ref()) {
                     continue; // rien n'a changé
                 }
-                ops.push(UndoOp::File { path: path.clone(), before: before.clone(), after });
+                ops.push(UndoOp::File { path: path.clone(), before: before.clone(), after, keys: None });
+            }
+        }
+        Pre::Config { path, before, keys } => {
+            covered.insert(path.clone());
+            let after = fingerprint(r, path, true).await?;
+            if !is_before(&after, before.as_ref()) {
+                let keys = match before {
+                    Some(_) => key_fps(r, path, keys).await,
+                    None => None,
+                };
+                ops.push(UndoOp::File { path: path.clone(), before: before.clone(), after, keys });
             }
         }
         Pre::Tree { root, dirs, files } => {
@@ -657,7 +808,7 @@ async fn finalize_part<R: Remote>(
                     }
                     match before.get(&e.path) {
                         None if e.is_dir => created_dirs.push(e.path.clone()),
-                        None => created_files.push(UndoOp::File { path: e.path.clone(), before: None, after: meta_fp(&e) }),
+                        None => created_files.push(UndoOp::File { path: e.path.clone(), before: None, after: meta_fp(&e), keys: None }),
                         Some(b) if !e.is_dir && !same(&meta_fp(b), &meta_fp(&e)) => replaced += 1,
                         Some(_) => {}
                     }
@@ -713,16 +864,31 @@ pub(crate) async fn undo_ops<R: Remote>(
     let refused = |m: String| UndoError::Refused(format!("{m} (force=true pour passer outre)"));
     let io = |op: &UndoOp, e: String| UndoError::Failed(format!("{} : {e}", op.label()));
     let mut done_already = vec![false; ops.len()];
+    // Config réécrite depuis l'action : contenu actuel avec seulement les clés de l'action remises.
+    let mut by_keys: Vec<Option<String>> = vec![None; ops.len()];
+    let blob = |op: &UndoOp, b: &BlobFp| -> Result<Vec<u8>, UndoError> {
+        let data = blobs.get(b.blob).ok_or_else(|| io(op, "copie introuvable".into()))?;
+        if sha_hex(data) != b.sha256 {
+            return Err(io(op, "copie altérée (empreinte différente)".into()));
+        }
+        Ok(data.clone())
+    };
     // 1. Vérification.
     for (i, op) in ops.iter().enumerate() {
         match op {
-            UndoOp::File { path, before, after } => {
+            UndoOp::File { path, before, after, keys } => {
                 let hash = before.is_some() || after.sha256.is_some();
                 let cur = fingerprint(r, path, hash).await.map_err(|e| io(op, e))?;
                 if is_before(&cur, before.as_ref()) {
                     done_already[i] = true;
                 } else if !force && !same(&cur, after) {
-                    return Err(refused(format!("« {path} » a changé depuis l'action")));
+                    let changed = format!("« {path} » a changé depuis l'action");
+                    let (Some(keys), Some(b)) = (keys, before) else { return Err(refused(changed)) };
+                    match revert_keys(r, path, &blob(op, b)?, keys).await {
+                        Ok(None) => done_already[i] = true,
+                        Ok(Some(text)) => by_keys[i] = Some(text),
+                        Err(why) => return Err(refused(format!("{changed} : {why}"))),
+                    }
                 }
             }
             UndoOp::RemoveDir { .. } => {}
@@ -761,16 +927,18 @@ pub(crate) async fn undo_ops<R: Remote>(
         }
     }
     // 2. Application, dans l'ordre inverse.
-    let blob = |op: &UndoOp, b: &BlobFp| -> Result<Vec<u8>, UndoError> {
-        let data = blobs.get(b.blob).ok_or_else(|| io(op, "copie introuvable".into()))?;
-        if sha_hex(data) != b.sha256 {
-            return Err(io(op, "copie altérée (empreinte différente)".into()));
-        }
-        Ok(data.clone())
-    };
     let mut remarks = Vec::new();
     for (i, op) in ops.iter().enumerate().rev() {
         if done_already[i] {
+            continue;
+        }
+        if let (UndoOp::File { path, keys: Some(keys), .. }, Some(text)) = (op, &by_keys[i]) {
+            r.write(path, text.as_bytes()).await.map_err(|e| io(op, e))?;
+            let names: Vec<&str> = keys.iter().map(|k| k.key.as_str()).collect();
+            remarks.push(format!(
+                "« {path} » réécrit depuis (par le serveur ?) : seules les clés de l'action sont remises ({})",
+                names.join(", ")
+            ));
             continue;
         }
         match op {
@@ -1060,6 +1228,12 @@ mod tests {
         assert!(matches!(plan_for("pregenerate_world", &json!({})), Plan::Fixed(r) if r != NO_CAPTURE));
         // Base de données : sans étape propre, l'écriture de la config (set_config) en a une.
         assert_eq!(plan_for("connect_database", &json!({ "server_id": 3, "target": "luckperms" })), Plan::Skip);
+        // Simulation de set_config : pas d'étape ; écriture : le fichier est capturé.
+        assert_eq!(plan_for("set_config", &json!({ "server_id": 3, "path": "/a.yml", "dry_run": true })), Plan::Skip);
+        assert_eq!(
+            plan_for("set_config", &json!({ "server_id": 3, "path": "/a.yml", "dry_run": false })),
+            Plan::Files { server: 3, paths: vec!["/a.yml".into()] }
+        );
     }
 
     #[test]
@@ -1080,6 +1254,104 @@ mod tests {
             // Une seconde annulation ne fait rien (déjà dans l'état d'origine).
             undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
             assert_eq!(s.snapshot(), orig);
+        });
+    }
+
+    /// Cas réel (essai du 2026-11-19) : link_proxy écrit `paper-global.yml` par set_config, puis
+    /// Paper réécrit tout le fichier en redémarrant. L'annulation remet seulement les clés écrites.
+    #[test]
+    fn config_rewritten_by_the_server_is_reverted_key_by_key() {
+        block(async {
+            let path = "/config/paper-global.yml";
+            let s = FakeServer::new();
+            s.put(path, "proxies:\n  velocity:\n    enabled: false\n    secret: ''\nother: 1\n");
+            let args = json!({ "server_id": 1, "path": path, "changes": [
+                { "key": "proxies.velocity.enabled", "value": true },
+                { "key": "proxies.velocity.secret", "value": "s3cret" },
+            ] });
+            let plan = plan_for("set_config", &args);
+            assert!(matches!(&plan, Plan::Config { keys, .. } if keys.len() == 2), "{plan:?}");
+            let (ops, _, cap) = roundtrip(&s, plan, |s| {
+                s.put(path, "proxies:\n  velocity:\n    enabled: true\n    secret: 's3cret'\nother: 1\n")
+            })
+            .await;
+            let UndoOp::File { keys: Some(keys), .. } = &ops[0] else { panic!("{ops:?}") };
+            assert!(keys.iter().all(|k| k.after.as_deref().is_some_and(|h| !h.contains("s3cret"))));
+            // Paper redémarre : fichier réécrit (commentaire, guillemets, nouvelle clé).
+            s.put(path, "# réécrit par Paper\nproxies:\n  velocity:\n    enabled: true\n    secret: s3cret\nother: 1\nnew-key: x\n");
+            let remarks = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            assert!(remarks.iter().any(|r| r.contains("seules les clés")), "{remarks:?}");
+            let text = s.text(path).unwrap();
+            let tree = config_tree(path, text.as_bytes()).unwrap();
+            assert_eq!(tree["proxies"]["velocity"]["enabled"], json!(false));
+            assert_eq!(tree["proxies"]["velocity"]["secret"], json!(""));
+            assert_eq!(tree["new-key"], json!("x"), "les réécritures du serveur restent");
+            assert!(text.starts_with("# réécrit par Paper"), "{text}");
+            // Une seconde annulation ne fait rien.
+            assert!(undo_ops(&s, &ops, &cap.blobs, false).await.is_ok());
+            assert_eq!(s.text(path).unwrap(), text);
+        });
+    }
+
+    #[test]
+    fn key_changed_since_or_created_by_the_action_is_refused() {
+        block(async {
+            let path = "/plugins/A/config.yml";
+            let s = FakeServer::new();
+            s.put(path, "a: 1\n");
+            let args = json!({ "server_id": 1, "path": path, "changes": [{ "key": "a", "value": 2 }] });
+            let (ops, _, cap) = roundtrip(&s, plan_for("set_config", &args), |s| s.put(path, "a: 2\n")).await;
+            // Quelqu'un a remis une autre valeur depuis : refus, rien touché.
+            s.put(path, "# autre\na: 3\n");
+            let e = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap_err();
+            assert!(matches!(&e, UndoError::Refused(m) if m.contains("« a » a changé")), "{e:?}");
+            assert_eq!(s.text(path).unwrap(), "# autre\na: 3\n");
+            // Clé créée par l'action : pas de retrait clé par clé.
+            let s = FakeServer::new();
+            s.put(path, "a: 1\n");
+            let args = json!({ "server_id": 1, "path": path, "changes": [{ "key": "b", "value": 2 }] });
+            let (ops, _, cap) = roundtrip(&s, plan_for("set_config", &args), |s| s.put(path, "a: 1\nb: 2\n")).await;
+            s.put(path, "# réécrit\na: 1\nb: 2\n");
+            let e = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap_err();
+            assert!(matches!(&e, UndoError::Refused(m) if m.contains("créée par l'action")), "{e:?}");
+            // `force` remet toujours la copie entière.
+            undo_ops(&s, &ops, &cap.blobs, true).await.unwrap();
+            assert_eq!(s.text(path).unwrap(), "a: 1\n");
+        });
+    }
+
+    /// Cas réel : write_file sur `/plugins/X/config.yml` crée `/plugins/X` ; l'annulation retirait le
+    /// fichier mais laissait le dossier vide.
+    #[test]
+    fn parent_dirs_created_by_a_write_are_removed_after_the_file() {
+        block(async {
+            let s = FakeServer::new();
+            s.dir("/plugins");
+            s.put("/plugins/Old.jar", "x");
+            let orig = s.snapshot();
+            let plan = Plan::Files { server: 1, paths: vec!["/plugins/X/sub/config.yml".into()] };
+            let (ops, _, cap) = roundtrip(&s, plan, |s| s.put("/plugins/X/sub/config.yml", "a: 1")).await;
+            let dirs: Vec<&str> = ops
+                .iter()
+                .filter_map(|o| match o {
+                    UndoOp::RemoveDir { path } => Some(path.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(dirs, ["/plugins/X", "/plugins/X/sub"], "/plugins existait : gardé");
+            undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            assert_eq!(s.snapshot(), orig);
+            // Un autre fichier ajouté depuis dans le dossier créé : dossier conservé, signalé.
+            let (ops, _, cap) = roundtrip(
+                &s,
+                Plan::Config { server: 1, path: "/plugins/Y/config.yml".into(), keys: vec!["a".into()] },
+                |s| s.put("/plugins/Y/config.yml", "a: 1"),
+            )
+            .await;
+            s.put("/plugins/Y/data.db", "z");
+            let remarks = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            assert!(!s.exists("/plugins/Y/config.yml") && s.exists("/plugins/Y/data.db"));
+            assert!(remarks.iter().any(|r| r.contains("/plugins/Y") && r.contains("conservé")), "{remarks:?}");
         });
     }
 

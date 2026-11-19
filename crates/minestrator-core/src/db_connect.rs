@@ -345,7 +345,12 @@ pub(crate) fn read_creds(entry: &Value) -> Result<Creds, String> {
         }
     }
     let password = pick(&l, PASS_KEYS).filter(|p| usable_password(p));
-    let engine = Engine::detect(pick(&l, ENGINE_KEYS).as_deref());
+    // `GET /mybox/{id}` ne donne pas le moteur (champs relevés le 2026-11-19 : id, dbname, host,
+    // port, username, password, description) ; l'hôte le dit (`mariadb1.…`).
+    let engine = match Engine::detect(pick(&l, ENGINE_KEYS).as_deref()) {
+        Engine::Unknown => Engine::detect(Some(&host)),
+        e => e,
+    };
     // Un nom (`name`) qui serait le libellé est sans effet : `database` / `db_name` priment.
     Ok(Creds {
         id,
@@ -906,6 +911,29 @@ mod tests {
 
     fn creds() -> Creds {
         read_creds(&entry()).unwrap()
+    }
+
+    /// Forme réelle d'une entrée de `GET /mybox/{id}` → `databases[]` (base MariaDB 11.8 créée
+    /// pour l'essai du 2026-11-19 ; valeurs remplacées).
+    #[test]
+    fn real_api_entry_is_read_and_its_engine_comes_from_the_host() {
+        let c = read_creds(&json!({
+            "id": 7395,
+            "dbname": "minesr_abcdefgh",
+            "description": "",
+            "host": "mariadb1.mystrator.com",
+            "port": 3306,
+            "username": "minesr_abcdefgh",
+            "password": SECRET,
+        }))
+        .unwrap();
+        assert_eq!((c.id, c.engine, c.port, c.port_assumed), (7395, Engine::MariaDb, 3306, false));
+        assert_eq!((c.database.as_str(), c.username.as_str()), ("minesr_abcdefgh", "minesr_abcdefgh"));
+        assert_eq!(c.password.as_deref(), Some(SECRET));
+        assert_eq!(c.label, None, "description vide : pas de libellé");
+        // Hôte muet : moteur inconnu, comme avant.
+        let quiet = read_creds(&json!({ "id": 1, "dbname": "d", "host": "db1.example", "username": "u", "password": SECRET })).unwrap();
+        assert_eq!(quiet.engine, Engine::Unknown);
     }
 
     #[test]

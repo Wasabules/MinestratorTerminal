@@ -534,10 +534,14 @@ l'autre) ; aucun accès au disque de l'ordinateur.
   console). Lignes analysées : progression (`Task running for <monde>. Processed: N chunks
   (P%), ETA: h:mm:ss, Rate: R cps, Current: x, z`) et fin (`Task finished … Total time`),
   **relevées sur un serveur réel** (Chunky 1.5.66, Paper) ; Chunky y nomme le monde par son
-  identifiant (`minecraft:overworld`) même sur Paper, rapproché du dossier choisi. Démarrage,
-  pause, reprise, annulation, « aucune tâche » et demande de confirmation : formats **supposés**
-  (textes anglais de Chunky), testés sur des lignes représentatives ; une réponse non reconnue est
-  signalée, jamais interprétée. `wait_secs` (max 600) : suit la console, avancement MCP
+  identifiant (`minecraft:overworld`) même sur Paper, rapproché du dossier choisi. Démarrage
+  (`Task started in <monde> for the <forme> region centered at x, z with radius r`), « aucune
+  tâche » (`No tasks running.`, `No tasks to continue.`), réponses de sélection, pause (`Task
+  paused for <monde>.`), demande de confirmation de `cancel` puis `Task stopped for <monde>.` :
+  relevés aussi en réel. Seule la reprise (`Task continuing…`) reste un format **supposé** ; une
+  réponse non reconnue est signalée, jamais interprétée. Particularité de Chunky : juste après une
+  pause, `chunky progress` décrit encore la tâche « running » à 0 cps. Une tâche déjà terminée
+  dans la réponse au lancement n'est pas suivie. `wait_secs` (max 600) : suit la console, avancement MCP
   (`notifications/progress`, pourcentage), arrêt à la fin de la tâche, à l'échéance ou si le
   client annule (la tâche continue sur le serveur).
 - **Garde des agents** : `start`, `pause`, `continue`, `cancel` sont des étapes **non annulables**
@@ -546,11 +550,12 @@ l'autre) ; aucun accès au disque de l'ordinateur.
 **`connect_database`.**
 
 - **Accès** : `GET /mybox/{id}` → `databases[]` (l'outil officiel `get_mybox` annonce « host,
-  port, nom, mot de passe »). La forme exacte des entrées **n'a pas pu être relevée** (aucune base
-  sur le compte de test) : lecture tolérante (noms candidats par champ — `host`/`hostname`/
-  `address`…, `port`, `database`/`db_name`/`name`…, `username`/`user`/`login`…, `password`/
-  `pass`/`pwd`… —, un niveau d'imbrication, `hôte:port` dans l'hôte, port 3306 supposé et dit s'il
-  manque). Champ indispensable absent : erreur qui liste les **noms** des champs vus, jamais leurs
+  port, nom, mot de passe »). Champs relevés sur une vraie base (MariaDB 11.8, 2026-11-19) :
+  `id`, `dbname`, `host`, `port`, `username`, `password`, `description` — **aucun champ de
+  moteur** : il est déduit de l'hôte (`mariadb1.…`), sinon MySQL/MariaDB est supposé et dit. La
+  lecture reste tolérante (noms candidats par champ — `host`/`hostname`/`address`…, `port`,
+  `database`/`dbname`/`db_name`/`name`…, `username`/`user`/`login`…, `password`/`pass`/`pwd`… —,
+  un niveau d'imbrication, `hôte:port` dans l'hôte, port 3306 supposé et dit s'il manque). Champ indispensable absent : erreur qui liste les **noms** des champs vus, jamais leurs
   valeurs. Mot de passe absent ou masqué : repli sur l'outil officiel `get_mybox` (connexion en
   lecture seule), jamais montré au modèle. `database_id` absent : la seule base de la MyBox,
   sinon la liste (identifiant et nom) est rendue en erreur. MyBox sans base : renvoi vers l'outil
@@ -872,7 +877,8 @@ d'étape.
 
 | Outil | Ce qui est défait |
 |---|---|
-| `write_file`, `edit_file`, `upload_file` (et `set_config`) | contenu précédent remis, ou fichier retiré s'il n'existait pas |
+| `write_file`, `edit_file`, `upload_file` | contenu précédent remis, ou fichier retiré s'il n'existait pas ; dossiers parents créés par l'écriture retirés s'ils sont vides |
+| `set_config` | idem ; si le fichier a été **réécrit depuis** (Paper réécrit sa configuration à chaque démarrage), seules les clés de l'action sont remises à leur ancienne valeur, à condition qu'elles aient encore la valeur écrite (empreinte sha256 de chaque valeur, jamais la valeur) et qu'elles aient existé avant. Une simulation (`dry_run`) n'ajoute pas d'étape |
 | `delete_path` | fichier recréé avec son contenu ; dossier recréé en entier s'il compte **500 entrées au plus** |
 | `rename_path` | renommage inverse, et fichier écrasé à la destination remis |
 | `create_dir` | dossier retiré s'il est vide (conservé sinon, sauf `force`) |
