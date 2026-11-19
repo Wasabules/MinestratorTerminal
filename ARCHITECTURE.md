@@ -283,6 +283,11 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
 - **`mcp`** — logique MCP **indépendante du transport** : traite un message JSON-RPC, expose la liste
   d'outils et le `dispatch`. Réglable via `McpConfig` (activer/désactiver, mode lecture seule). Réutilisée
   par `minestrator-mcp`, par `src-tauri --mcp`, et par le Copilote en interne.
+  Protocole (voir `MCP.md` §2) : `mcp_transport` (stdio concurrent, une tâche par requête, versions
+  `2024-11-05` → `2026-07-28` avec et sans poignée de main, annulation, élicitation), `mcp_ctx`
+  (contexte d'appel des outils : session, progression, annulation, confirmation par l'humain),
+  `mcp_catalog` (groupes d'outils `--toolsets`, annotations, instructions), `mcp_prompts`,
+  `mcp_resources`.
 - **`official_mcp`** — client du **serveur MCP OFFICIEL** de MineStrator (`https://mcp.sttr.io/minestrator`,
   Streamable HTTP stateless, `Bearer <clé API>`, `?toolsets=…&readonly=1`) : 107 outils en 10
   toolsets (relevé du 2026-11-18, 43 en lecture). Notre MCP local garde le SFTP fin + les outils

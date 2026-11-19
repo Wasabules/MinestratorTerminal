@@ -13,21 +13,108 @@ Il est bâti sur `minestrator-core` : la même logique métier que l'app desktop
 
 - **Rôle** : donner à un assistant/agent la capacité de **gérer, diagnostiquer, suivre et optimiser**
   des serveurs Minecraft, en langage naturel.
-- **Standard** : JSON-RPC 2.0, spec MCP `2024-11-05`.
+- **Standard** : JSON-RPC 2.0, spec MCP `2024-11-05` à `2026-07-28` (voir §2).
 - **Sans configuration de clé** : réutilise la clé API stockée dans le trousseau de l'OS par l'app
   desktop. (Connecte-toi une fois dans l'app.)
 - **Fonctionne app fermée** : parle directement à l'API MineStrator + SFTP.
 
 ## 2. Transport & protocole
 
+Code : `mcp_transport.rs` (transport), `mcp_ctx.rs` (contexte d'appel des outils),
+`mcp_catalog.rs` (groupes, annotations, instructions), `mcp_prompts.rs`, `mcp_resources.rs` ; la
+logique des outils reste dans `mcp.rs` (`handle_message`).
+
 | | |
 |---|---|
-| Transport | **stdio** (JSON-RPC délimité par sauts de ligne). stdout = protocole, stderr = logs. |
-| Version MCP | `2024-11-05` |
-| Capacité annoncée | `tools` (list + call) |
-| Handshake | `initialize` → `tools/list` → `tools/call` |
+| Transport | **stdio** (JSON-RPC, un message par ligne). stdout = protocole, stderr = journaux. |
+| Versions gérées | `2026-07-28` (sans état) ; `2025-11-25`, `2025-06-18`, `2025-03-26`, `2024-11-05` (poignée de main) |
+| Capacités annoncées | `tools`, `prompts`, `resources` (sans abonnement : `subscribe: false`) ; aucune notification de changement de liste, ni journalisation, ni complétion |
+| Méthodes | `initialize`, `server/discover`, `tools/list`, `tools/call`, `prompts/list`, `prompts/get`, `resources/list`, `resources/templates/list`, `resources/read`, `ping` ; notifications `notifications/cancelled`, `notifications/progress` (sortante) |
 
-> Le serveur ne publie pas encore de `resources` ni de `prompts` (voir §8, extensions prévues).
+**Deux ères dans le même processus** (serveur « dual-era » de la spécification) :
+
+- **Poignée de main** (`2024-11-05` à `2025-11-25`) : `initialize` négocie la version — celle
+  demandée si nous la gérons, sinon `2025-11-25` — et fixe pour la connexion l'identité du client
+  (`clientInfo.name`) et ses capacités. `2024-11-05` reste gérée pour les agents CLI actuels.
+- **Sans état** (`2026-07-28`) : chaque requête porte `io.modelcontextprotocol/protocolVersion`,
+  `…/clientCapabilities` (et `…/clientInfo`) dans `_meta`. `server/discover` décrit le serveur
+  (versions, capacités, instructions). Chaque résultat porte `resultType` et
+  `_meta["io.modelcontextprotocol/serverInfo"]` ; les listes et `resources/read` portent
+  `ttlMs` et `cacheScope: "private"` (données du compte). Version inconnue : erreur `-32022`
+  avec la liste des versions gérées ; `_meta` incomplet : `-32602`. Un client « dual-era » qui
+  sonde par `server/discover` reste donc en sans état ; la variable `MINESTRATOR_MCP_STATELESS=0`
+  coupe cette ère (`server/discover` → méthode inconnue, repli du client sur `initialize`). Un
+  serveur lancé par le Copilote (liste blanche d'env) garde la poignée de main, comme avant.
+
+**Concurrence.** Chaque requête est traitée dans sa propre tâche : un outil long (profiler Spark,
+compression, snapshot avant suppression) ne bloque plus les autres appels. Un seul rédacteur écrit
+sur stdout (canal) ; un message illisible est ignoré (journal) ; une panique dans un outil devient
+une erreur `-32603` sans arrêter le serveur. En fin d'entrée (stdin fermé), les requêtes en cours
+sont menées à leur terme et leurs réponses envoyées, puis le processus se termine.
+
+**Annulation** (`notifications/cancelled`) : `mcp_ctx::cancelled()` passe à vrai pour l'appel
+visé et **aucune réponse** n'est envoyée. Une lecture est abandonnée net ; une action modifiante
+n'est jamais coupée en plein milieu (elle consulte `cancelled()` entre deux étapes). Une question
+posée à l'humain pour cet appel est retirée côté client.
+
+**Progression** : si la requête porte `_meta.progressToken`, les outils longs émettent
+`notifications/progress` (valeurs croissantes, envois espacés d'au moins 250 ms ; `message`
+depuis `2025-03-26`) — compression, extraction et copie par archive y relaient leur avancement.
+Sans progression depuis 15 s, un signe de vie (« toujours en cours (N s) ») garde le client à
+l'écoute, sans inventer d'avancement.
+
+**Élicitation** (confirmation par l'humain) : si le client déclare la capacité `elicitation`
+(formulaire ; `2025-06-18` et après), une action destructive demande à **l'utilisateur** de
+retaper le nom exact de sa cible, au lieu de faire confiance au `confirm_name` du modèle :
+`mybox_delete_server` et les outils destructifs relayés par la passerelle (§6). Le formulaire n'a
+qu'un champ texte (jamais pré-rempli) ; seule une acceptation avec le nom exact (casse comprise)
+confirme. Refus, annulation, erreur du client, connexion fermée ou délai de **5 minutes** dépassé
+= refus, rien n'est fait. Avec la poignée de main, c'est une requête `elicitation/create` ; sans
+état, l'appel répond `resultType: "input_required"` (`inputRequests`) et le client le rejoue avec
+`inputResponses`. Le schéma de ces outils annonce alors `confirm_name` comme facultatif. Client
+sans élicitation : comportement inchangé (`confirm_name` obligatoire et vérifié).
+
+**Annotations** (`tools/list`) : chaque outil local porte `title`, `readOnlyHint` (= liste
+`READ_TOOLS`), `openWorldHint` (marketplaces, ficsit.app, Spark) et, s'il est modifiant,
+`destructiveHint` (vrai sauf pour les ajouts purs : `create_dir`, `create_snapshot`,
+`compress_files`, `install_mod`, création de serveur ou de tâche planifiée, renommages, ordre) et
+`idempotentHint` (valeurs finales : `write_file`, `set_property`, redimensionnement…). Indications
+pour le client, jamais une garde : la sécurité reste `READ_TOOLS` / `allow_writes`. Les outils
+officiels relayés gardent leurs propres annotations.
+
+**Instructions** (`initialize`, `server/discover`) : un court texte en français donne les
+enchaînements recommandés — `list_servers` d'abord, `error_digest` avant `search_logs`,
+`diagnose_startup` pour un serveur qui ne démarre pas, `create_snapshot` avant une intervention
+risquée, vérifier après chaque action (`wait_for`, `tail_console`, `run_command`), `set_config`
+avec `dry_run` et `plan_manifest` avant `apply_manifest`, `edit_file` plutôt que
+`read_file` + `write_file` pour un fichier qui contient des secrets.
+
+**Prompts** (`prompts/list`, `prompts/get`) : scénarios guidés, en français, qui enchaînent les
+outils. Arguments vérifiés (identifiants entiers, texte court sur une ligne).
+
+| Prompt | Arguments | Rôle |
+|---|---|---|
+| `diagnose_crash` | `server_id` | Trouver la cause d'un crash ou d'un démarrage impossible, corriger, vérifier. |
+| `prepare_public_launch` | `server_id` | Liste de contrôle avant l'ouverture aux joueurs (sécurité, stabilité, capacité, filets). |
+| `setup_velocity_network` | `proxy_server_id`, `backend_server_ids` | Proxy Velocity + serveurs Paper (transfert moderne, secret jamais lu). |
+| `deploy_plugin` | `server_id`, `local_path`, `plugin_name?` | Déployer un plugin en développement, redémarrer, vérifier, revenir en arrière. |
+| `optimize_performance` | `server_id` | Mesurer, proposer, appliquer un réglage à la fois et mesurer à nouveau. |
+| `security_audit` | `server_id` | Accès, opérateurs, plugins, journaux, actions récentes des agents. |
+
+**Ressources** (`resources/list`, `resources/templates/list`, `resources/read`) : chaque
+ressource est un outil de lecture, appelé par le même chemin que `tools/call` — mêmes gardes
+(activation, liste blanche d'env, portée du Copilote, groupes), même anonymisation, même cache.
+Pas d'abonnement.
+
+| URI | Outil | Type |
+|---|---|---|
+| `minestrator://servers` | `list_servers` | `application/json` |
+| `minestrator://server/{server_id}/status` | `server_status` | `application/json` |
+| `minestrator://server/{server_id}/console` | `read_console` (anonymisée) | `text/plain` |
+| `minestrator://server/{server_id}/properties` | `read_properties` (secrets masqués) | `application/json` |
+| `minestrator://server/{server_id}/file/{+path}` | `read_file` (2 Mo au plus, secrets masqués) | `text/plain` |
+
+Ressource inconnue : erreur `-32002` (`-32602` en sans état).
 
 ## 3. Authentification & données
 
@@ -300,7 +387,8 @@ des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA e
 Réglages modifiables depuis le GUI (Réglages → MCP) et persistés (`mcp.json`), lus par le serveur
 (le troisième, `official_gateway`, active la passerelle décrite plus bas) :
 
-- **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé.
+- **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé
+  (prompts et ressources aussi).
 - **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
   (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
   `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `set_property`, `install_mod`,
@@ -323,7 +411,8 @@ Réglages modifiables depuis le GUI (Réglages → MCP) et persistés (`mcp.json
   relaie les restaurations et suppressions de l'officiel, et uniquement avec une confirmation
   `confirm_name` vérifiée localement.
 - **Suppression d'un serveur gardée** : `mybox_delete_server` exige le nom exact du serveur
-  (`confirm_name`, vérifié avant tout appel) et fait par défaut une snapshot préalable. Les
+  (`confirm_name`, vérifié avant tout appel ; retapé par l'utilisateur lui-même si son client
+  gère l'élicitation, §2) et fait par défaut une snapshot préalable. Les
   écritures MyBox sont validées localement avant envoi (ressources, emplacements, champs requis) :
   une saisie incohérente est refusée sans toucher à l'API.
 
@@ -367,7 +456,9 @@ MCP. Politique dans `crates/minestrator-core/src/official_relay.rs`.
   (`delete_snapshot`), MyBox (`restore_db_backup`), site web (son domaine, via `get_webhosting` :
   `reset_webhosting`, `delete_webhosting`, `restore_webhosting_backup`, suppression de fichiers,
   extraction, changement de domaine, boîtes mail, installation de CMS). Le nom attendu n'est
-  jamais révélé dans l'erreur. Un destructif sans ressource vérifiable est masqué ; un destructif
+  jamais révélé dans l'erreur. Client capable d'élicitation : c'est l'utilisateur qui retape ce
+  nom dans un formulaire de son client (refus = rien n'est relayé, §2) ; `confirm_name` y devient
+  facultatif. Un destructif sans ressource vérifiable est masqué ; un destructif
   qui a un équivalent local gardé l'est aussi (`delete_server_from_mybox`, `delete_schedule`).
 - **Sorties** : anonymisées comme celles de nos outils (`redact_ai`) ; `reveal_credentials`
   (mots de passe en clair) est retiré des schémas et des appels.
@@ -379,6 +470,45 @@ MCP. Politique dans `crates/minestrator-core/src/official_relay.rs`.
   [`COPILOT.md`](./COPILOT.md) §4) ; tout appel, local ou relayé, visant un autre serveur est refusé.
 
 <!-- [lot:protocole] début -->
+### Groupes d'outils (toolsets)
+
+Chaque outil local appartient à un **groupe** (`TOOL_GROUPS` dans `mcp_catalog.rs`) ; un client
+peut n'exposer que les groupes utiles, pour alléger le contexte du modèle. Un outil d'un groupe
+inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources comprises).
+
+| Groupe | Contenu |
+|---|---|
+| `core` | `list_servers`, `server_status` — **toujours actif** (identifiants des serveurs). |
+| `console` | `power_action`, `send_command`, `read_console` |
+| `files` | `list_files`, `read_file`, `read_gz`, `list_archive`, `read_archive_entry`, `search_files`, `disk_usage`, `download_file`, `file_stat`, `write_file`, `upload_file`, `edit_file`, `create_dir`, `delete_path`, `rename_path`, `extract_archive`, `compress_files` |
+| `config` | `read_startup`, `set_startup_params`, `read_properties`, `set_property` |
+| `content` | `list_installed_mods`, `list_installed_plugins`, `market_search`, `list_mod_versions`, `install_mod`, `check_updates`, `update_mods`, `check_plugin_deps`, `ficsit_search`, `ficsit_versions`, `install_ficsit_mod` |
+| `players` | `list_players`, `player_action`, `find_player` |
+| `backups` | `list_backups`, `list_snapshots`, `create_snapshot` |
+| `diagnostics` | `server_metrics`, `analyze_performance`, `parse_spark_report`, `diagnose_startup`, `inspect_region`, `world_info`, `audit_server`, `search_logs`, `error_digest`, `uptime_report`, `list_incidents` |
+| `mybox` | `mybox_info`, `mybox_capacity`, `server_catalog`, `plan_placement`, `mybox_smartscan`, `mybox_create_server`, `mybox_resize_server`, `rename_server`, `rename_mybox`, `mybox_pause_server`, `mybox_reorder_servers`, `mybox_delete_server` |
+| `schedules` | `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `add_schedule_task`, `update_schedule_task`, `delete_schedule_task`, `reorder_schedule_tasks` |
+| `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command` |
+| `agent` | Boucle « agir puis vérifier » (`run_command`, `wait_for`, `tail_console`, `deploy_and_verify`…). |
+| `build` | Configurations structurées et manifestes (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`…). |
+| `guard` | Garde des agents (`list_agent_actions`, `rollback_changeset`…). |
+| `official` | Outils du MCP officiel relayés par la passerelle (si elle est activée). |
+
+**Sélection**, du plus prioritaire au moins prioritaire (la première non vide l'emporte) :
+
+1. argument `--toolsets=files,console` (ou `--toolsets files,console`), sur `minestrator-mcp` comme
+   sur `<app> --mcp` ;
+2. variable `MINESTRATOR_MCP_TOOLSETS=files,console` ;
+3. réglage `toolsets` de `mcp.json` (`McpConfig::toolsets`, liste vide par défaut).
+
+Vide ou `all` = tous les groupes. Un nom inconnu est ignoré (avertissement sur stderr) ; si aucun
+nom n'est reconnu, tout reste exposé. Un serveur lancé par le Copilote (liste blanche
+`MINESTRATOR_MCP_ALLOWED_TOOLS`) ignore les groupes : sa liste blanche prime, inchangée.
+
+Ajouter un outil : le classer dans `TOOL_GROUPS` (un test exige que chaque outil de `READ_TOOLS`
+∪ `WRITE_TOOLS` y figure une fois), et, s'il est modifiant, le ranger au besoin dans
+`NON_DESTRUCTIVE_TOOLS` / `IDEMPOTENT_TOOLS` (annotations ; destructif et non idempotent par
+défaut).
 <!-- [lot:protocole] fin -->
 <!-- [lot:garde] début (réglages) -->
 <!-- [lot:garde] fin -->
@@ -442,15 +572,14 @@ Build du binaire autonome : `cargo build -p minestrator-mcp --release`
 
 ## 9. Extensions prévues (scope futur)
 
-- **`resources`** : exposer logs et listes de fichiers comme ressources MCP
-  (lecture contextuelle sans appel d'outil).
-- **`prompts`** : modèles prêts (« diagnostiquer un crash », « optimiser la RAM »).
+- **Ressources** : abonnement (`subscriptions/listen`) à la console d'un serveur.
 - **Automatisation** : planificateur (tâches programmées), règles (event→action).
 - **Sauvegardes** : exposer une restauration *gardée* (confirmation forte) si l'API le permet.
 
 > Déjà livré depuis la première version de ce document : inventaire et **installation** de mods/plugins
 > (Modrinth/CurseForge/SpigotMC), **snapshots** (liste + création), analyse **Spark**, **Docteur
-> démarrage** et inspection des **régions corrompues** — tous adossés à `minestrator-core`.
+> démarrage** et inspection des **régions corrompues** — tous adossés à `minestrator-core` ; puis
+> **prompts** et **ressources** MCP, élicitation, annotations et groupes d'outils (§2, §6).
 
 ---
 
