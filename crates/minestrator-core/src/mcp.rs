@@ -171,6 +171,11 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     // [lot:boucle] début (agent_loop.rs)
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // Configs structurées et manifeste : lectures SFTP/API, secrets masqués ; le plan ne
+    // modifie rien (calcul de l'écart avec le serveur réel).
+    "get_config",
+    "export_manifest",
+    "plan_manifest",
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
     // [lot:garde] fin
@@ -226,6 +231,11 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     // [lot:boucle] début (agent_loop.rs)
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // Édition d'une config du serveur (bornée à lui, comme edit_file) : offerte au Copilote.
+    "set_config",
+    // Manifeste et clone : démarrage, tâches planifiées, création de serveur (voir INFRA_TOOLS).
+    "apply_manifest",
+    "clone_server",
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
     // [lot:garde] fin
@@ -263,6 +273,10 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // [lot:boucle] début (agent_loop.rs)
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // Manifeste : commande de démarrage et tâches planifiées (configuration persistante) ;
+    // clone : création d'un serveur et copie entre serveurs.
+    "apply_manifest",
+    "clone_server",
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
     // [lot:garde] fin
@@ -393,6 +407,11 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     // [lot:boucle] début (agent_loop.rs)
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // Configs structurées et manifeste : absents du MCP officiel.
+    "get_config",
+    "set_config",
+    "export_manifest",
+    "plan_manifest",
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
     // [lot:garde] fin
@@ -620,6 +639,8 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // [lot:boucle] début (agent_loop.rs)
         // [lot:boucle] fin
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
+        // Relisent SFTP et API : un instant suffit (purgés par toute écriture, set_config compris).
+        "get_config" | "export_manifest" | "plan_manifest" => 10,
         // [lot:manifeste] fin
         // [lot:garde] début (agent_guard.rs)
         // [lot:garde] fin
@@ -1444,6 +1465,15 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         // [lot:boucle] début (agent_loop.rs)
         // [lot:boucle] fin
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
+        // Validation, masquage des secrets et rendu dans les modules (sorties déjà anonymisées).
+        // Futures volumineux (plan, export, clone) mis sur le tas : sans cela, l'état de
+        // dispatch_inner grossit au point de déborder la pile du fil principal (stdio).
+        "get_config" => Box::pin(crate::config_edit::get_config_tool(core, &args)).await,
+        "set_config" => Box::pin(crate::config_edit::set_config_tool(core, &args)).await,
+        "export_manifest" => Box::pin(crate::manifest::export_manifest_tool(core, &args)).await,
+        "plan_manifest" => Box::pin(crate::manifest::plan_manifest_tool(core, &args)).await,
+        "apply_manifest" => Box::pin(crate::manifest::apply_manifest_tool(core, &args)).await,
+        "clone_server" => Box::pin(crate::manifest::clone_server_tool(core, &args)).await,
         // [lot:manifeste] fin
         // [lot:garde] début (agent_guard.rs)
         // [lot:garde] fin
@@ -1618,6 +1648,12 @@ fn build_tool_list() -> Value {
         // [lot:boucle] début (agent_loop.rs)
         // [lot:boucle] fin
         // [lot:manifeste] début (config_edit.rs, manifest.rs)
+        tool("get_config", "LIT une config STRUCTURÉE (YAML .yml/.yaml, TOML, JSON/JSONC, .properties) via SFTP. Avec `key` : la valeur TYPÉE (nombre, booléen, texte, liste, objet) ; chemin `a.b.c`, index `a.list[0]`, clé à points entre guillemets `forced-hosts.\"lobby.example.com\"` ; .properties : clé entière (`rcon.password`). Sans `key` : l'arborescence des valeurs (300 au plus). Clé absente : clés disponibles au niveau le plus proche. Secrets (password, secret, token, key…) toujours masqués en [SECRET]. À préférer à read_file avant set_config.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant, ex. /plugins/LuckPerms/config.yml")), ("key", prop_str("Chemin de clé (optionnel ; sans : arborescence)"))], &["server_id", "path"])),
+        tool("set_config", "MODIFIE des clés d'une config structurée (YAML, TOML, JSON/JSONC, .properties) SANS casser le fichier : seule la valeur visée est réécrite (commentaires, ordre, indentation, guillemets gardés), une clé absente est créée au bon niveau. Le résultat est RELU avant écriture : s'il ne s'analyse plus, si la valeur relue diffère ou si une autre clé bouge, rien n'est écrit. Valeurs JSON typées (`10`, `true`, `\"texte\"`, liste, objet) ; un texte envoyé sur un nombre ou un booléen existant en garde le type (`keep_type`). Renvoie les changements et un diff, secrets masqués des deux côtés. Refuse une valeur contenant [SECRET], [IP], [EMAIL] ou [CREDS] (masques de lecture : la vraie valeur serait écrasée). `dry_run` : diff sans écrire. Effet au rechargement du plugin ou au redémarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("changes", crate::config_edit::changes_schema()), ("create_missing", prop_bool("Créer les clés absentes (défaut true)")), ("keep_type", prop_bool("Garder le type d'un nombre/booléen existant si la valeur est un texte convertible (défaut true)")), ("dry_run", prop_bool("Montrer le diff sans écrire (défaut false)"))], &["server_id", "path", "changes"])),
+        tool("export_manifest", "EXPORTE le MANIFESTE déclaratif d'un serveur (format v1 de plan_manifest) : jeu, version du jeu, plateforme, Java, server.properties, commande de démarrage, plugins/mods/datapacks avec leur source quand l'hébergeur les identifie (`source: null` = non réinstallable), liste blanche et opérateurs, tâches planifiées du panel ; configs seulement sur demande (`include_configs`). Secrets masqués en [SECRET] (= valeur actuelle gardée à l'application). Ni mondes ni fichiers. Ne modifie rien : point de départ pour reproduire, versionner ou comparer un serveur.", obj(&[("server_id", prop_int("ID du serveur")), ("include_configs", crate::manifest::config_selection_schema()), ("include_players", prop_bool("Exporter liste blanche et opérateurs (défaut true)"))], &["server_id"])),
+        tool("plan_manifest", "COMPARE un MANIFESTE au serveur réel SANS RIEN MODIFIER : étapes ordonnées (identifiant stable, statut ok = conforme | change | add | remove | manual = action humaine ou écriture non gérée — jeu, version, Java, fichier de config pas encore généré | unsupported), valeurs actuelle et voulue, diffs des configs et fichiers (secrets masqués), contenu présent mais absent du manifeste (`unlisted`). Format v1 : {version: 1, server?: {name, game, egg_id, game_version, loader, java_version}, properties?: {clé: valeur}, startup?: {parameters, jar_file}, content?: [{kind: plugin|mod|datapack, source: modrinth|curseforge|spigot, project, version?, file?, name?, loader?}] ou {items, remove_unlisted}, configs?: [{path, set: {\"a.b\": valeur}}], files?: [{path, content}], players?: {whitelist?, ops?, remove_unlisted?}, schedules?: [{name, cron, is_active?, only_when_online?, tasks: [{action, payload, time_offset?, continue_on_failure?}]}] ou {items, remove_unlisted}} ; toute section est facultative, [SECRET] = garder la valeur actuelle. À appeler avant apply_manifest.", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema())], &["server_id", "manifest"])),
+        tool("apply_manifest", "APPLIQUE un MANIFESTE (format de plan_manifest) : recalcule le plan puis exécute les étapes change/add/remove dans l'ordre — renommage, commande de démarrage, server.properties, installation/remplacement/retrait de contenu, clés de configs (comme set_config), fichiers, joueurs (serveur démarré), tâches planifiées. IDEMPOTENT : relancé après une coupure, ne refait rien de conforme. Snapshot préalable attendue (défaut ; sans elle rien n'est modifié, `snapshot=false` pour s'en passer). `steps` : identifiants ou préfixes d'étapes du plan à appliquer seuls (\"properties\", \"content.plugin\"). Une étape échouée n'arrête que celles qui en dépendent (config d'un plugin dont l'installation a échoué). Rapport étape par étape (réussie, conforme, ignorée, échouée + raison) ; manual/unsupported restent à faire. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema()), ("steps", prop_str_array("Étapes à appliquer seules : identifiants ou préfixes (défaut : toutes)")), ("snapshot", prop_bool("Snapshot préalable attendue (défaut true)"))], &["server_id", "manifest"])),
+        tool("clone_server", "CLONE un serveur dans une MyBox pour tester avant la prod : crée un serveur du même jeu (vérifications de mybox_create_server ; CPU/RAM de la source par défaut si la MyBox a la place, sinon ce qui reste), attend la fin de l'installation, l'arrête s'il a démarré, copie les fichiers de la source (plugins, mods, configs, server.properties… ; MONDES EXCLUS sauf include_world=true ; journaux jamais), puis applique le manifeste de la source (commande de démarrage, réglages, tâches planifiées). Long (plusieurs minutes, progression). La sortie donne `created_server_id`, y compris si une étape suivante échoue. Le clone reste arrêté. Vérifie d'abord la place (mybox_capacity, plan_placement) et confirme avec l'utilisateur. ✎ (modifiant)", obj(&[("source_server_id", prop_int("ID du serveur à cloner")), ("mybox_id", prop_int("MyBox d'accueil (mybox_capacity)")), ("name", prop_str("Nom du clone (1 à 50 caractères)")), ("cpu", prop_int("Cœurs (défaut : ceux de la source si la place le permet)")), ("ram", prop_int("Go de RAM (défaut : ceux de la source si la place le permet)")), ("include_world", prop_bool("Copier aussi les mondes (défaut false)")), ("exclude", prop_str_array("Chemins à ne pas copier, ex. [\"/plugins/dynmap/web\"]")), ("location_id", prop_int("Localisation (server_catalog) ; défaut : celle de la source si en stock")), ("required_fields", json!({ "type": "object", "description": "Champs requis du jeu : { CLÉ: valeur } (server_catalog)", "additionalProperties": { "type": "string" } }))], &["source_server_id", "mybox_id", "name"])),
         // [lot:manifeste] fin
         // [lot:garde] début (agent_guard.rs)
         // [lot:garde] fin
@@ -2201,6 +2237,35 @@ mod tests {
     // [lot:boucle] début (agent_loop.rs)
     // [lot:boucle] fin
     // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    #[test]
+    fn manifest_and_config_tools_are_classified() {
+        // Lectures : jamais gatées, offertes au Copilote, gardées face au MCP officiel.
+        for t in ["get_config", "export_manifest", "plan_manifest"] {
+            assert!(!is_write_tool(t) && READ_TOOLS.contains(&t), "{t} doit être en lecture");
+            assert!(!copilot_forbidden(t) && LOCAL_KEEP_TOOLS.contains(&t), "{t} : exclusif, offert au Copilote");
+            assert!(cache_ttl(t).is_some(), "{t} : lecture cachée un instant");
+        }
+        // set_config : modifiant, borné au serveur (server_id), offert au Copilote en autonome.
+        assert!(is_write_tool("set_config") && WRITE_TOOLS.contains(&"set_config"));
+        assert!(!copilot_forbidden("set_config") && LOCAL_KEEP_TOOLS.contains(&"set_config"));
+        // Manifeste appliqué et clone : démarrage, tâches planifiées, création → jamais au Copilote.
+        for t in ["apply_manifest", "clone_server"] {
+            assert!(is_write_tool(t) && WRITE_TOOLS.contains(&t), "{t} doit être modifiant");
+            assert!(INFRA_TOOLS.contains(&t) && copilot_forbidden(t), "{t} : jamais au Copilote");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&t) && !LOCAL_DISK_TOOLS.contains(&t), "{t}");
+        }
+        // Aucun de ces outils ne touche au disque de l'ordinateur.
+        for t in ["get_config", "set_config", "export_manifest", "plan_manifest", "apply_manifest", "clone_server"] {
+            assert!(!LOCAL_DISK_TOOLS.contains(&t), "{t} : pas de local_path");
+        }
+        let schema = |n: &str| tool_list().as_array().unwrap().iter().find(|t| t["name"] == n).unwrap()["inputSchema"].clone();
+        assert_eq!(schema("get_config")["required"], json!(["server_id", "path"]));
+        assert_eq!(schema("set_config")["required"], json!(["server_id", "path", "changes"]));
+        assert_eq!(schema("plan_manifest")["required"], json!(["server_id", "manifest"]));
+        assert_eq!(schema("apply_manifest")["required"], json!(["server_id", "manifest"]));
+        assert_eq!(schema("clone_server")["required"], json!(["source_server_id", "mybox_id", "name"]));
+        assert!(schema("export_manifest")["properties"]["include_configs"].is_object());
+    }
     // [lot:manifeste] fin
     // [lot:garde] début (agent_guard.rs)
     // [lot:garde] fin
