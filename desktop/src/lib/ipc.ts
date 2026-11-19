@@ -22,6 +22,10 @@ import { t } from './i18n';
 import type {
   Account,
   ActivityPage,
+  AgentAction,
+  AgentActionQuery,
+  Changeset,
+  RollbackReport,
   Alert,
   AppError,
   AppErrorKind,
@@ -149,6 +153,73 @@ function fakeKnownPlayer(p: KnownPlayer): KnownPlayer {
 /** Mode démo : objet d'inventaire (un nom personnalisé peut contenir un pseudo, une adresse). */
 function fakeItem<T extends { name: string; custom_name: boolean } | null>(item: T): T {
   return item && item.custom_name ? { ...item, name: fakeText(item.name) } : item;
+}
+
+// --- Mode démo : garde des agents MCP (journal, changesets) ---
+
+/** Noms de dossiers et de fichiers génériques, gardés lisibles dans un chemin substitué. */
+const GENERIC_PATH_PARTS = new Set([
+  'plugins', 'mods', 'config', 'world', 'world_nether', 'world_the_end', 'logs', 'datapacks',
+  'region', 'server.properties', 'ops.json', 'whitelist.json', 'spigot.yml', 'bukkit.yml',
+  'paper-global.yml', 'eula.txt', 'commande de démarrage', 'mods et plugins',
+]);
+
+/** Chemin distant : chaque nom propre au serveur devient un nom inventé (extension conservée). */
+function fakePath(path: string): string {
+  return path
+    .split('/')
+    .map((part) => {
+      if (!part || GENERIC_PATH_PARTS.has(part)) return part;
+      const dot = part.lastIndexOf('.');
+      return dot > 0 ? `fichier-${fakeRef(part)}${part.slice(dot)}` : `dossier-${fakeRef(part)}`;
+    })
+    .join('/');
+}
+
+/** Texte libre de la garde (cible, motif, note) : chemins, adresses, e-mails substitués. */
+function fakeGuardText(text: string): string {
+  return fakeText(text).replace(/[^\s«»]*\/[^\s«»]*/g, (p) => fakePath(p));
+}
+
+const PATH_ARGS = new Set([
+  'path', 'from', 'to', 'remote_path', 'local_path', 'dest_dir', 'target_dir', 'root', 'dir',
+  'paths', 'source_paths', 'other_path',
+]);
+
+function fakeArg(key: string, v: JsonValue): JsonValue {
+  if (typeof v === 'string') {
+    if (PATH_ARGS.has(key)) return fakePath(v);
+    if (key === 'player') return fakePlayer(v);
+    if (key === 'name') return fakeServer(v);
+    return fakeText(v);
+  }
+  return Array.isArray(v) ? v.map((x) => fakeArg(key, x)) : v;
+}
+
+function fakeAgentAction(a: AgentAction): AgentAction {
+  const args =
+    a.args && typeof a.args === 'object' && !Array.isArray(a.args)
+      ? Object.fromEntries(Object.entries(a.args).map(([k, v]) => [k, fakeArg(k, v)]))
+      : a.args;
+  return { ...a, args, detail: a.detail ? fakeGuardText(a.detail) : a.detail };
+}
+
+function fakeChangeset(c: Changeset): Changeset {
+  return {
+    ...c,
+    steps: c.steps.map((s) => ({
+      ...s,
+      target: fakeGuardText(s.target),
+      note: s.note ? fakeGuardText(s.note) : s.note,
+    })),
+  };
+}
+
+function fakeRollback(r: RollbackReport): RollbackReport {
+  return {
+    ...r,
+    steps: r.steps.map((s) => ({ ...s, target: fakeGuardText(s.target), message: fakeGuardText(s.message) })),
+  };
 }
 
 export const api = {
@@ -328,6 +399,21 @@ export const api = {
   /** Réglages du serveur MCP. */
   getMcpConfig: () => invoke<McpConfig>('get_mcp_config'),
   setMcpConfig: (config: McpConfig) => invoke<void>('set_mcp_config', { config }),
+  /**
+   * Garde des agents : appels d'outils reçus par le serveur MCP, du plus récent au plus ancien
+   * (arguments déjà anonymisés par le cœur ; chemins et noms substitués en mode démo).
+   */
+  agentActions: (query: AgentActionQuery) =>
+    demo(invoke<AgentAction[]>('agent_actions', { query }), (list) => list.map(fakeAgentAction)),
+  /** Modifications récentes des agents, regroupées par session (changesets). */
+  agentChangesets: (limit = 20) =>
+    demo(invoke<Changeset[]>('agent_changesets', { limit }), (list) => list.map(fakeChangeset)),
+  /**
+   * Annule les modifications d'un changeset (les `steps` dernières encore en place, toutes si
+   * `null`) ; `force` passe outre les cibles changées depuis. À confirmer par l'utilisateur avant.
+   */
+  rollbackChangeset: (changesetId: string, steps: number | null, force: boolean) =>
+    demo(invoke<RollbackReport>('rollback_changeset', { changesetId, steps, force }), fakeRollback),
   /** Réglages de confidentialité (anonymisation). */
   getPrivacyConfig: () => invoke<PrivacyConfig>('get_privacy_config'),
   setPrivacyConfig: (config: PrivacyConfig) => invoke<void>('set_privacy_config', { config }),

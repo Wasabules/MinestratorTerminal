@@ -291,6 +291,38 @@ pub fn set_mcp_config(core: State<'_, Arc<Core>>, config: McpConfig) {
     core.set_mcp_config(config);
 }
 
+// --- Garde des agents MCP : journal, changesets, annulation (agent_guard.rs) ----------------------
+
+/// Journal des appels d'outils reçus par le serveur MCP (y compris par un processus MCP externe).
+/// Asynchrone : la lecture SQLite ne bloque pas le fil principal.
+#[tauri::command]
+pub async fn agent_actions(
+    core: State<'_, Arc<Core>>,
+    query: minestrator_core::AgentActionQuery,
+) -> Result<Vec<minestrator_core::AgentAction>, Error> {
+    core.agent_actions(query)
+}
+
+/// Modifications récentes des agents, regroupées par session.
+#[tauri::command]
+pub async fn agent_changesets(
+    core: State<'_, Arc<Core>>,
+    limit: u32,
+) -> Result<Vec<minestrator_core::Changeset>, Error> {
+    core.agent_changesets(limit)
+}
+
+/// Annule les modifications d'un changeset (confirmées par l'utilisateur dans l'UI).
+#[tauri::command]
+pub async fn rollback_changeset(
+    core: State<'_, Arc<Core>>,
+    changeset_id: String,
+    steps: Option<u32>,
+    force: bool,
+) -> Result<minestrator_core::RollbackReport, Error> {
+    core.rollback_changeset(&changeset_id, steps, force).await
+}
+
 #[tauri::command]
 pub fn get_privacy_config(core: State<'_, Arc<Core>>) -> PrivacyConfig {
     core.get_privacy_config()

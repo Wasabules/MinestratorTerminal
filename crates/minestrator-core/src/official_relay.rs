@@ -811,6 +811,12 @@ pub(crate) async fn relay_call(
             "Actions modifiantes désactivées (mode lecture seule) dans les réglages.",
         ));
     }
+    // Mode constructeur (agent_guard.rs) : une écriture relayée suit la même portée que les nôtres.
+    if !tool.read {
+        if let Some(refus) = crate::agent_guard::relay_write_scope(core, cfg, name, &args).await {
+            return Some(tool_err(&refus));
+        }
+    }
     let toolsets = match mode {
         RelayMode::Copilot(_) => COPILOT_TOOLSETS,
         _ => GATEWAY_TOOLSETS,

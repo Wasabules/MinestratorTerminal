@@ -1286,6 +1286,24 @@ fn resolve_remote(remote: Option<&str>, file: &str, default_dir: &str) -> String
     }
 }
 
+/// Sous-étape modifiante d'un outil composite, passée par `mcp::dispatch` pour que la garde des
+/// agents la capture (une étape annulable par sous-action). Rend la mention de la garde, s'il y en
+/// a une. Future en boîte `dyn … + Send` : casse le cycle de types dispatch → outil → dispatch.
+fn guarded_write<'a>(
+    core: &'a Core,
+    tool: &'a str,
+    args: Value,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Option<String>, String>> + Send + 'a>>
+{
+    Box::pin(async move {
+        let out = crate::mcp::dispatch(core, tool, args).await?;
+        Ok(out
+            .lines()
+            .find(|l| l.starts_with("(Garde des agents"))
+            .map(str::to_string))
+    })
+}
+
 /// Nom libre pour mettre un jar de côté : `X.jar.old`, sinon `X.jar.2.old`…
 fn old_name(name: &str, taken: &[String]) -> String {
     let free = |n: &String| !taken.iter().any(|t| t.eq_ignore_ascii_case(n));
@@ -2457,6 +2475,7 @@ impl Core {
                 None
             }
         };
+        let local_size = bytes.len() as u64;
         drop(bytes);
         let token = self.token().map_err(|e| e.to_string())?;
         let mc = self.api.minecraft_version(&token, id).await.ok();
@@ -2547,16 +2566,24 @@ impl Core {
 
         // 4. Envoi.
         mcp_ctx::progress(2.0, Some(STEPS), &format!("envoi vers {remote}")).await;
-        let uploaded = self
-            .sftp_put_local(id, local_path, &remote)
+        // Envoi et mise de côté par `mcp::dispatch` : la garde des agents copie le jar remplacé
+        // et défait le renommage (rollback_changeset).
+        let upload = json!({ "server_id": id, "local_path": local_path, "remote_path": remote });
+        if let Some(note) = guarded_write(self, "upload_file", upload)
             .await
-            .map_err(|e| format!("envoi SFTP de « {local_path} » vers « {remote} » : {e}"))?;
+            .map_err(|e| format!("envoi SFTP de « {local_path} » vers « {remote} » : {e}"))?
+        {
+            notes.push(note);
+        }
+        let uploaded = local_size;
         let mut previous = Vec::new();
         for s in &siblings {
             if replace_previous {
                 let to = format!("{remote_dir}/{}", old_name(&s.name, &taken)).replace("//", "/");
-                match self.sftp_rename(id, &s.path, &to).await {
-                    Ok(()) => {
+                let rename = json!({ "server_id": id, "from": s.path, "to": to });
+                match guarded_write(self, "rename_path", rename).await {
+                    Ok(note) => {
+                        notes.extend(note);
                         previous.push(json!({ "path": s.path, "action": "renamed", "to": to }))
                     }
                     Err(e) => {

@@ -1795,6 +1795,17 @@ export type McpConfig = {
    * L'argument `--toolsets=…` puis la variable `MINESTRATOR_MCP_TOOLSETS` priment.
    */
   toolsets: Array<string>,
+  /**
+   * Portée des écritures des agents : `all` (tout le compte, défaut) ou `builder` (mode
+   * constructeur : seulement les serveurs créés pendant la session MCP et `allowed_servers`).
+   * `MINESTRATOR_MCP_WRITE_SCOPE` prime sur ce réglage (voir `agent_guard.rs`).
+   */
+  write_scope: WriteScope,
+  /**
+   * Serveurs modifiables en mode constructeur en plus de ceux créés par la session.
+   * `MINESTRATOR_MCP_ALLOWED_SERVERS` (identifiants séparés par des virgules) la remplace.
+   */
+  allowed_servers: Array<number>,
 };
 
 /**
@@ -1825,6 +1836,160 @@ export type GameSettings = {
  */
 export type FactorioSettings = {
   username: string,
+};
+
+// --- Garde des agents MCP : journal, changesets, mode constructeur (agent_guard.rs) ---
+
+/**
+ * Portée des écritures des agents connectés au serveur MCP (réglage `write_scope` de
+ * `mcp.json`, surchargé par `MINESTRATOR_MCP_WRITE_SCOPE`).
+ */
+export type WriteScope = "all" | "builder";
+
+/**
+ * Résultat d'un appel journalisé.
+ */
+export type ActionOutcome = "ok" | "error" | "denied";
+
+/**
+ * Un appel d'outil reçu par le serveur MCP, tel que journalisé.
+ */
+export type AgentAction = {
+  id: number,
+  /**
+   * Début de l'appel (secondes Unix).
+   */
+  ts: number,
+  /**
+   * Session (et changeset) de l'appel : `mcp:…` ou `copilote:<serveur>:<jour>`.
+   */
+  session: string,
+  /**
+   * Nom du client MCP, s'il est connu.
+   */
+  client: string | null,
+  tool: string,
+  /**
+   * Outil modifiant.
+   */
+  write: boolean,
+  /**
+   * Serveurs désignés par les arguments.
+   */
+  servers: Array<number>,
+  /**
+   * Arguments résumés et anonymisés (valeurs tronquées, contenus remplacés par leur taille).
+   */
+  args: JsonValue,
+  outcome: ActionOutcome,
+  /**
+   * Motif court d'une erreur ou d'un refus (anonymisé).
+   */
+  detail: string | null,
+  duration_ms: number,
+  /**
+   * Étape de changeset créée par l'appel, s'il y en a une.
+   */
+  changeset: string | null,
+  step: number | null,
+};
+
+/**
+ * Filtre du journal (tous les champs sont facultatifs).
+ */
+export type AgentActionQuery = {
+  server_id: number | null,
+  session: string | null,
+  /**
+   * Depuis (secondes Unix).
+   */
+  since: number | null,
+  only_writes: boolean,
+  /**
+   * Lignes renvoyées (défaut 50, max 500).
+   */
+  limit: number | null,
+};
+
+/**
+ * Origine d'un changeset.
+ */
+export type ChangeOrigin = "mcp" | "copilot";
+
+/**
+ * État d'une étape vis-à-vis de l'annulation.
+ */
+export type StepState = "active" | "undone" | "skipped";
+
+/**
+ * Une modification d'agent, dans son changeset.
+ */
+export type ChangeStep = {
+  /**
+   * Numéro d'ordre dans le changeset (1 = la plus ancienne).
+   */
+  seq: number,
+  ts: number,
+  tool: string,
+  server_id: number | null,
+  /**
+   * Cible lisible (chemin, réglage…), vide si l'outil n'en a pas.
+   */
+  target: string,
+  undoable: boolean,
+  /**
+   * Pourquoi l'étape n'est pas annulable, ou avertissement (annulation partielle).
+   */
+  note: string | null,
+  /**
+   * L'action a échoué en ayant modifié une partie de ses cibles.
+   */
+  failed: boolean,
+  state: StepState,
+  undone_at: number | null,
+};
+
+/**
+ * Modifications d'une session d'agent.
+ */
+export type Changeset = {
+  id: string,
+  origin: ChangeOrigin,
+  client: string | null,
+  created: number,
+  updated: number,
+  servers: Array<number>,
+  /**
+   * Octets de copies gardées pour l'annulation.
+   */
+  bytes: number,
+  steps: Array<ChangeStep>,
+};
+
+/**
+ * Issue de l'annulation d'une étape.
+ */
+export type RollbackStatus = "undone" | "skipped" | "refused" | "failed";
+
+export type RollbackStep = {
+  seq: number,
+  tool: string,
+  target: string,
+  server_id: number | null,
+  status: RollbackStatus,
+  message: string,
+};
+
+/**
+ * Rapport d'annulation, étape par étape (de la plus récente à la plus ancienne).
+ */
+export type RollbackReport = {
+  changeset: string,
+  steps: Array<RollbackStep>,
+  /**
+   * Arrêtée avant la fin (étape refusée ou en échec) : les plus anciennes restent en place.
+   */
+  stopped: boolean,
 };
 
 // --- Copilote (copilot.rs, llm.rs, cli_agent.rs) ---

@@ -261,6 +261,18 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
         "agent",
         "Déployer un plugin et vérifier",
     ),
+    // guard
+    (
+        "list_agent_actions",
+        "guard",
+        "Journal des actions des agents",
+    ),
+    ("list_changesets", "guard", "Modifications annulables"),
+    (
+        "rollback_changeset",
+        "guard",
+        "Annuler les modifications d'un agent",
+    ),
 ];
 
 /// Outils modifiants **non destructifs** (`destructiveHint: false`) : ils ajoutent sans rien
