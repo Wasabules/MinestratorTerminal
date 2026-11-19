@@ -415,8 +415,8 @@ réel, `apply_manifest` exécute l'écart, `clone_server` crée une copie de tes
 | `get_config` | | `server_id`, `path`, `key?` | Avec `key` : valeur **typée** (`found`, `type`, `value` ; section trop longue → son arborescence). Clé absente : `deepest_existing` et `available_keys` (clés du niveau le plus proche). Sans `key` : arborescence aplatie (`keys[{key, type, value}]`, 300 valeurs au plus, listes de scalaires d'un bloc), `secrets_masked`. |
 | `set_config` | ✎ | `server_id`, `path`, `changes[{key, value}]`, `create_missing?`, `keep_type?`, `dry_run?` | Modifications vérifiées puis écrites (SFTP) : par clé `modifiée`, `créée` ou `inchangée` avec ancienne et nouvelle valeur (masquées si secrètes) et note de type ; diff unifié masqué ; `written` ; rien n'est écrit si tout est déjà conforme ou en `dry_run`. 100 modifications au plus par appel. `create_missing=false` : une clé absente fait tout refuser. |
 | `export_manifest` | | `server_id`, `include_configs?[chemin \| {path, keys}]`, `include_players?` | `{ manifest, notes }` : manifeste v1 du serveur — jeu (`game`, `egg_id`), `game_version` et `loader` (détectés par l'hébergeur), `java_version` (image d'exécution), `properties` (secrets en `[SECRET]` ; `server-port`, `server-ip`, `query.port`, `rcon.port`, propres à l'allocation du serveur, omis), `startup`, `content` (fichier, version, source et projet quand l'hébergeur les identifie, sinon `source: null`), `players` (alias si l'anonymisation IA est active), `schedules`, `configs` demandées (toutes les valeurs, 300 au plus, ou les clés données). Notes : contenu non identifié, secrets masqués, ce qui n'est pas exporté (mondes, fichiers). |
-| `plan_manifest` | | `server_id`, `manifest` | **Ne modifie rien.** `steps[{id, status, summary, current?, target?, diff?, depends_on?}]` dans l'ordre d'application, `counts` par statut, `to_apply`, `unlisted` (présent sur le serveur, absent du manifeste, gardé), `next`. |
-| `apply_manifest` | ✎ | `server_id`, `manifest`, `steps?`, `snapshot?` | Plan recalculé puis étapes `change`/`add`/`remove` exécutées dans l'ordre. Snapshot préalable **attendue** par défaut (15 min au plus ; sans elle rien n'est modifié). Rapport : `steps[{id, status, outcome, summary, detail?}]` (`réussie`, `conforme`, `ignorée`, `échouée` + raison, `non sélectionnée`, `non exécutée` après annulation), totaux, `manual` (ce qui reste à faire), `next`. Progression par étape, arrêt propre sur annulation. |
+| `plan_manifest` | | `server_id`, `manifest` | **Ne modifie rien.** `steps[{id, status, summary, current?, target?, diff?, depends_on?, official?}]` dans l'ordre d'application, `counts` par statut, `to_apply`, `unlisted` (présent sur le serveur, absent du manifeste, gardé), `next`. `official` : outil du MCP officiel qui fait une étape `manual` (voir ci-dessous). |
+| `apply_manifest` | ✎ | `server_id`, `manifest`, `steps?`, `snapshot?` | Plan recalculé puis étapes `change`/`add`/`remove` exécutées dans l'ordre. Snapshot préalable **attendue** par défaut (15 min au plus ; sans elle rien n'est modifié). Rapport : `steps[{id, status, outcome, summary, detail?}]` (`réussie`, `conforme`, `ignorée`, `échouée` + raison, `non sélectionnée`, `non exécutée` après annulation), totaux, `manual` (ce qui reste à faire), `official` (`[{step, official}]` : outil officiel de chaque étape manuelle qui en a un), `next`. Progression par étape, arrêt propre sur annulation. |
 | `clone_server` | ✎ | `source_server_id`, `mybox_id`, `name`, `cpu?`, `ram?`, `include_world?`, `exclude?[]`, `location_id?`, `required_fields?` | Crée un serveur du même jeu (validations de `mybox_create_server` ; CPU/RAM de la source si la MyBox a la place, sinon ce qui reste ; localisation de la source si en stock), attend la fin de l'installation (20 min au plus), l'arrête s'il a démarré, copie les fichiers de la source (`copy_between_servers`, écrasement des fichiers par défaut du serveur neuf ; mondes exclus — `level-name`, ses dimensions et tout dossier racine contenant un `level.dat` — sauf `include_world` ; `logs`, `crash-reports`, `debug` jamais ; `exclude` peut viser un sous-dossier ; ports et adresse du clone rétablis dans `server.properties` après la copie), puis applique le manifeste de la source sans snapshot. Sortie : `created_server_id`, ressources, durée d'installation, lots de copie, rapport du manifeste, `warnings`. En cas d'échec après la création, l'erreur cite `created_server_id=<id>`. |
 
 Classement : `get_config`, `export_manifest`, `plan_manifest` sont des lectures (cache de 10 s,
@@ -461,9 +461,9 @@ ignorée, le masque jamais écrit.
 
 | Section | Comparé à | Appliqué par | `manual` / `unsupported` |
 |---|---|---|---|
-| `server` | nom, jeu (`egg_id` ou `game`), version et plateforme détectées (`GET /server/{id}/minecraft_version`), Java (image de démarrage) | `rename_server` (nom seulement) | Autre jeu, version du jeu, plateforme, Java : **manual** (endpoints d'écriture non gérés : `POST /server/{id}/version`, `PATCH …/java/version`, `PATCH …/docker/image` ; un lot ultérieur les ajoutera). Valeur actuelle illisible : manual. |
+| `server` | nom, jeu (`egg_id` ou `game`), version et plateforme détectées (`GET /server/{id}/minecraft_version`), Java (image de démarrage) | `rename_server` (nom seulement) | Autre jeu, version du jeu, plateforme, Java : **manual** (endpoints d'écriture non documentés, jamais appelés : `POST /server/{id}/version`, `PATCH …/java/version`, `PATCH …/docker/image`) ; version, plateforme et Java indiquent l'outil officiel à appeler (`official`, ci-dessous). Valeur actuelle illisible : manual. |
 | `properties` | `server.properties` (API) | `set_property` ; clé absente du fichier : ajoutée par SFTP (`set_config`) | Valeur liste/objet : unsupported. Autre jeu que Minecraft : unsupported. |
-| `startup` | commande et JAR de démarrage | `set_startup_params` | `jar_file` différent : manual (`PATCH …/startup/file` non géré). Commande vide : unsupported. |
+| `startup` | commande et JAR de démarrage | `set_startup_params` | `jar_file` différent : manual (`PATCH …/startup/file` non géré ; outil officiel `set_startup_config` indiqué). Commande vide : unsupported. |
 | `content` | plugins, mods, datapacks installés (rapprochés par source + projet, puis fichier, puis nom) | installation par la marketplace (`install_mod` : Modrinth/Spigot ; CurseForge et datapacks par les mêmes endpoints que les mises à jour), version résolue au plan (identifiant, numéro de version ou fichier ; sans version : la plus récente compatible) ; changement de version = installation puis retrait de l'ancien fichier ; `remove_unlisted: true` retire le reste | Élément absent sans `source`/`project` (non identifié) : manual (à copier). (Dés)activation différente : manual. Plugin CurseForge, mod Spigot : unsupported. Version introuvable : unsupported. Un élément présent sans version imposée est conforme. |
 | `configs` | clés des fichiers (comme `set_config`, diff dans le plan) | `set_config` | Fichier absent : manual (démarrer le serveur une fois pour que le plugin le génère, puis relancer : idempotent). Fichier illisible ou édition refusée : unsupported. |
 | `files` | contenu exact | écriture SFTP (dossiers créés) | Contenu avec un masque, fichier de plus de 512 Kio (2 Mio au total) : unsupported. |
@@ -479,6 +479,110 @@ elle échoue, l'étape est ignorée (`depends_on`). **Idempotence** : le plan es
 application, une étape déjà conforme n'est jamais refaite ; relancer après une coupure reprend là
 où le serveur en est. Après des changements de contenu, de réglages ou de configs, un
 redémarrage les charge (`next`).
+
+**Étapes `manual` reliées aux outils officiels** (`core/src/manifest/official.rs`). Le manifeste
+n'applique ni la version du jeu, ni la plateforme, ni Java, ni le JAR, mais l'étape `manual` porte
+`official { tool, arguments, before?, note?, available, availability }` : l'outil du MCP officiel
+qui le fait, ses arguments (`<…>` = valeur à obtenir d'abord par `before`, ou à demander à
+l'utilisateur — jamais devinée), et s'il est appelable **maintenant** par ce client : passerelle
+vers le MCP officiel active (`official_gateway`, Réglages → MCP, ou `MINESTRATOR_MCP_OFFICIAL=1`),
+groupe `official` actif, écritures permises, outil relayé ; sinon `availability` dit quoi activer
+(ou le panel). Arguments d'après les schémas de l'officiel :
+
+| Étape | Outil officiel | Arguments | Avant / notes |
+|---|---|---|---|
+| `server.game_version`, `server.loader` | `change_version` (destructif : `confirm_name` = nom exact du serveur, donné par l'utilisateur) | chargeur `fabric` / `forge` / `neoforge` : `loader`, `game_version` (+ `build` facultatif) ; autre plateforme (Paper, Spigot, Vanilla…) : `version_id`, `game_version` | `get_content_files type=loader_builds` pour un build précis ; `search_game_content type=version` pour l'`id` d'une entrée. Une version **antérieure** est signalée : la plateforme la refuse, seule une réinstallation propre (`reinstall`, contenu perdu) le permet. Quilt : aucun outil officiel. Les deux étapes pointent le même appel. |
+| `server.java` | `manage_java` | `java_version_id` | `manage_java` sans autre paramètre liste les versions et leurs identifiants ; redémarrage ensuite. |
+| `startup.jar_file` | `set_startup_config` | `file` | La passerelle **masque** cet outil au profit de `set_startup_params` (doublon pour la commande), qui ne change pas le JAR : l'étape le dit et renvoie au panel. |
+
+#### Monter un serveur : prégénération et base de données
+
+Deux étapes d'une mise en place complète que rien ne couvrait (`core/src/pregen.rs`,
+`core/src/db_connect.rs`). Absentes du MCP officiel ; dans `INFRA_TOOLS` (jamais au Copilote :
+opération lourde pour l'une, identifiants d'une ressource de la MyBox et mot de passe partagé pour
+l'autre) ; aucun accès au disque de l'ordinateur.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `pregenerate_world` | ✎ | `server_id`, `action` (`start` \| `status` \| `pause` \| `continue` \| `cancel`), `radius?` (blocs, requis pour `start`), `world?`, `center?`, `shape?`, `install_chunky?`, `replace_existing?`, `wait_secs?` | Prégénération avec **Chunky** (plugin Paper/Spigot/Folia/Sponge, mod Fabric/Quilt/Forge/NeoForge). `start` : sélection (`chunky world`, `shape`, `spawn` ou `center x z`, `radius`) puis `chunky start`, chaque réponse attendue dans la console. `world` : `level-name` par défaut ; `overworld`, `nether`, `end` et les identifiants `minecraft:…` traduits selon la plateforme (dossier `<monde>_nether` sur un plugin, dimension sur un mod). `center` : `spawn` (défaut) ou `"x,z"`. `shape` : `square` (défaut), `circle`, `diamond`, `triangle`, `pentagon`, `hexagon`, `star`. Sortie : `chunky` (installé, version), `selection`, `estimate`, `started`, `tasks[{world, state, percent, chunks, total_chunks, rate_cps, eta, eta_secs, current, total_time}]`, `console` (réponses de Chunky par commande), `notes`, `next`. |
+| `connect_database` | ✎ | `server_id`, `mybox_id?`, `database_id?`, `target?` \| (`path` + `keys`, `set?`), `path?`, `rotate_password?`, `dry_run?` (défaut **true**) | Accès de la base (hôte, port, nom, utilisateur ; mot de passe « lu, jamais affiché ») écrits dans la config du plugin par `set_config` : `changes` et `diff` (mot de passe masqué des deux côtés), `written`, `rotated`, mention de la garde (étape annulable), `notes`, `next` (redémarrage). |
+
+**`pregenerate_world`.**
+
+- **Chunky** est cherché dans le contenu installé (plugins ou mods selon la plateforme détectée
+  par l'hébergeur ; `ChunkyBorder` et consorts ne comptent pas). Absent : erreur qui explique
+  `install_chunky=true`, qui l'installe depuis Modrinth — version la plus récente (stable d'abord)
+  qui déclare un loader de la plateforme (Folia : `folia` ; Spigot : `spigot`/`bukkit`, jamais
+  un build réservé à Paper ; Quilt accepte Fabric) et la version du jeu — par `install_mod`, passé
+  par la garde des agents (étape annulable) ; il faut ensuite redémarrer (`next`). Désactivé :
+  erreur.
+- **Estimation du disque** avant `start`, **ordre de grandeur** : chunks de la zone (aire de la
+  forme ÷ 256) × 6 Kio (bas), 12 Kio (typique), 20 Kio (haut) par chunk, d'après des mondes 1.18+
+  prégénérés (régions compressées, entités et points d'intérêt) ; comparée au plus petit espace
+  libre entre le serveur et la MyBox. Avertissement si l'estimation haute dépasse (ou si la
+  typique dépasse 80 %), **refus seulement si même l'estimation basse dépasse** ; espace libre
+  inconnu : dit dans la sortie. Les chunks déjà générés ne reprennent pas de place.
+- **Commandes** par la boucle « agir puis vérifier » (`run_command` : envoi REST, réponse lue dans
+  la console par curseur) ; **serveur hors ligne, en démarrage ou en arrêt : refus explicite,
+  rien n'est envoyé**. Commande `chunky` inconnue (plugin non chargé) : erreur qui conseille le
+  redémarrage. Commande de sélection refusée par Chunky (monde introuvable, valeur invalide) :
+  arrêt avant `chunky start`, qui partirait sinon sur l'ancienne sélection. Tâche déjà existante (Chunky demande `/chunky confirm`) : `start` refuse et
+  propose `continue`, sauf `replace_existing=true` (confirmation envoyée, progression perdue) ;
+  pour `cancel`, demandé explicitement, la confirmation est envoyée. Tâche déjà en cours : erreur
+  (`status`, `pause`, `cancel`).
+- **Suivi** : `status` envoie `chunky progress` (repli : dernières lignes de Chunky de la
+  console). Lignes analysées : progression (`Task running for <monde>. Processed: N chunks
+  (P%), ETA: h:mm:ss, Rate: R cps, Current: x, z`) et fin (`Task finished … Total time`),
+  **relevées sur un serveur réel** (Chunky 1.5.66, Paper) ; Chunky y nomme le monde par son
+  identifiant (`minecraft:overworld`) même sur Paper, rapproché du dossier choisi. Démarrage,
+  pause, reprise, annulation, « aucune tâche » et demande de confirmation : formats **supposés**
+  (textes anglais de Chunky), testés sur des lignes représentatives ; une réponse non reconnue est
+  signalée, jamais interprétée. `wait_secs` (max 600) : suit la console, avancement MCP
+  (`notifications/progress`, pourcentage), arrêt à la fin de la tâche, à l'échéance ou si le
+  client annule (la tâche continue sur le serveur).
+- **Garde des agents** : `start`, `pause`, `continue`, `cancel` sont des étapes **non annulables**
+  (les chunks générés restent) ; `status` n'en crée pas.
+
+**`connect_database`.**
+
+- **Accès** : `GET /mybox/{id}` → `databases[]` (l'outil officiel `get_mybox` annonce « host,
+  port, nom, mot de passe »). La forme exacte des entrées **n'a pas pu être relevée** (aucune base
+  sur le compte de test) : lecture tolérante (noms candidats par champ — `host`/`hostname`/
+  `address`…, `port`, `database`/`db_name`/`name`…, `username`/`user`/`login`…, `password`/
+  `pass`/`pwd`… —, un niveau d'imbrication, `hôte:port` dans l'hôte, port 3306 supposé et dit s'il
+  manque). Champ indispensable absent : erreur qui liste les **noms** des champs vus, jamais leurs
+  valeurs. Mot de passe absent ou masqué : repli sur l'outil officiel `get_mybox` (connexion en
+  lecture seule), jamais montré au modèle. `database_id` absent : la seule base de la MyBox,
+  sinon la liste (identifiant et nom) est rendue en erreur. MyBox sans base : renvoi vers l'outil
+  officiel `create_database` (passerelle) ou le panel — l'outil **ne crée pas** de base.
+- **Préréglages** (`target`, MySQL/MariaDB ; clés jamais créées : le plugin doit avoir généré sa
+  config, sinon erreur avant toute modification ; `path` remplace le fichier par défaut) :
+
+  | `target` | Fichier | Clés écrites |
+  |---|---|---|
+  | `luckperms` | `/plugins/LuckPerms/config.yml` | `storage-method` (`mariadb` ou `mysql` selon le moteur), `data.address` (hôte:port), `data.database`, `data.username`, `data.password` |
+  | `coreprotect` | `/plugins/CoreProtect/config.yml` | `use-mysql: true`, `mysql-host`, `mysql-port`, `mysql-database`, `mysql-username`, `mysql-password` |
+  | `litebans` | `/plugins/LiteBans/config.yml` | `sql.driver` (`MariaDB` ou `MySQL`), `sql.address` (hôte:port), `sql.database`, `sql.username`, `sql.password` |
+  | `plan` | `/plugins/Plan/config.yml` | `Database.Type: MySQL`, `Database.MySQL.Host`, `.Port`, `.User`, `.Password`, `.Database` |
+
+  Correspondance explicite : `path` + `keys` { `host` \| `port` \| `address` \| `database` \|
+  `username` \| `password` : clé de config } et `set` (réglages non secrets en plus). La clé du
+  mot de passe doit être reconnue comme secrète par l'édition structurée (`password`, `pass`,
+  `pwd`, `secret`, `credential`…), sinon refus : sa valeur apparaîtrait dans le diff.
+- **Secret** : le mot de passe ne figure jamais dans les arguments de l'outil (journalisés) ; il
+  ne passe que dans l'appel interne à `set_config`, dont la sortie et le diff le masquent (clé
+  secrète), puis toute sortie et toute erreur sont encore nettoyées de sa valeur. Un test vérifie,
+  pour chaque préréglage sur un fichier réaliste, qu'il est écrit dans le fichier mais absent de
+  la sortie et du diff.
+- **`dry_run`** (défaut) : simulation complète, rien n'est écrit. Sinon : simulation d'abord (un
+  fichier ou une clé manquants arrêtent tout), puis écriture par `set_config` passée par la garde
+  des agents (copie du fichier avant : annulable avec `rollback_changeset`).
+- **`rotate_password`** (défaut false), seulement si le mot de passe n'est pas lisible : la
+  confirmation est demandée à l'humain (élicitation MCP) **avant tout effet** — tout ce qui
+  utilise l'ancien mot de passe sera cassé ; refus : rien n'est fait. Réinitialisation par l'outil
+  officiel `manage_database` (`action: reset_password`, corps connu) plutôt que par `PATCH
+  /mybox/{id}/database/password` (corps non documenté, jamais essayé), relecture du nouveau mot de
+  passe, puis écriture directe. Non annulable (le mot de passe ne revient pas en arrière).
 
 #### Garde des agents
 
@@ -537,7 +641,11 @@ conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
   déployé, redémarrage, verdict d'activation)
 - **Construire et reproduire** : `get_config` / `set_config` (configs YAML, TOML, JSON, properties
   sans casser la mise en forme), `export_manifest` → `plan_manifest` → `apply_manifest` (serveur
-  déclaratif, idempotent), `clone_server` (copie de test d'un serveur)
+  déclaratif, idempotent ; étapes manuelles reliées aux outils officiels `change_version`,
+  `manage_java`, `set_startup_config`), `clone_server` (copie de test d'un serveur)
+- **Monter un serveur de A à Z** : `pregenerate_world` (prégénération Chunky : installation,
+  estimation du disque, lancement, progression, pause, reprise, annulation), `connect_database`
+  (base de la MyBox branchée à un plugin sans exposer son mot de passe)
 - **Garde des agents** : `list_agent_actions` (journal), `list_changesets` → `rollback_changeset`
   (annuler ce qu'un agent a modifié)
 
@@ -645,7 +753,7 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 | `schedules` | `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `add_schedule_task`, `update_schedule_task`, `delete_schedule_task`, `reorder_schedule_tasks` |
 | `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command` |
 | `agent` | Boucle « agir puis vérifier » (`run_command`, `wait_for`, `tail_console`, `deploy_and_verify`…). |
-| `build` | Configurations structurées et manifestes (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`…). |
+| `build` | Configurations structurées et manifestes (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`…), prégénération et base de données (`pregenerate_world`, `connect_database`). |
 | `guard` | Garde des agents (`list_agent_actions`, `rollback_changeset`…). |
 | `official` | Outils du MCP officiel relayés par la passerelle (si elle est activée). |
 
