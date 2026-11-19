@@ -35,6 +35,7 @@
   import AccountsSection from '../settings/AccountsSection.svelte';
   import WebhooksSection from '../settings/WebhooksSection.svelte';
   import AgentGuardSection from '../settings/AgentGuardSection.svelte';
+  import McpToolsetsSection from '../settings/McpToolsetsSection.svelte';
 
   type Section =
     | 'general'
@@ -811,6 +812,9 @@
         </button>
       </div>
       <p class="cmd dim">{t('settings.mcpCommand')} <code>{exePath} --mcp</code></p>
+
+      <!-- Groupes d'outils exposés aux clients MCP. -->
+      <McpToolsetsSection bind:config={mcp} onsave={saveMcp} />
 
       <!-- Garde des agents : portée des écritures, journal, modifications annulables. -->
       <AgentGuardSection bind:config={mcp} {servers} onsave={saveMcp} />

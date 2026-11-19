@@ -129,9 +129,14 @@ fn mask_secrets(line: Cow<str>) -> Cow<str> {
             .map(|(i, _)| i)
             .unwrap_or(before.len());
         let key = before[key_start..].to_ascii_lowercase();
-        if is_secret_key(&key)
-            && !line[pos + sep.len_utf8()..].trim().is_empty()
-        {
+        let value = line[pos + sep.len_utf8()..].trim();
+        if is_secret_key(&key) && !value.is_empty() {
+            // Clé JSON ou valeur entre guillemets : le masque est entre guillemets aussi, virgule
+            // finale comprise, pour qu'un JSON anonymisé reste valide.
+            if value.starts_with('"') || line[..pos].trim_end().ends_with('"') {
+                let comma = if value.ends_with(',') { "," } else { "" };
+                return Cow::Owned(format!("{} \"[SECRET]\"{comma}", &line[..=pos]));
+            }
             return Cow::Owned(format!("{} [SECRET]", &line[..=pos]));
         }
     }
@@ -366,7 +371,10 @@ mod tests {
         assert_eq!(redact("  db_password: x"), "  db_password: [SECRET]");
         assert_eq!(redact("discord.bot-token: x"), "discord.bot-token: [SECRET]");
         assert_eq!(redact("apiToken=x"), "apiToken= [SECRET]");
-        assert_eq!(redact(r#"  "password": "hunter2","#), r#"  "password": [SECRET]"#);
+        assert_eq!(redact(r#"  "password": "hunter2","#), r#"  "password": "[SECRET]","#);
+        assert_eq!(redact(r#"  "secret": """#), r#"  "secret": "[SECRET]""#);
+        assert_eq!(redact(r#"password: "x y""#), r#"password: "[SECRET]""#);
+        assert_eq!(redact(r#"  "token": 123,"#), r#"  "token": "[SECRET]","#);
         assert_eq!(redact("'client_secret': x"), "'client_secret': [SECRET]");
         // Sans valeur, ou clé qui ne finit pas par un mot de secret : intact.
         assert_eq!(redact("management-server-tls-keystore-password="), "management-server-tls-keystore-password=");

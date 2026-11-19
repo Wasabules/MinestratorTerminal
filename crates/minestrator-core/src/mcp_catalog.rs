@@ -594,6 +594,26 @@ mod tests {
         READ_TOOLS.iter().chain(WRITE_TOOLS).copied().collect()
     }
 
+    /// Le réglage des groupes (Réglages → MCP du desktop) liste ses groupes en dur : il doit suivre
+    /// `TOOLSETS`, sans en oublier ni en inventer.
+    #[test]
+    fn desktop_settings_list_every_toolset() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../desktop/src/lib/components/settings/McpToolsetsSection.svelte"
+        );
+        let src = std::fs::read_to_string(path).expect("McpToolsetsSection.svelte");
+        let start = src.find("const GROUPS = [").expect("GROUPS");
+        let end = start + src[start..].find("] as const").expect("fin de GROUPS");
+        let listed: BTreeSet<&str> = src[start..end]
+            .split('\'')
+            .skip(1)
+            .step_by(2)
+            .collect();
+        let expected: BTreeSet<&str> = TOOLSETS.iter().map(|(g, _)| *g).collect();
+        assert_eq!(listed, expected, "groupes du réglage desktop ≠ TOOLSETS");
+    }
+
     #[test]
     fn every_exposed_tool_has_exactly_one_group() {
         // Échoue tant qu'un outil de READ_TOOLS ∪ WRITE_TOOLS n'est pas classé : à l'ajout d'un

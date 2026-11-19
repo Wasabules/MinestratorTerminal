@@ -134,15 +134,17 @@ Ressource inconnue : erreur `-32002` (`-32602` en sans état).
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (77)
+## 5. Capacités — catalogue d'outils (90)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **44 outils de lecture**
-> + **33 modifiants** (dont 17 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Un test vérifie que chaque
-> outil listé est classé lecture **ou** écriture, et que chaque outil classé a son schéma.
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **51 outils de lecture**
+> + **39 modifiants** (dont 20 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage, manifeste appliqué, clone, annulation). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file`, `deploy_and_verify` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Des tests vérifient que chaque
+> outil listé est classé lecture **ou** écriture, que chaque outil classé a son schéma, appartient à
+> un seul groupe (`TOOL_GROUPS`, `mcp_catalog.rs`) et, s'il est modifiant, a une règle d'annulation
+> dans la garde des agents.
 
 #### Découverte & état
 
@@ -334,7 +336,6 @@ par un message explicite et `uptime_report` par un `warning` — jamais une list
 présentés comme un bilan. Sorties anonymisées comme `read_console`/`read_file` (`redact`) ; pseudos
 des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA est active.
 
-<!-- [lot:boucle] début -->
 #### Agir puis vérifier
 
 Ce qui manquait à un agent pour ne plus agir à l'aveugle (`core/src/agent_loop.rs`) : lire la
@@ -368,9 +369,7 @@ l'agent.
 **jamais** donné au Copilote. `run_command` est modifiant comme `send_command` : offert au Copilote
 en mode autonome, borné au serveur de la session ; `tail_console` et `wait_for` sont des lectures,
 offertes même au diagnostic automatique (délais plafonnés plus bas hors transport MCP).
-<!-- [lot:boucle] fin -->
 
-<!-- [lot:manifeste] début -->
 #### Construire et reproduire un serveur
 
 Monter, reproduire ou ajuster un serveur de A à Z sans casser ses fichiers
@@ -480,9 +479,7 @@ elle échoue, l'étape est ignorée (`depends_on`). **Idempotence** : le plan es
 application, une étape déjà conforme n'est jamais refaite ; relancer après une coupure reprend là
 où le serveur en est. Après des changements de contenu, de réglages ou de configs, un
 redémarrage les charge (`next`).
-<!-- [lot:manifeste] fin -->
 
-<!-- [lot:garde] début -->
 #### Garde des agents
 
 Journal et annulation des actions des agents (`crates/minestrator-core/src/agent_guard.rs`),
@@ -497,7 +494,6 @@ absents du MCP officiel. Données locales partagées par l'app et les processus 
 
 Données au Copilote : `list_agent_actions` et `list_changesets` ne lui montrent que le serveur de la
 conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
-<!-- [lot:garde] fin -->
 
 ### Couverture par domaine
 
@@ -533,10 +529,17 @@ conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
   `broadcast_command` (une commande à plusieurs serveurs)
 - **Contenu, monde et audit** : `check_plugin_deps` (dépendances des jars), `world_info` (`level.dat`,
   dimensions), `audit_server` (configuration et sécurité)
-
 - **Journaux et historique** : `error_digest` (ce qui plante, par signature et plugin probable),
   `search_logs` (journaux archivés compris), `uptime_report` (disponibilité, coupures),
   `list_incidents` (crashs, surcharges et diagnostics du Copilote)
+- **Agir puis vérifier** : `tail_console` (console en direct par curseur), `run_command` (commande
+  et sa réponse), `wait_for` (état, motif de console ou tâche), `deploy_and_verify` (jar local
+  déployé, redémarrage, verdict d'activation)
+- **Construire et reproduire** : `get_config` / `set_config` (configs YAML, TOML, JSON, properties
+  sans casser la mise en forme), `export_manifest` → `plan_manifest` → `apply_manifest` (serveur
+  déclaratif, idempotent), `clone_server` (copie de test d'un serveur)
+- **Garde des agents** : `list_agent_actions` (journal), `list_changesets` → `rollback_changeset`
+  (annuler ce qu'un agent a modifié)
 
 ## 6. Contrôle & sécurité (réglages)
 
@@ -545,14 +548,11 @@ Réglages modifiables depuis le GUI (Réglages → MCP) et persistés (`mcp.json
 
 - **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé
   (prompts et ressources aussi).
-- **`allow_writes`** — si désactivé (**mode lecture seule**) : les outils marqués `✎`
-  (`power_action`, `send_command`, `player_action`, `write_file`, `upload_file`, `edit_file`,
-  `create_dir`, `delete_path`, `rename_path`, `set_startup_params`, `set_property`, `install_mod`,
-  `install_ficsit_mod`, `extract_archive`, `create_snapshot`, et l'infrastructure MyBox :
-  `mybox_create_server`, `mybox_resize_server`, `mybox_pause_server`, `mybox_reorder_servers`,
-  `rename_server`, `rename_mybox`, `mybox_delete_server`) sont refusés ; les outils de
-  lecture/diagnostic restent disponibles (dont `plan_placement`, qui ne modifie rien). Idéal pour
-  donner un accès *observation* sans risque.
+- **`allow_writes`** — si désactivé (**mode lecture seule**) : les 39 outils marqués `✎`
+  (`WRITE_TOOLS` : commandes, alimentation, fichiers, réglages, contenu, snapshots, infrastructure
+  MyBox, tâches planifiées, manifeste appliqué, clone, annulation…) sont refusés ; les outils de
+  lecture/diagnostic restent disponibles (dont `plan_placement` et `plan_manifest`, qui ne
+  modifient rien). Idéal pour donner un accès *observation* sans risque.
 
 **Garde-fous by design :**
 
@@ -625,7 +625,6 @@ MCP. Politique dans `crates/minestrator-core/src/official_relay.rs`.
   mais un relais restreint à la politique du Copilote (lecture + liste blanche, voir
   [`COPILOT.md`](./COPILOT.md) §4) ; tout appel, local ou relayé, visant un autre serveur est refusé.
 
-<!-- [lot:protocole] début -->
 ### Groupes d'outils (toolsets)
 
 Chaque outil local appartient à un **groupe** (`TOOL_GROUPS` dans `mcp_catalog.rs`) ; un client
@@ -665,8 +664,6 @@ Ajouter un outil : le classer dans `TOOL_GROUPS` (un test exige que chaque outil
 ∪ `WRITE_TOOLS` y figure une fois), et, s'il est modifiant, le ranger au besoin dans
 `NON_DESTRUCTIVE_TOOLS` / `IDEMPOTENT_TOOLS` (annotations ; destructif et non idempotent par
 défaut).
-<!-- [lot:protocole] fin -->
-<!-- [lot:garde] début (réglages) -->
 ### Garde des agents : journal, annulation, portée des écritures
 
 Réglages dans Réglages → MCP (persistés dans `mcp.json`) ; code dans
@@ -738,7 +735,6 @@ une étape par sous-action), `Plan::Fixed("raison")` (effet non réversible). Un
 de `WRITE_TOOLS` sans arme. Un outil qui crée un serveur appelle
 `agent_guard::record_created_server_here` après succès et reçoit la règle `Targets::Create` dans
 `agent_guard::scope::write_targets`.
-<!-- [lot:garde] fin -->
 
 ## 7. Se connecter (depuis n'importe quel client MCP)
 

@@ -317,6 +317,18 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   (`McpConfig::write_scope` : écritures limitées aux serveurs créés par la session ou autorisés).
   Base `agent_guard.db` (WAL) partagée par l'app et les processus MCP, rétention et taille bornées ;
   capture et annulation derrière le trait `Remote`, testées sur un faux serveur.
+- **`agent_loop`** — outils **« agir puis vérifier »** : tampon de console par serveur (connexion
+  WebSocket dédiée `agent:<id>:<époque>`, 5 000 lignes numérotées, curseurs, rejeu de Wings marqué
+  historique, fermeture après 10 min sans lecture) derrière `tail_console`, `run_command` et
+  `wait_for` ; `deploy_and_verify` (jar local, envoi et mise de côté par `mcp::dispatch` pour que
+  la garde les capture, redémarrage, verdict tiré de la console).
+- **`config_edit`** — lecture et **édition structurée** des configs (YAML via `saphyr-parser`, TOML
+  via `toml_edit`, JSON/JSONC, `.properties`) : seule la plage de la valeur est réécrite, le
+  résultat est relu et comparé à l'arbre attendu avant écriture ; secrets masqués et valeurs
+  masquées refusées. Outils `get_config` / `set_config`.
+- **`manifest`** — **manifeste déclaratif** d'un serveur (v1) : export, plan (écart avec le serveur
+  réel, étapes à identifiant stable, `manual` / `unsupported` expliqués), application idempotente
+  après snapshot, et `clone_server` (`manifest/clone.rs` : création, copie, manifeste de la source).
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

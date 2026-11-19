@@ -26,13 +26,10 @@ pub struct McpConfig {
     /// `official_relay.rs`) ; la variable `MINESTRATOR_MCP_OFFICIAL` prime sur ce réglage.
     #[serde(default)]
     pub official_gateway: bool,
-    // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
     /// Groupes d'outils exposés (`core`, `files`, `console`…, voir `mcp_catalog.rs`) ; vide = tous.
     /// L'argument `--toolsets=…` puis la variable `MINESTRATOR_MCP_TOOLSETS` priment.
     #[serde(default)]
     pub toolsets: Vec<String>,
-    // [lot:protocole] fin
-    // [lot:garde] début (agent_guard.rs)
     /// Portée des écritures des agents : `all` (tout le compte, défaut) ou `builder` (mode
     /// constructeur : seulement les serveurs créés pendant la session MCP et `allowed_servers`).
     /// `MINESTRATOR_MCP_WRITE_SCOPE` prime sur ce réglage (voir `agent_guard.rs`).
@@ -42,7 +39,6 @@ pub struct McpConfig {
     /// `MINESTRATOR_MCP_ALLOWED_SERVERS` (identifiants séparés par des virgules) la remplace.
     #[serde(default)]
     pub allowed_servers: Vec<i64>,
-    // [lot:garde] fin
 }
 
 impl Default for McpConfig {
@@ -51,13 +47,9 @@ impl Default for McpConfig {
             enabled: true,
             allow_writes: true,
             official_gateway: false,
-            // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
             toolsets: Vec::new(),
-            // [lot:protocole] fin
-            // [lot:garde] début (agent_guard.rs)
             write_scope: crate::agent_guard::WriteScope::All,
             allowed_servers: Vec::new(),
-            // [lot:garde] fin
         }
     }
 }
@@ -193,23 +185,17 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "error_digest",
     "uptime_report",
     "list_incidents",
-    // [lot:boucle] début (agent_loop.rs)
     // Console par curseur et attente d'un état, d'un motif ou d'une tâche : lectures en direct.
     "tail_console",
     "wait_for",
-    // [lot:boucle] fin
-    // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // Configs structurées et manifeste : lectures SFTP/API, secrets masqués ; le plan ne
     // modifie rien (calcul de l'écart avec le serveur réel).
     "get_config",
     "export_manifest",
     "plan_manifest",
-    // [lot:manifeste] fin
-    // [lot:garde] début (agent_guard.rs)
     // Garde des agents : journal et changesets (lectures locales, bornées au serveur du Copilote).
     "list_agent_actions",
     "list_changesets",
-    // [lot:garde] fin
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -259,22 +245,16 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     // Plusieurs serveurs (fleet.rs, voir INFRA_TOOLS) : jamais proposés au Copilote.
     "copy_between_servers",
     "broadcast_command",
-    // [lot:boucle] début (agent_loop.rs)
     // Commande avec sa réponse (comme send_command) ; déploiement vérifié (LOCAL_DISK_TOOLS).
     "run_command",
     "deploy_and_verify",
-    // [lot:boucle] fin
-    // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // Édition d'une config du serveur (bornée à lui, comme edit_file) : offerte au Copilote.
     "set_config",
     // Manifeste et clone : démarrage, tâches planifiées, création de serveur (voir INFRA_TOOLS).
     "apply_manifest",
     "clone_server",
-    // [lot:manifeste] fin
-    // [lot:garde] début (agent_guard.rs)
     // Annulation des modifications d'un agent (voir INFRA_TOOLS) : jamais au Copilote.
     "rollback_changeset",
-    // [lot:garde] fin
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -306,19 +286,13 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // Commande de démarrage : exécutée par le shell du conteneur à chaque démarrage, une injection
     // y deviendrait une commande persistante. Même règle que `set_startup_config` côté officiel.
     "set_startup_params",
-    // [lot:boucle] début (agent_loop.rs)
-    // [lot:boucle] fin
-    // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // Manifeste : commande de démarrage et tâches planifiées (configuration persistante) ;
     // clone : création d'un serveur et copie entre serveurs.
     "apply_manifest",
     "clone_server",
-    // [lot:manifeste] fin
-    // [lot:garde] début (agent_guard.rs)
     // Annulation d'un changeset : peut défaire les modifications de n'importe quelle session,
     // sur plusieurs serveurs ; réservée à l'app et au MCP local.
     "rollback_changeset",
-    // [lot:garde] fin
 ];
 
 /// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
@@ -330,12 +304,8 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
 pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
     "upload_file",
     "download_file",
-    // [lot:boucle] début (agent_loop.rs)
     // Lit le jar local à envoyer.
     "deploy_and_verify",
-    // [lot:boucle] fin
-    // [lot:manifeste] début (config_edit.rs, manifest.rs)
-    // [lot:manifeste] fin
 ];
 
 /// Outil interdit au Copilote (diagnostic, chat, agents CLI, « Appliquer ») : infrastructure,
@@ -445,23 +415,17 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "error_digest",
     "uptime_report",
     "list_incidents",
-    // [lot:boucle] début (agent_loop.rs)
     // Agir puis vérifier : console par curseur, commande avec réponse, attentes, déploiement
     // vérifié — rien de tel dans l'officiel.
     "tail_console",
     "run_command",
     "wait_for",
     "deploy_and_verify",
-    // [lot:boucle] fin
-    // [lot:manifeste] début (config_edit.rs, manifest.rs)
     // Configs structurées et manifeste : absents du MCP officiel.
     "get_config",
     "set_config",
     "export_manifest",
     "plan_manifest",
-    // [lot:manifeste] fin
-    // [lot:garde] début (agent_guard.rs)
-    // [lot:garde] fin
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -564,8 +528,6 @@ async fn call(core: &Core, params: Value) -> Value {
     if is_write_tool(&name) && !cfg.allow_writes {
         return tool_err("Actions modifiantes désactivées (mode lecture seule) dans les réglages.");
     }
-
-    // [lot:garde] début (agent_guard.rs)
     // Mode constructeur : écriture hors des serveurs permis refusée (et journalisée).
     if let Some(refus) = crate::agent_guard::admit(core, &cfg, &name, &args).await {
         return tool_err(&refus);
@@ -573,7 +535,6 @@ async fn call(core: &Core, params: Value) -> Value {
     // Journal de l'appel et regroupement des modifications par session : l'appel à `dispatch`
     // ci-dessous passe par la garde, qui enveloppe `mcp::dispatch` (même signature).
     let dispatch = crate::agent_guard::protocol_dispatch;
-    // [lot:garde] fin
 
     match dispatch(core, &name, args).await {
         Ok(text) => tool_text(text),
@@ -698,15 +659,9 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // un instant suffit (un appel répété à l'identique ne retélécharge rien).
         "search_logs" | "error_digest" => 15,
         "uptime_report" | "list_incidents" => 10,
-        // [lot:boucle] début (agent_loop.rs)
         // tail_console, wait_for : jamais (console et état en direct, curseurs).
-        // [lot:boucle] fin
-        // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // Relisent SFTP et API : un instant suffit (purgés par toute écriture, set_config compris).
         "get_config" | "export_manifest" | "plan_manifest" => 10,
-        // [lot:manifeste] fin
-        // [lot:garde] début (agent_guard.rs)
-        // [lot:garde] fin
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1542,16 +1497,12 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             .incident_report(crate::incidents::IncidentQuery::from_args(&args))
             .await
             .map_err(es),
-
-        // [lot:boucle] début (agent_loop.rs)
         // Agir puis vérifier : sorties anonymisées (redact) dans le module. Futures sur le tas :
         // elles n'alourdissent ni l'état ni la pile de ce `match` (déjà proche de 1 Mio en debug).
         "tail_console" => Box::pin(core.agent_tail_console(&args)).await,
         "run_command" => Box::pin(core.agent_run_command(&args)).await,
         "wait_for" => Box::pin(core.agent_wait_for(&args)).await,
         "deploy_and_verify" => Box::pin(core.agent_deploy(&args)).await,
-        // [lot:boucle] fin
-        // [lot:manifeste] début (config_edit.rs, manifest.rs)
         // Validation, masquage des secrets et rendu dans les modules (sorties déjà anonymisées).
         // Futures volumineux (plan, export, clone) mis sur le tas : sans cela, l'état de
         // dispatch_inner grossit au point de déborder la pile du fil principal (stdio).
@@ -1561,12 +1512,9 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "plan_manifest" => Box::pin(crate::manifest::plan_manifest_tool(core, &args)).await,
         "apply_manifest" => Box::pin(crate::manifest::apply_manifest_tool(core, &args)).await,
         "clone_server" => Box::pin(crate::manifest::clone_server_tool(core, &args)).await,
-        // [lot:manifeste] fin
-        // [lot:garde] début (agent_guard.rs)
         "list_agent_actions" => crate::agent_guard::actions_tool(core, &args),
         "list_changesets" => crate::agent_guard::changesets_tool(core, &args),
         "rollback_changeset" => crate::agent_guard::rollback_tool(core, &args).await,
-        // [lot:garde] fin
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1737,26 +1685,20 @@ fn build_tool_list() -> Value {
         tool("error_digest", "RÉSUMÉ DES ERREURS d'un serveur : regroupe erreurs et avertissements des journaux (fenêtre `since_hours`, défaut 24 h ; latest.log + archives) ou de la console récente par SIGNATURE (classe d'exception de la cause première + premières frames utiles, sans nombres, adresses ni horodatages). Par groupe : niveau (FATAL, SEVERE, ERROR, WARN), nombre, première et dernière occurrence, plugin ou mod probable (`probable_source.evidence` : event, enable, load, task, mod, jar, prefix, logger, package — du plus au moins sûr), exemple tronqué. Trié par gravité puis fréquence. À appeler avant search_logs pour savoir ce qui plante.", obj(&[("server_id", prop_int("ID du serveur")), ("source", prop_str("auto (défaut : journaux, sinon console) | logs | console")), ("since_hours", prop_int("Fenêtre en heures (défaut 24, max 720)")), ("include_warnings", prop_bool("Inclure les avertissements WARN (défaut true)")), ("limit", prop_int("Groupes renvoyés (défaut 15, max 50)")), ("dir", prop_str("Dossier des journaux (défaut selon le jeu)")), ("max_files", prop_int("Fichiers lus au plus (défaut 8, max 30)"))], &["server_id"])),
         tool("uptime_report", "DISPONIBILITÉ d'un serveur sur 24 h, 7 j et 30 j (% du temps SURVEILLÉ) et liste des coupures (début, fin, durée, cause : crash, stop ou inconnue), d'après la surveillance de l'app et du service d'arrière-plan, complétée par les statistiques de l'hébergeur là où rien ne surveillait (`host_share_pct` : part déduite de l'hébergeur, qui ne prouve jamais une coupure). Même calcul que la carte Disponibilité de l'app ; `warning` si aucune surveillance locale n'existe.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_incidents", "HISTORIQUE DES INCIDENTS détectés par la surveillance : crash (arrêt inattendu), surcharge (cpu, ram, disk), échéance de MyBox (expiry), redémarrage automatique, tâche planifiée — avec les DIAGNOSTICS du Copilote rattachés (résumé, cause, correctif, actions proposées), du plus récent au plus ancien. Un serveur (`server_id`) ou tous ceux du compte. Sources : journal local de l'app, service d'arrière-plan, crashs du suivi de disponibilité ; `coverage` dit ce qui a été consulté (un journal vide n'est pas « aucun incident »).", obj(&[("server_id", prop_int("ID du serveur (optionnel : tous les serveurs du compte)")), ("limit", prop_int("Incidents renvoyés (défaut 20, max 100)")), ("since_days", prop_int("Période en jours (défaut 30, max 32)")), ("kind", prop_str("Filtre : crash | cpu | ram | disk | expiry | auto_restart | task | diagnosis"))], &[])),
-        // [lot:boucle] début (agent_loop.rs)
         tool("tail_console", "CONSOLE EN DIRECT PAR CURSEUR (à préférer à read_console pour suivre la console) : sans `after`, les dernières lignes et un `cursor` ; avec `after` (le `cursor` rendu par l'appel précédent, tel quel), SEULEMENT les lignes apparues depuis — `wait_secs` attend la première (max 60 s). Rend `cursor`, `state` (running | starting | stopping | offline), `missed` (lignes perdues : le tampon de 5 000 lignes a débordé entre deux lectures), `history` (lignes rejouées à la connexion, antérieures au suivi), `more` (plafond atteint : relire avec le nouveau curseur), `notes`. `filter` : texte (ou expression régulière avec `regex`), casse ignorée. Connexion WebSocket dédiée, fermée après 10 min sans lecture ; repli sur l'API (sans curseur) signalé par `source: rest`. Sortie anonymisée.", obj(&[("server_id", prop_int("ID du serveur")), ("after", prop_str("Curseur rendu par l'appel précédent (optionnel : dernières lignes)")), ("wait_secs", prop_int("Avec `after` : attendre au plus N s une nouvelle ligne (défaut 0, max 60)")), ("max_lines", prop_int("Lignes renvoyées au plus (défaut 100, max 1000)")), ("filter", prop_str("Ne garder que les lignes qui contiennent ce texte (optionnel)")), ("regex", prop_bool("`filter` est une expression régulière (défaut false)"))], &["server_id"])),
         tool("run_command", "ENVOIE UNE COMMANDE ET REND SA RÉPONSE (à préférer à send_command) : envoi par l'API REST, puis lignes de console apparues APRÈS l'envoi, jusqu'au motif `until` (texte, ou expression régulière avec `regex` ; casse ignorée) ou, sans `until`, jusqu'à un court silence après la première ligne ; au plus `timeout_secs` (défaut 5, max 60). Rend `lines`, `matched` (motif vu ; null sans `until`), `matched_line`, `timed_out`, `cursor` (lire la suite avec tail_console), `state`. Serveur hors ligne : refus explicite, rien n'est envoyé. Une seule ligne de commande. Sortie anonymisée. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("command", prop_str("Commande console (une ligne, sans `/` initial)")), ("until", prop_str("Fin de la réponse attendue : texte (optionnel)")), ("regex", prop_bool("`until` est une expression régulière (défaut false)")), ("timeout_secs", prop_int("Attente maximale en secondes (défaut 5, max 60)")), ("max_lines", prop_int("Lignes renvoyées au plus (défaut 200, max 1000)"))], &["server_id", "command"])),
         tool("wait_for", "ATTEND UNE CONDITION, une seule parmi : `state` (running | offline | starting | stopping), `pattern` (ligne de console : texte, ou expression régulière avec `regex` ; casse ignorée ; lignes après `after` si fourni, sinon à venir), `job_id` (tâche de sauvegarde, snapshot ou reprise d'un serveur en pause). `timeout_secs` défaut 60, max 600. Rend `reached`, `elapsed_secs`, `state`, `reason` (timeout, cancelled, arrêt pendant le démarrage…), `matched_line`, `job`, `cursor`. `state=running` juste après power_action restart : l'ancien « running » n'est pas retenu ; un arrêt pendant le démarrage rend la main aussitôt ; résumé `startup` (durée, ligne « Done », erreurs et avertissements de la console regroupés par signature, avec le plugin ou mod probable). Avancement signalé pendant l'attente.", obj(&[("server_id", prop_int("ID du serveur")), ("state", prop_str("État attendu : running | offline | starting | stopping")), ("pattern", prop_str("Texte attendu dans la console")), ("regex", prop_bool("`pattern` est une expression régulière (défaut false)")), ("after", prop_str("Avec `pattern` : curseur à partir duquel chercher (optionnel)")), ("job_id", prop_int("Tâche de sauvegarde à attendre (create_snapshot, reprise…)")), ("timeout_secs", prop_int("Attente maximale en secondes (défaut 60, max 600)"))], &["server_id"])),
         tool("deploy_and_verify", "DÉPLOIE UN PLUGIN OU MOD COMPILÉ ET VÉRIFIE QU'IL S'ACTIVE (boucle de développement) : lit le .jar LOCAL (`local_path`) et son descripteur (plugin.yml, paper-plugin.yml, fabric.mod.json, mods.toml… : nom, version, plateforme), l'envoie par SFTP (`remote_path`, défaut /plugins/<fichier> pour un plugin, /mods/<fichier> pour un mod), repère un autre jar du MÊME plugin sous un autre nom (mis de côté en .old avec `replace_previous`, sinon signalé), redémarre (`restart` : restart | none ; démarre un serveur éteint), attend `running` (`timeout_secs` défaut 180, max 600) puis analyse la console du démarrage. Verdict JSON : `ok`, `plugin`, `version`, `uploaded_bytes`, `startup_secs`, `enabled` (ligne « Enabling … » de Bukkit/Paper, liste des mods de Fabric, déduit pour Forge/NeoForge) et `evidence`, `loaded_version`, `errors` et `warnings` qui le concernent (source probable = ce plugin), `other_errors`, `deploy_warnings`, `console_tail`. Lit un fichier de la machine LOCALE : réservé au serveur MCP local. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("local_path", prop_str("Chemin LOCAL du .jar compilé")), ("remote_path", prop_str("Chemin distant (défaut : /plugins/ ou /mods/ selon le descripteur ; un dossier finissant par / reçoit le nom du fichier)")), ("restart", prop_str("restart (défaut) | none")), ("replace_previous", prop_bool("Renommer en .old un autre jar du même plugin (défaut false : seulement le signaler)")), ("timeout_secs", prop_int("Attente du démarrage en secondes (défaut 180, max 600)"))], &["server_id", "local_path"])),
-        // [lot:boucle] fin
-        // [lot:manifeste] début (config_edit.rs, manifest.rs)
         tool("get_config", "LIT une config STRUCTURÉE (YAML .yml/.yaml, TOML, JSON/JSONC, .properties) via SFTP. Avec `key` : la valeur TYPÉE (nombre, booléen, texte, liste, objet) ; chemin `a.b.c`, index `a.list[0]`, clé à points entre guillemets `forced-hosts.\"lobby.example.com\"` ; .properties : clé entière (`rcon.password`). Sans `key` : l'arborescence des valeurs (300 au plus). Clé absente : clés disponibles au niveau le plus proche. Secrets (password, secret, token, key…) toujours masqués en [SECRET]. À préférer à read_file avant set_config.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant, ex. /plugins/LuckPerms/config.yml")), ("key", prop_str("Chemin de clé (optionnel ; sans : arborescence)"))], &["server_id", "path"])),
         tool("set_config", "MODIFIE des clés d'une config structurée (YAML, TOML, JSON/JSONC, .properties) SANS casser le fichier : seule la valeur visée est réécrite (commentaires, ordre, indentation, guillemets gardés), une clé absente est créée au bon niveau. Le résultat est RELU avant écriture : s'il ne s'analyse plus, si la valeur relue diffère ou si une autre clé bouge, rien n'est écrit. Valeurs JSON typées (`10`, `true`, `\"texte\"`, liste, objet) ; un texte envoyé sur un nombre ou un booléen existant en garde le type (`keep_type`). Renvoie les changements et un diff, secrets masqués des deux côtés. Refuse une valeur contenant [SECRET], [IP], [EMAIL] ou [CREDS] (masques de lecture : la vraie valeur serait écrasée). `dry_run` : diff sans écrire. Effet au rechargement du plugin ou au redémarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("changes", crate::config_edit::changes_schema()), ("create_missing", prop_bool("Créer les clés absentes (défaut true)")), ("keep_type", prop_bool("Garder le type d'un nombre/booléen existant si la valeur est un texte convertible (défaut true)")), ("dry_run", prop_bool("Montrer le diff sans écrire (défaut false)"))], &["server_id", "path", "changes"])),
         tool("export_manifest", "EXPORTE le MANIFESTE déclaratif d'un serveur (format v1 de plan_manifest) : jeu, version du jeu, plateforme, Java, server.properties, commande de démarrage, plugins/mods/datapacks avec leur source quand l'hébergeur les identifie (`source: null` = non réinstallable), liste blanche et opérateurs, tâches planifiées du panel ; configs seulement sur demande (`include_configs`). Secrets masqués en [SECRET] (= valeur actuelle gardée à l'application). Ni mondes ni fichiers. Ne modifie rien : point de départ pour reproduire, versionner ou comparer un serveur.", obj(&[("server_id", prop_int("ID du serveur")), ("include_configs", crate::manifest::config_selection_schema()), ("include_players", prop_bool("Exporter liste blanche et opérateurs (défaut true)"))], &["server_id"])),
         tool("plan_manifest", "COMPARE un MANIFESTE au serveur réel SANS RIEN MODIFIER : étapes ordonnées (identifiant stable, statut ok = conforme | change | add | remove | manual = action humaine ou écriture non gérée — jeu, version, Java, fichier de config pas encore généré | unsupported), valeurs actuelle et voulue, diffs des configs et fichiers (secrets masqués), contenu présent mais absent du manifeste (`unlisted`). Format v1 : {version: 1, server?: {name, game, egg_id, game_version, loader, java_version}, properties?: {clé: valeur}, startup?: {parameters, jar_file}, content?: [{kind: plugin|mod|datapack, source: modrinth|curseforge|spigot, project, version?, file?, name?, loader?}] ou {items, remove_unlisted}, configs?: [{path, set: {\"a.b\": valeur}}], files?: [{path, content}], players?: {whitelist?, ops?, remove_unlisted?}, schedules?: [{name, cron, is_active?, only_when_online?, tasks: [{action, payload, time_offset?, continue_on_failure?}]}] ou {items, remove_unlisted}} ; toute section est facultative, [SECRET] = garder la valeur actuelle. À appeler avant apply_manifest.", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema())], &["server_id", "manifest"])),
         tool("apply_manifest", "APPLIQUE un MANIFESTE (format de plan_manifest) : recalcule le plan puis exécute les étapes change/add/remove dans l'ordre — renommage, commande de démarrage, server.properties, installation/remplacement/retrait de contenu, clés de configs (comme set_config), fichiers, joueurs (serveur démarré), tâches planifiées. IDEMPOTENT : relancé après une coupure, ne refait rien de conforme. Snapshot préalable attendue (défaut ; sans elle rien n'est modifié, `snapshot=false` pour s'en passer). `steps` : identifiants ou préfixes d'étapes du plan à appliquer seuls (\"properties\", \"content.plugin\"). Une étape échouée n'arrête que celles qui en dépendent (config d'un plugin dont l'installation a échoué). Rapport étape par étape (réussie, conforme, ignorée, échouée + raison) ; manual/unsupported restent à faire. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema()), ("steps", prop_str_array("Étapes à appliquer seules : identifiants ou préfixes (défaut : toutes)")), ("snapshot", prop_bool("Snapshot préalable attendue (défaut true)"))], &["server_id", "manifest"])),
         tool("clone_server", "CLONE un serveur dans une MyBox pour tester avant la prod : crée un serveur du même jeu (vérifications de mybox_create_server ; CPU/RAM de la source par défaut si la MyBox a la place, sinon ce qui reste), attend la fin de l'installation, l'arrête s'il a démarré, copie les fichiers de la source (plugins, mods, configs, server.properties… ; MONDES EXCLUS sauf include_world=true ; journaux jamais), puis applique le manifeste de la source (commande de démarrage, réglages, tâches planifiées). Long (plusieurs minutes, progression). La sortie donne `created_server_id`, y compris si une étape suivante échoue. Le clone reste arrêté. Vérifie d'abord la place (mybox_capacity, plan_placement) et confirme avec l'utilisateur. ✎ (modifiant)", obj(&[("source_server_id", prop_int("ID du serveur à cloner")), ("mybox_id", prop_int("MyBox d'accueil (mybox_capacity)")), ("name", prop_str("Nom du clone (1 à 50 caractères)")), ("cpu", prop_int("Cœurs (défaut : ceux de la source si la place le permet)")), ("ram", prop_int("Go de RAM (défaut : ceux de la source si la place le permet)")), ("include_world", prop_bool("Copier aussi les mondes (défaut false)")), ("exclude", prop_str_array("Chemins à ne pas copier, ex. [\"/plugins/dynmap/web\"]")), ("location_id", prop_int("Localisation (server_catalog) ; défaut : celle de la source si en stock")), ("required_fields", json!({ "type": "object", "description": "Champs requis du jeu : { CLÉ: valeur } (server_catalog)", "additionalProperties": { "type": "string" } }))], &["source_server_id", "mybox_id", "name"])),
-        // [lot:manifeste] fin
-        // [lot:garde] début (agent_guard.rs)
         // --- Garde des agents ---
         tool("list_agent_actions", "JOURNAL des actions des agents MCP (clients externes et agents CLI du Copilote) : horodatage, session, client, outil (✎ = modifiant), serveur(s), arguments résumés et ANONYMISÉS (contenus de fichiers remplacés par leur taille, secrets masqués), résultat (ok, erreur, refusé + motif), durée, étape de changeset créée. Du plus récent au plus ancien. Filtres : `server_id`, `session`, `since` (`30m`, `12h`, `7d`, `AAAA-MM-JJ` ou horodatage Unix), `only_writes`, `limit` (défaut 30, max 200).", obj(&[("server_id", prop_int("Seulement les appels visant ce serveur")), ("session", prop_str("Seulement cette session (identifiant affiché par list_agent_actions ou list_changesets)")), ("since", prop_str("Depuis : 30m, 12h, 7d, AAAA-MM-JJ ou horodatage Unix")), ("only_writes", prop_bool("Seulement les outils modifiants")), ("limit", prop_int("Lignes renvoyées (défaut 30, max 200)"))], &[])),
         tool("list_changesets", "MODIFICATIONS des agents regroupées par session (« changeset » : une session MCP, ou le Copilote par serveur et par jour) : étapes dans l'ordre (outil, cible, serveur), annulable ou NON (et pourquoi : commande console, capture au-delà des plafonds, réglage secret…), déjà annulée ou non. `changeset_id` pour un seul, `server_id` pour filtrer (seulement les étapes de ce serveur), `limit` (défaut 10, max 50). À consulter avant rollback_changeset.", obj(&[("changeset_id", prop_str("Identifiant du changeset")), ("server_id", prop_int("Seulement ce serveur")), ("limit", prop_int("Changesets renvoyés (défaut 10, max 50)"))], &[])),
         tool("rollback_changeset", "ANNULE les modifications d'un changeset (voir list_changesets), de la plus récente à la plus ancienne : fichiers écrits, édités, téléversés ou supprimés remis dans leur état précédent, renommages défaits, dossiers et fichiers créés retirés (dossier non vide conservé), réglage server.properties et commande de démarrage remis. `steps` = seulement les N dernières étapes encore en place. Une étape dont la cible a CHANGÉ depuis est REFUSÉE et l'annulation s'arrête, sauf `force` (écrase ces changements). Les étapes non annulables (commande console, power, infrastructure…) sont signalées et passées. Demande confirmation à l'utilisateur quand le client le permet. Rapport étape par étape. ✎ (modifiant)", obj(&[("changeset_id", prop_str("Identifiant du changeset (list_changesets)")), ("steps", prop_int("Seulement les N dernières étapes encore en place (défaut : toutes)")), ("force", prop_bool("Annuler même si une cible a changé depuis (écrase ces changements ; défaut false)"))], &["changeset_id"])),
-        // [lot:garde] fin
     ])
 }
 
@@ -2331,8 +2273,6 @@ mod tests {
         assert_eq!(schema("uptime_report")["required"], json!(["server_id"]));
         assert_eq!(schema("list_incidents")["required"], json!([]));
     }
-
-    // [lot:protocole] début (mcp.rs)
     #[test]
     fn mcp_config_reads_older_files_without_toolsets() {
         // Un `mcp.json` d'avant les groupes d'outils : tous les groupes restent exposés.
@@ -2353,8 +2293,6 @@ mod tests {
         assert!(def["inputSchema"]["required"].as_array().unwrap().contains(&json!("confirm_name")));
         assert!(is_write_tool("mybox_delete_server") && INFRA_TOOLS.contains(&"mybox_delete_server"));
     }
-    // [lot:protocole] fin
-    // [lot:boucle] début (agent_loop.rs)
 
     /// Agir puis vérifier : lectures en direct (jamais en cache), commande et déploiement
     /// modifiants, déploiement hors de portée du Copilote (disque local), tous exclusifs.
@@ -2383,9 +2321,6 @@ mod tests {
         assert_eq!(schema("deploy_and_verify")["required"], json!(["server_id", "local_path"]));
         assert_eq!(schema("wait_for")["required"], json!(["server_id"]));
     }
-
-    // [lot:boucle] fin
-    // [lot:manifeste] début (config_edit.rs, manifest.rs)
     #[test]
     fn manifest_and_config_tools_are_classified() {
         // Lectures : jamais gatées, offertes au Copilote, gardées face au MCP officiel.
@@ -2415,8 +2350,6 @@ mod tests {
         assert_eq!(schema("clone_server")["required"], json!(["source_server_id", "mybox_id", "name"]));
         assert!(schema("export_manifest")["properties"]["include_configs"].is_object());
     }
-    // [lot:manifeste] fin
-    // [lot:garde] début (agent_guard.rs)
 
     #[test]
     fn agent_guard_tools_are_classified_and_kept_from_the_copilot() {
@@ -2463,5 +2396,4 @@ mod tests {
             assert_ne!(plan, "défaut", "{t} : ajouter une arme dans agent_guard::undo::plan_for");
         }
     }
-    // [lot:garde] fin
 }

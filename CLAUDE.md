@@ -129,7 +129,12 @@ est envoyé au serveur.
 **Ajouter un outil MCP** : `crates/minestrator-core/src/mcp.rs` → schéma dans `tool_list()` +
 `dispatch_inner()` + inscription dans `READ_TOOLS` **ou** `WRITE_TOOLS`. La garde est en
 **deny-by-default** : un outil absent de `READ_TOOLS` est traité comme modifiant, un outil absent des
-deux listes est refusé. Un test du module vérifie cette cohérence. Mets `MCP.md` à jour (catalogue).
+deux listes est refusé. Un test du module vérifie cette cohérence. Puis : classement dans un groupe
+(`TOOL_GROUPS` de `mcp_catalog.rs`, plus `NON_DESTRUCTIVE_TOOLS` / `IDEMPOTENT_TOOLS` /
+`OPEN_WORLD_TOOLS` pour les annotations) et, pour un outil modifiant, une règle d'annulation dans
+`agent_guard/undo.rs` (`plan_for`) et éventuellement une portée dans `agent_guard/scope.rs` — des
+tests échouent sinon. Un outil long appelle `mcp_ctx::progress` / `cancelled`, et `mcp_ctx::confirm`
+**avant** tout effet (l'ère sans état rejoue l'appel). Mets `MCP.md` à jour (catalogue).
 
 **Ajouter un fournisseur LLM** : un variant dans `llm.rs` + son (dé)sérialiseur ; l'agent parle un
 format normalisé (`ToolSpec`/`Msg`/`ToolCall`/`ToolResult`), `copilot.rs` ne bouge pas. Les agents CLI
