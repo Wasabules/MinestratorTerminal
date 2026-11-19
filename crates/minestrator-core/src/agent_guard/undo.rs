@@ -219,6 +219,11 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
             }
             None => Plan::Unreadable,
         },
+        // Valeur écrite par référence à un secret des agents : la capture garderait la valeur écrite
+        // en clair (constat après l'action), comme pour un réglage secret.
+        "set_property" if text("value").is_some_and(|v| crate::agent_secrets::has_refs(&v)) => {
+            Plan::Fixed("valeur écrite par un secret des agents : jamais conservée, donc non annulable")
+        }
         "set_property" => match (int("server_id"), text("property")) {
             (Some(server), Some(key)) => Plan::Property { server, key },
             _ => Plan::Unreadable,
@@ -277,6 +282,8 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Réseau proxy : chaque fichier (config du proxy, secret, paper-global.yml, spigot.yml) et
         // l'online-mode passent par `mcp::dispatch` (`guarded_write`), une étape chacun.
         "link_proxy" => Plan::Skip,
+        // Secret des agents : créé dans le stockage sécurisé de l'ordinateur, aucun serveur touché.
+        "generate_secret" => Plan::Fixed("secret des agents créé : à supprimer depuis l'app (Réglages → MCP → Secrets des agents)"),
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }
@@ -1233,6 +1240,20 @@ mod tests {
         assert_eq!(
             plan_for("set_config", &json!({ "server_id": 3, "path": "/a.yml", "dry_run": false })),
             Plan::Files { server: 3, paths: vec!["/a.yml".into()] }
+        );
+    }
+
+    #[test]
+    fn generated_secret_is_a_fixed_step_with_its_reason() {
+        // Rien sur un serveur à capturer : étape non annulable, qui dit où le supprimer.
+        let plan = plan_for("generate_secret", &json!({ "name": "rcon" }));
+        assert!(matches!(plan, Plan::Fixed(r) if r.contains("Secrets des agents") && r != NO_CAPTURE), "{plan:?}");
+        // Réglage écrit par référence : la valeur constatée après l'action n'est jamais gardée.
+        let by_ref = plan_for("set_property", &json!({ "server_id": 1, "property": "motd", "value": "{{secret:x}}" }));
+        assert!(matches!(by_ref, Plan::Fixed(r) if r.contains("secret des agents")), "{by_ref:?}");
+        assert_eq!(
+            plan_for("set_property", &json!({ "server_id": 1, "property": "motd", "value": "Salut" })),
+            Plan::Property { server: 1, key: "motd".into() }
         );
     }
 

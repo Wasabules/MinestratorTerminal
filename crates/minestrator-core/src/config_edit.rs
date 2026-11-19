@@ -1268,7 +1268,7 @@ pub(crate) async fn set_config_tool(core: &Core, args: &Value) -> Result<String,
         .get("path")
         .and_then(Value::as_str)
         .ok_or("paramètre `path` (texte) requis")?;
-    let requests = parse_changes(args.get("changes"))?;
+    let mut requests = parse_changes(args.get("changes"))?;
     if requests.len() > MAX_CHANGES {
         return Err(format!(
             "{} modifications : {MAX_CHANGES} au plus par appel (découpe en plusieurs appels)",
@@ -1282,9 +1282,12 @@ pub(crate) async fn set_config_tool(core: &Core, args: &Value) -> Result<String,
         skip_masked: false,
     };
     let dry_run = flag("dry_run", false);
+    // Références `{{secret:NOM}}` (agent_secrets.rs) : résolues avant tout effet ; changements et
+    // diff montrent la référence à la place de la valeur, quelle que soit la clé.
+    crate::agent_secrets::resolve_edit_requests(core, &mut requests)?;
     let (path, outcome, written) = core.config_edit(id, path, &requests, opts, dry_run).await?;
     let out = render_outcome(&path, &outcome, dry_run, written);
-    Ok(render_for_ai(core, out))
+    Ok(render_for_ai(core, crate::redact::mask_known_secrets_value(out)))
 }
 
 #[cfg(test)]

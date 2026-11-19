@@ -2593,15 +2593,19 @@ pub(crate) async fn export_manifest_tool(core: &Core, args: &Value) -> Result<St
 /// Outil `plan_manifest`.
 pub(crate) async fn plan_manifest_tool(core: &Core, args: &Value) -> Result<String, String> {
     let id = server_arg(args)?;
-    let m = manifest_arg(args)?;
+    let mut m = manifest_arg(args)?;
+    // Références `{{secret:NOM}}` (agent_secrets.rs) : comparées par leur valeur, montrées telles quelles.
+    crate::agent_secrets::resolve_manifest(core, &mut m)?;
     let plan = Box::pin(build_plan(core, id, &m)).await?;
-    Ok(config_edit::render_for_ai(core, render_plan(id, &plan)))
+    Ok(config_edit::render_for_ai(core, crate::redact::mask_known_secrets_value(render_plan(id, &plan))))
 }
 
 /// Outil `apply_manifest`.
 pub(crate) async fn apply_manifest_tool(core: &Core, args: &Value) -> Result<String, String> {
     let id = server_arg(args)?;
-    let m = manifest_arg(args)?;
+    let mut m = manifest_arg(args)?;
+    // Références `{{secret:NOM}}` (agent_secrets.rs) : résolues avant la snapshot et toute écriture.
+    crate::agent_secrets::resolve_manifest(core, &mut m)?;
     let opts = ApplyOptions {
         steps: match args.get("steps") {
             Some(Value::Array(a)) => a
@@ -2618,5 +2622,5 @@ pub(crate) async fn apply_manifest_tool(core: &Core, args: &Value) -> Result<Str
             .unwrap_or(true),
     };
     let out = Box::pin(apply(core, id, &m, &opts)).await?;
-    Ok(config_edit::render_for_ai(core, out))
+    Ok(config_edit::render_for_ai(core, crate::redact::mask_known_secrets_value(out)))
 }

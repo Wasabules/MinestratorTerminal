@@ -41,6 +41,10 @@ pub const KEYRING_ACCOUNT_SFTP_PREFIX: &str = "sftp-password-";
 /// Préfixe de compte trousseau pour l'URL d'une destination d'alertes (`webhook-url-<id>`) : une
 /// URL de webhook Discord suffit à poster dans le salon, c'est donc un secret à part entière.
 pub const KEYRING_ACCOUNT_WEBHOOK_PREFIX: &str = "webhook-url-";
+/// Préfixe de compte trousseau pour un **secret des agents** (`agent-secret-<nom>`) : valeur
+/// qu'un agent MCP écrit dans une config par la référence `{{secret:<nom>}}` sans jamais la voir
+/// (voir `agent_secrets.rs` ; noms et descriptions, non secrets, dans `agent_secrets.json`).
+pub const KEYRING_ACCOUNT_AGENT_SECRET_PREFIX: &str = "agent-secret-";
 
 /// Version d'API Anthropic (en-tête `anthropic-version`).
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";

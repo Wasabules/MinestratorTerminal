@@ -85,8 +85,11 @@ mod db_connect;
 mod pregen;
 // Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`.
 mod network;
+// Secrets des agents : valeurs écrites par référence `{{secret:NOM}}`, jamais vues par l'agent.
+mod agent_secrets;
 
 pub use accounts::{Account, AccountSwitch};
+pub use agent_secrets::{AgentSecret, SecretCharset};
 pub use agent_guard::{
     ActionOutcome, AgentAction, AgentActionQuery, ChangeOrigin, ChangeStep, Changeset,
     RollbackReport, RollbackStatus, RollbackStep, StepState, WriteScope,
@@ -215,6 +218,9 @@ pub struct Core {
     automation: automation::AutomationState,
     /// Destinations d'alertes externes (webhooks) : config non secrète et répartiteur.
     webhooks: webhook::WebhookState,
+    /// Secrets des agents : index non secret (`agent_secrets.json`, relu à chaque accès) et
+    /// valeurs déjà masquées ; les valeurs sont dans le stockage sécurisé.
+    agent_secrets: agent_secrets::AgentSecrets,
 }
 
 impl Core {
@@ -248,6 +254,7 @@ impl Core {
             service_link: service::ServiceLink::new(&dir),
             automation: automation::AutomationState::load(&dir),
             webhooks: webhook::WebhookState::load(&dir),
+            agent_secrets: agent_secrets::AgentSecrets::new(&dir),
             chat_sessions: Mutex::new(HashMap::new()),
             transfer_cancels: Mutex::new(HashMap::new()),
             cache: cache::TtlCache::default(),
@@ -311,12 +318,15 @@ impl Core {
         self.privacy.set(cfg);
     }
 
-    /// Anonymise un texte destiné à un agent IA **si** l'anonymisation IA est activée.
+    /// Anonymise un texte destiné à un agent IA **si** l'anonymisation IA est activée. Les valeurs
+    /// des secrets des agents sont remplacées par leur référence `{{secret:NOM}}` dans tous les
+    /// cas (`agent_secrets.rs`).
     pub(crate) fn redact_ai(&self, text: &str) -> String {
+        self.refresh_secret_masks();
         if self.privacy.get().redact_ai {
             redact::redact(text)
         } else {
-            text.to_string()
+            redact::mask_known_secrets(text).into_owned()
         }
     }
 

@@ -35,6 +35,7 @@
   import AccountsSection from '../settings/AccountsSection.svelte';
   import WebhooksSection from '../settings/WebhooksSection.svelte';
   import AgentGuardSection from '../settings/AgentGuardSection.svelte';
+  import AgentSecretsSection from '../settings/AgentSecretsSection.svelte';
   import McpToolsetsSection from '../settings/McpToolsetsSection.svelte';
 
   type Section =
@@ -818,6 +819,9 @@
 
       <!-- Garde des agents : portée des écritures, journal, modifications annulables. -->
       <AgentGuardSection bind:config={mcp} {servers} onsave={saveMcp} />
+
+      <!-- Secrets des agents : écrits dans les configs par référence, jamais vus par l'agent. -->
+      <AgentSecretsSection />
     {:else if section === 'copilot' && copilot}
       <h1>{t('settings.copilot')}</h1>
 
