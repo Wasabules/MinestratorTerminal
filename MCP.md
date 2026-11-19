@@ -141,7 +141,7 @@ mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
 > `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **52 outils de lecture**
-> + **42 modifiants** (dont 23 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage, manifeste appliqué, clone, annulation, prégénération, base de données, réseau proxy). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file`, `deploy_and_verify` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Des tests vérifient que chaque
+> + **42 modifiants** (dont 23 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage, manifeste appliqué, clone, annulation, prégénération, base de données, réseau proxy). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file`, `deploy_and_verify`, `sync_dir`, `upload_world`, `apply_to_servers` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Des tests vérifient que chaque
 > outil listé est classé lecture **ou** écriture, que chaque outil classé a son schéma, appartient à
 > un seul groupe (`TOOL_GROUPS`, `mcp_catalog.rs`) et, s'il est modifiant, a une règle d'annulation
 > dans la garde des agents.
@@ -661,6 +661,101 @@ session) ; `link_proxy` est dans `INFRA_TOOLS` (plusieurs serveurs, secret) : ja
 Copilote. En mode constructeur, `link_proxy` vise le proxy **et** chaque serveur de jeu. Le
 prompt `setup_velocity_network` enchaîne `network_topology` puis `link_proxy`.
 
+#### Depuis l'ordinateur et sur plusieurs serveurs
+
+Configurer des serveurs depuis le PC (configs et plugins tenus dans un dépôt git, monde préparé en
+solo) et répéter la même action sur un réseau (`core/src/local_sync.rs`,
+`core/src/world_upload.rs`, `core/src/fleet_apply.rs`). Absents du MCP officiel. Les trois lisent
+le disque de l'ordinateur (`LOCAL_DISK_TOOLS`) : **jamais** donnés au Copilote ; `upload_world`
+et `apply_to_servers` sont en plus dans `INFRA_TOOLS`. Aucun n'a d'étape propre dans la garde des
+agents (`Plan::Skip`) : chaque sous-écriture passe par `agent_guard::guarded_write`
+(`mcp::dispatch`) et devient une étape annulable (`rollback_changeset`).
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `sync_dir` | ✎ | `server_id`, `local_dir`, `remote_dir`, `delete_extra?`, `include?[]`, `exclude?[]`, `dry_run?` (défaut **true**) | `status`, `counts` (`added`, `modified`, `unchanged`, `deleted`, `skipped`, `excluded_by_patterns`), `bytes_to_send`, listes `added` / `modified` (taille distante et raison) / `deleted` / `skipped` (raison), `patterns`, `limits` ; après application : `done` (`uploaded`, `bytes_sent`, `deleted`), `error` et `not_done` au besoin, `guard` (mentions de la garde), `next`. Jamais le contenu des fichiers ni leurs empreintes. |
+| `upload_world` | ✎ | `server_id`, `local_path`, `world_name?`, `replace?`, `stop?`, `set_level_name?`, `start_after?`, `snapshot?` (défaut true), `dry_run?` (défaut **true**) | `status`, `edition`, `world`, `target`, `server_state`, `level_name` (`current`, `after`), `source` (`kind`, `files`, `bytes`, `archive_bytes`, `root_stripped`, `ignored`), `aside` (`from` → `to`), `problems`, `warnings`, `steps` (prévues, ou faites), `snapshot`, `uploaded_archive_bytes`, `limits`, `next`. |
+| `apply_to_servers` | ✎ | `server_ids[]` (20 au plus), `tool`, `arguments?` (sans `server_id`), `stop_on_error?` (défaut true), `dry_run?` | `counts` (ok, erreur, ignoré, simulé, non exécuté) et `servers[{server_id, name, status, output? \| error? \| why?}]` dans l'ordre de `server_ids`, `stopped_after_error_on`, `cancelled`, `next`. |
+
+**`sync_dir`.**
+
+- **Parcours local** : liens symboliques jamais suivis (signalés), `.git/` toujours exclu, noms non
+  UTF-8 ou avec séparateur refusés (signalés). Motifs glob : `*` et `?` dans un segment, `**` pour
+  n'importe quel nombre de segments, `/` final = dossiers seulement ; sans `/` le motif vise le nom
+  à toute profondeur (`*.log`), avec `/` il part de la racine du dossier synchronisé
+  (`plugins/*.jar`, `/config/`). Un chemin est exclu si lui ou l'un de ses dossiers l'est ;
+  `include` (vide = tout) retient les fichiers. Les motifs valent **des deux côtés** : un fichier
+  exclu n'est ni envoyé ni supprimé.
+- **Lecture distante** : sans `delete_extra`, seuls les dossiers distants qui correspondent à un
+  dossier local sont listés (non récursif) — synchroniser des configs vers `/` ne parcourt pas les
+  mondes. Avec `delete_extra`, `remote_dir` est listé en entier (20 000 entrées au plus).
+- **Comparaison** : taille, puis sha256 à taille égale. L'API ne donne aucune empreinte d'un
+  fichier quelconque (seulement le sha1 des jars de `plugins/` et `mods/`) : le fichier distant est
+  lu par SFTP, **32 Mio par fichier et 256 Mio par appel au plus** ; au-delà il est renvoyé
+  (« empreinte non vérifiée »). Conflits (un dossier distant porte le nom d'un fichier local, un
+  parent distant est un fichier, lien distant) : ignorés et expliqués, jamais forcés.
+- **Suppressions** (`delete_extra`, défaut false, **refusé à la racine `/`**) : fichiers distants
+  sous `remote_dir`, dans la portée des motifs, absents en local — un fichier présent localement
+  (même ignoré : trop gros, lien…) n'est jamais supprimé ; puis les dossiers ainsi vidés et absents
+  en local, du plus profond au moins profond.
+- **Plafonds** (affichés dans `limits`) : 5 000 fichiers locaux, 128 Mio par fichier (au-delà :
+  ignoré), 1 Gio envoyé et 500 suppressions par appel (au-delà : refus avant tout envoi).
+- **Application** : simulation complète d'abord ; envois (`upload_file`, ou `write_file` pour un
+  texte préparé) puis suppressions (`delete_path`), arrêt au premier échec (`error`, `not_done`),
+  progression MCP et annulation entre deux fichiers. Relancée sur un dossier déjà synchronisé, rien
+  n'est envoyé (idempotente).
+- **Point d'accroche** (`local_sync::TEXT_HOOK`, vide pour l'instant) : traitement des fichiers
+  texte (UTF-8, 2 Mio au plus) avant comparaison et envoi ; un texte rendu remplace le fichier
+  (comparé puis écrit par `write_file`, jamais affiché) ; un refus arrête tout avant le premier
+  effet. Prévu pour les références de secrets `{{secret:NOM}}`.
+
+**`upload_world`.**
+
+- **Source** : dossier du monde, ou archive `.zip` (`.mcworld` pour Bedrock) ; `level.dat` exigé.
+  Un dossier racine en trop (`MonMonde/level.dat`) est retiré ; plusieurs mondes (`world/` et
+  `world_nether/` avec chacun un `level.dat`), `level.dat` trop profond, entrée dangereuse (`..`,
+  chemin absolu) ou chiffrée : refus. Liens symboliques, `session.lock`, `__MACOSX`, `.DS_Store`,
+  `Thumbs.db`, `desktop.ini` écartés. Monde Bedrock (base `db/`) vers Java, ou l'inverse : refus.
+- **Archive** : compressée sur la machine dans un fichier temporaire (les entrées d'un `.zip`
+  fourni sont recopiées sans recompression, renommées) ; le monde y est à la racine.
+- **Cible** : `world_name`, sinon `level-name` de `server.properties` (`world`, ou
+  `Bedrock level`, s'il manque) ; Java : `/<nom>`, Bedrock : `/worlds/<nom>`. Nom d'un seul dossier,
+  sans caractère spécial.
+- **Refus avant tout effet** (listés dans `problems` en simulation) : serveur démarré sans
+  `stop=true`, état illisible, monde existant sans `replace=true`, place libre insuffisante (monde +
+  archive, plus petit espace libre du serveur et de la MyBox), archive au-delà de 512 Mio.
+- **Étapes** : confirmation de l'humain (élicitation MCP) si l'arrêt est nécessaire, **avant tout
+  effet** (refus : rien n'est fait) ; arrêt (`power_action`) et attente de `offline` (3 min au
+  plus) ; snapshot **attendue** (sans elle, aucun fichier n'est touché) ; ancien monde et, sur Java,
+  ses dossiers `<nom>_nether` / `<nom>_the_end` renommés `<nom>.old-<AAAAMMJJ-HHMMSS>` (suffixe
+  `-2`… si le nom est pris ; **jamais supprimés**) ; envoi de l'archive (`upload_file`,
+  `/.minestrator-world-<date>.zip`) ; extraction par le serveur (`extract_archive`) dans le dossier
+  du monde ; `level.dat` vérifié ; archive temporaire supprimée (même après un échec) ;
+  `level-name` (`set_property`) si `set_level_name=true` ; démarrage si `start_after=true`. Un échec
+  en cours de route rend ce qui est fait et rappelle `rollback_changeset`.
+- **Plafonds** : archive de 512 Mio (celui d'`upload_file`), 50 000 fichiers, 8 Gio décompressés.
+  Au-delà de 5 000 entrées, l'extraction n'est plus annulable par la garde (signalé) : la snapshot
+  reste le filet.
+
+**`apply_to_servers`.**
+
+- **Outils relayables** : `install_mod`, `update_mods`, `set_config`, `set_property`,
+  `write_file`, `edit_file`, `upload_file`, `delete_path`, `rename_path`, `create_dir`,
+  `sync_dir`, `deploy_and_verify`, `send_command` — bornés à un serveur ; jamais un outil
+  d'`INFRA_TOOLS` (donc pas `set_startup_params`), jamais lui-même. `arguments` ne peut désigner
+  aucun serveur (`server_id`, `server_ids`, `mybox_id`… refusés) : `server_id` est injecté.
+- **Contrôles** : ceux d'un appel direct à l'outil relayé — groupe actif, liste blanche d'env,
+  écritures permises — puis, par serveur : présent sur le compte, jeu compatible
+  (`tool_for_game`), mode constructeur (`write_targets` voit déjà tous les `server_ids`, et chaque
+  appel est revérifié), portée du Copilote. Un serveur refusé est « ignoré » avec la raison.
+- **`dry_run`** : transmis à `set_config` et `sync_dir` (il prime sur celui des `arguments`) ;
+  pour les autres outils, `dry_run=true` n'exécute rien (« simulé »).
+- **Exécution** : un serveur après l'autre, par `mcp::dispatch` (garde des agents : une étape par
+  modification) ; progression et annulation entre deux serveurs ; `stop_on_error` (défaut) arrête
+  au premier échec. Sortie de chaque outil gardée (JSON court tel quel, sinon tronquée à 4 000
+  caractères), le tout anonymisé (`redact`). Au journal des agents, les arguments relayés sont
+  résumés comme un appel direct (contenu de fichier remplacé par sa taille).
+
 #### Garde des agents
 
 Journal et annulation des actions des agents (`crates/minestrator-core/src/agent_guard.rs`),
@@ -726,6 +821,9 @@ conversation (imposé à ses agents CLI, `server_id` exigé dans l'app).
 - **Réseaux proxy** : `network_topology` (proxys Velocity / BungeeCord → serveurs du compte,
   cohérence et problèmes, secrets comparés sans être montrés) → `link_proxy` (relier des serveurs
   à un proxy, secret réutilisé ou généré sans jamais apparaître, dry_run par défaut)
+- **Depuis l'ordinateur, sur plusieurs serveurs** : `sync_dir` (dossier local synchronisé, git
+  compris, suppressions bornées, dry_run par défaut), `upload_world` (monde local installé, ancien
+  monde renommé, snapshot préalable), `apply_to_servers` (même outil sur une liste de serveurs)
 - **Garde des agents** : `list_agent_actions` (journal), `list_changesets` → `rollback_changeset`
   (annuler ce qu'un agent a modifié)
 
@@ -823,7 +921,7 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 |---|---|
 | `core` | `list_servers`, `server_status` — **toujours actif** (identifiants des serveurs). |
 | `console` | `power_action`, `send_command`, `read_console` |
-| `files` | `list_files`, `read_file`, `read_gz`, `list_archive`, `read_archive_entry`, `search_files`, `disk_usage`, `download_file`, `file_stat`, `write_file`, `upload_file`, `edit_file`, `create_dir`, `delete_path`, `rename_path`, `extract_archive`, `compress_files` |
+| `files` | `list_files`, `read_file`, `read_gz`, `list_archive`, `read_archive_entry`, `search_files`, `disk_usage`, `download_file`, `file_stat`, `write_file`, `upload_file`, `edit_file`, `create_dir`, `delete_path`, `rename_path`, `extract_archive`, `compress_files`, `sync_dir`, `upload_world` |
 | `config` | `read_startup`, `set_startup_params`, `read_properties`, `set_property` |
 | `content` | `list_installed_mods`, `list_installed_plugins`, `market_search`, `list_mod_versions`, `install_mod`, `check_updates`, `update_mods`, `check_plugin_deps`, `ficsit_search`, `ficsit_versions`, `install_ficsit_mod` |
 | `players` | `list_players`, `player_action`, `find_player` |
@@ -831,7 +929,7 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 | `diagnostics` | `server_metrics`, `analyze_performance`, `parse_spark_report`, `diagnose_startup`, `inspect_region`, `world_info`, `audit_server`, `search_logs`, `error_digest`, `uptime_report`, `list_incidents` |
 | `mybox` | `mybox_info`, `mybox_capacity`, `server_catalog`, `plan_placement`, `mybox_smartscan`, `mybox_create_server`, `mybox_resize_server`, `rename_server`, `rename_mybox`, `mybox_pause_server`, `mybox_reorder_servers`, `mybox_delete_server` |
 | `schedules` | `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `add_schedule_task`, `update_schedule_task`, `delete_schedule_task`, `reorder_schedule_tasks` |
-| `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command` |
+| `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command`, `apply_to_servers` |
 | `agent` | Boucle « agir puis vérifier » (`run_command`, `wait_for`, `tail_console`, `deploy_and_verify`…). |
 | `build` | Configurations structurées, manifestes et réseaux proxy (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`, `network_topology`, `link_proxy`…), prégénération et base de données (`pregenerate_world`, `connect_database`). |
 | `guard` | Garde des agents (`list_agent_actions`, `rollback_changeset`…). |
@@ -887,6 +985,7 @@ d'étape.
 | `update_mods` | nouveaux jars retirés, anciens remis (mods et plugins ; datapacks non couverts) |
 | `set_property` | ancienne valeur remise — jamais pour un réglage **secret**, dont la valeur n'est pas conservée |
 | `set_startup_params` | ancienne commande de démarrage remise |
+| `sync_dir`, `upload_world`, `apply_to_servers` | pas d'étape propre : chaque envoi, suppression, renommage, extraction, réglage ou appel relayé est une étape à part (règles ci-dessus) |
 
 Non annulables par nature (étape enregistrée, puis passée à l'annulation) : `send_command`,
 `broadcast_command`, `power_action`, `player_action`, `create_snapshot`, `install_ficsit_mod`,
