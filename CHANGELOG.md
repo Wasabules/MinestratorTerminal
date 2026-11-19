@@ -8,6 +8,19 @@ unique des notes de version. Format inspiré de [Keep a Changelog](https://keepa
 
 ---
 
+## v0.7.1
+
+### Sécurité
+
+- **Le Copilote n'a plus aucun accès aux fichiers de votre ordinateur.** Il pouvait jusqu'ici se
+  voir proposer le téléchargement d'un fichier du serveur vers l'ordinateur, et en mode autonome
+  l'envoi d'un fichier de l'ordinateur vers le serveur. Comme il lit le chat des joueurs, un
+  message piégé pouvait l'amener à écrire un fichier n'importe où sur l'ordinateur, ou à envoyer
+  un fichier personnel sur le serveur. Ces transferts restent disponibles dans l'application et
+  pour les clients MCP que vous configurez vous-même.
+
+---
+
 ## v0.7.0
 
 ### Nouvelle apparence « Biome »
