@@ -247,6 +247,15 @@ par un message explicite et `uptime_report` par un `warning` — jamais une list
 présentés comme un bilan. Sorties anonymisées comme `read_console`/`read_file` (`redact`) ; pseudos
 des journaux remplacés par l'alias de `list_players` quand l'anonymisation IA est active.
 
+<!-- [lot:boucle] début -->
+<!-- [lot:boucle] fin -->
+
+<!-- [lot:manifeste] début -->
+<!-- [lot:manifeste] fin -->
+
+<!-- [lot:garde] début -->
+<!-- [lot:garde] fin -->
+
 ### Couverture par domaine
 
 - **Découverte & état** : `list_servers`, `server_status`, `mybox_info`, `list_schedules`
@@ -368,6 +377,11 @@ MCP. Politique dans `crates/minestrator-core/src/official_relay.rs`.
 - **Serveur lancé par le Copilote** (`MINESTRATOR_MCP_COPILOT_SERVER=<id>`) : pas de passerelle,
   mais un relais restreint à la politique du Copilote (lecture + liste blanche, voir
   [`COPILOT.md`](./COPILOT.md) §4) ; tout appel, local ou relayé, visant un autre serveur est refusé.
+
+<!-- [lot:protocole] début -->
+<!-- [lot:protocole] fin -->
+<!-- [lot:garde] début (réglages) -->
+<!-- [lot:garde] fin -->
 
 ## 7. Se connecter (depuis n'importe quel client MCP)
 

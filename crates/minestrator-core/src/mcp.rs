@@ -26,6 +26,10 @@ pub struct McpConfig {
     /// `official_relay.rs`) ; la variable `MINESTRATOR_MCP_OFFICIAL` prime sur ce réglage.
     #[serde(default)]
     pub official_gateway: bool,
+    // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
+    // [lot:protocole] fin
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 }
 
 impl Default for McpConfig {
@@ -34,6 +38,10 @@ impl Default for McpConfig {
             enabled: true,
             allow_writes: true,
             official_gateway: false,
+            // [lot:protocole] début (mcp.rs, mcp_ctx.rs)
+            // [lot:protocole] fin
+            // [lot:garde] début (agent_guard.rs)
+            // [lot:garde] fin
         }
     }
 }
@@ -160,6 +168,12 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "error_digest",
     "uptime_report",
     "list_incidents",
+    // [lot:boucle] début (agent_loop.rs)
+    // [lot:boucle] fin
+    // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // [lot:manifeste] fin
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -209,6 +223,12 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     // Plusieurs serveurs (fleet.rs, voir INFRA_TOOLS) : jamais proposés au Copilote.
     "copy_between_servers",
     "broadcast_command",
+    // [lot:boucle] début (agent_loop.rs)
+    // [lot:boucle] fin
+    // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // [lot:manifeste] fin
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -240,6 +260,12 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // Commande de démarrage : exécutée par le shell du conteneur à chaque démarrage, une injection
     // y deviendrait une commande persistante. Même règle que `set_startup_config` côté officiel.
     "set_startup_params",
+    // [lot:boucle] début (agent_loop.rs)
+    // [lot:boucle] fin
+    // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // [lot:manifeste] fin
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 ];
 
 /// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
@@ -343,6 +369,12 @@ pub(crate) const LOCAL_KEEP_TOOLS: &[&str] = &[
     "error_digest",
     "uptime_report",
     "list_incidents",
+    // [lot:boucle] début (agent_loop.rs)
+    // [lot:boucle] fin
+    // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // [lot:manifeste] fin
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 ];
 
 // --- tools/call -----------------------------------------------------------
@@ -439,6 +471,9 @@ async fn call(core: &Core, params: Value) -> Value {
     if is_write_tool(&name) && !cfg.allow_writes {
         return tool_err("Actions modifiantes désactivées (mode lecture seule) dans les réglages.");
     }
+
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 
     match dispatch(core, &name, args).await {
         Ok(text) => tool_text(text),
@@ -561,6 +596,12 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         // un instant suffit (un appel répété à l'identique ne retélécharge rien).
         "search_logs" | "error_digest" => 15,
         "uptime_report" | "list_incidents" => 10,
+        // [lot:boucle] début (agent_loop.rs)
+        // [lot:boucle] fin
+        // [lot:manifeste] début (config_edit.rs, manifest.rs)
+        // [lot:manifeste] fin
+        // [lot:garde] début (agent_guard.rs)
+        // [lot:garde] fin
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1379,6 +1420,13 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             .await
             .map_err(es),
 
+        // [lot:boucle] début (agent_loop.rs)
+        // [lot:boucle] fin
+        // [lot:manifeste] début (config_edit.rs, manifest.rs)
+        // [lot:manifeste] fin
+        // [lot:garde] début (agent_guard.rs)
+        // [lot:garde] fin
+
         _ => Err(format!("outil inconnu : {name}")),
     }
 }
@@ -1546,6 +1594,12 @@ fn build_tool_list() -> Value {
         tool("error_digest", "RÉSUMÉ DES ERREURS d'un serveur : regroupe erreurs et avertissements des journaux (fenêtre `since_hours`, défaut 24 h ; latest.log + archives) ou de la console récente par SIGNATURE (classe d'exception de la cause première + premières frames utiles, sans nombres, adresses ni horodatages). Par groupe : niveau (FATAL, SEVERE, ERROR, WARN), nombre, première et dernière occurrence, plugin ou mod probable (`probable_source.evidence` : event, enable, load, task, mod, jar, prefix, logger, package — du plus au moins sûr), exemple tronqué. Trié par gravité puis fréquence. À appeler avant search_logs pour savoir ce qui plante.", obj(&[("server_id", prop_int("ID du serveur")), ("source", prop_str("auto (défaut : journaux, sinon console) | logs | console")), ("since_hours", prop_int("Fenêtre en heures (défaut 24, max 720)")), ("include_warnings", prop_bool("Inclure les avertissements WARN (défaut true)")), ("limit", prop_int("Groupes renvoyés (défaut 15, max 50)")), ("dir", prop_str("Dossier des journaux (défaut selon le jeu)")), ("max_files", prop_int("Fichiers lus au plus (défaut 8, max 30)"))], &["server_id"])),
         tool("uptime_report", "DISPONIBILITÉ d'un serveur sur 24 h, 7 j et 30 j (% du temps SURVEILLÉ) et liste des coupures (début, fin, durée, cause : crash, stop ou inconnue), d'après la surveillance de l'app et du service d'arrière-plan, complétée par les statistiques de l'hébergeur là où rien ne surveillait (`host_share_pct` : part déduite de l'hébergeur, qui ne prouve jamais une coupure). Même calcul que la carte Disponibilité de l'app ; `warning` si aucune surveillance locale n'existe.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("list_incidents", "HISTORIQUE DES INCIDENTS détectés par la surveillance : crash (arrêt inattendu), surcharge (cpu, ram, disk), échéance de MyBox (expiry), redémarrage automatique, tâche planifiée — avec les DIAGNOSTICS du Copilote rattachés (résumé, cause, correctif, actions proposées), du plus récent au plus ancien. Un serveur (`server_id`) ou tous ceux du compte. Sources : journal local de l'app, service d'arrière-plan, crashs du suivi de disponibilité ; `coverage` dit ce qui a été consulté (un journal vide n'est pas « aucun incident »).", obj(&[("server_id", prop_int("ID du serveur (optionnel : tous les serveurs du compte)")), ("limit", prop_int("Incidents renvoyés (défaut 20, max 100)")), ("since_days", prop_int("Période en jours (défaut 30, max 32)")), ("kind", prop_str("Filtre : crash | cpu | ram | disk | expiry | auto_restart | task | diagnosis"))], &[])),
+        // [lot:boucle] début (agent_loop.rs)
+        // [lot:boucle] fin
+        // [lot:manifeste] début (config_edit.rs, manifest.rs)
+        // [lot:manifeste] fin
+        // [lot:garde] début (agent_guard.rs)
+        // [lot:garde] fin
     ])
 }
 
@@ -2120,4 +2174,13 @@ mod tests {
         assert_eq!(schema("uptime_report")["required"], json!(["server_id"]));
         assert_eq!(schema("list_incidents")["required"], json!([]));
     }
+
+    // [lot:protocole] début (mcp.rs)
+    // [lot:protocole] fin
+    // [lot:boucle] début (agent_loop.rs)
+    // [lot:boucle] fin
+    // [lot:manifeste] début (config_edit.rs, manifest.rs)
+    // [lot:manifeste] fin
+    // [lot:garde] début (agent_guard.rs)
+    // [lot:garde] fin
 }

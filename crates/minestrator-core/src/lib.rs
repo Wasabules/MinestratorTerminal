@@ -67,6 +67,13 @@ mod yaml_lite;
 // Journaux et historique : outils MCP `search_logs`, `error_digest`, `uptime_report`, `list_incidents`.
 mod incidents;
 mod server_logs;
+// Outils des agents MCP : contexte d'appel (progression, confirmation), boucle « agir puis
+// vérifier », édition structurée des configs et manifeste, garde des agents.
+pub mod mcp_ctx;
+mod agent_loop;
+mod config_edit;
+mod manifest;
+mod agent_guard;
 
 pub use accounts::{Account, AccountSwitch};
 pub use archive::ArchiveEntry;
