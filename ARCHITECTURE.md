@@ -345,6 +345,22 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   cohérence des serveurs de jeu (`network_topology`) ; liaison (`network/link.rs`, `link_proxy`) :
   plan pur avec diffs masqués, secret de transfert réutilisé ou généré (CSPRNG) et jamais rendu,
   écritures par `agent_guard::guarded_write`.
+- **`local_sync`** — outil **`sync_dir`** : dossier de l'ordinateur synchronisé vers un dossier
+  d'un serveur (parcours local sans suivre les liens, motifs glob `include`/`exclude`, `.git/`
+  exclu, plan pur, sha256 à taille égale avec lecture distante plafonnée, suppressions bornées à
+  `remote_dir` et aux motifs). Trait `ServerSide` (lectures SFTP, écritures nommées comme les
+  outils MCP et passées par `guarded_write`) partagé avec `world_upload`, testé sur le faux serveur
+  de la garde ; point d'accroche `TEXT_HOOK` pour les fichiers texte avant envoi. Dans
+  `LOCAL_DISK_TOOLS`.
+- **`world_upload`** — outil **`upload_world`** : monde local (dossier ou `.zip`) vérifié
+  (`level.dat`, dossier racine en trop, entrées dangereuses), recompressé ou recopié sans
+  recompression (`zip`), arrêt confirmé par l'humain, snapshot attendue, ancien monde renommé
+  `<nom>.old-<date>`, envoi et extraction par le serveur, `level-name`. Dans `LOCAL_DISK_TOOLS` et
+  `INFRA_TOOLS`.
+- **`fleet_apply`** — outil **`apply_to_servers`** : même outil modifiant (liste blanche, jamais
+  un outil d'`INFRA_TOOLS`) sur une liste de serveurs, `server_id` injecté, contrôles d'un appel
+  direct puis par serveur (jeu, mode constructeur), appels par `mcp::dispatch`, rapport par
+  serveur. Dans `LOCAL_DISK_TOOLS` et `INFRA_TOOLS`.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

@@ -26,7 +26,9 @@
 
 mod scope;
 mod store;
-mod undo;
+// Visible dans la crate : `Meta`, `sha_hex` et le faux serveur des tests servent aussi aux outils
+// qui envoient depuis l'ordinateur (`local_sync`, `world_upload`).
+pub(crate) mod undo;
 
 pub use scope::{WriteScope, MCP_ALLOWED_SERVERS_ENV, MCP_WRITE_SCOPE_ENV};
 
@@ -548,6 +550,12 @@ pub(crate) fn summarize_args(name: &str, args: &Value, write: bool) -> String {
             "confirm_name" => json!("‹fourni›"),
             "command" | "payload" if v.is_string() => json!(clip_command(v.as_str().unwrap_or_default(), base)),
             "find" | "replace" => summarize_value(k, v, 60, 0),
+            // Arguments relayés par `apply_to_servers` : mêmes règles que l'appel direct de l'outil
+            // (contenus de fichiers remplacés par leur taille, commandes masquées…).
+            "arguments" if name == "apply_to_servers" && v.is_object() => {
+                let tool = args.get("tool").and_then(Value::as_str).unwrap_or_default();
+                serde_json::from_str(&summarize_args(tool, v, write)).unwrap_or(Value::Null)
+            }
             _ => summarize_value(k, v, base, 0),
         };
         out.insert(k.clone(), s);

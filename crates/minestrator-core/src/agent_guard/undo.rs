@@ -277,6 +277,10 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Réseau proxy : chaque fichier (config du proxy, secret, paper-global.yml, spigot.yml) et
         // l'online-mode passent par `mcp::dispatch` (`guarded_write`), une étape chacun.
         "link_proxy" => Plan::Skip,
+        // Dossier local synchronisé, monde envoyé, même outil sur plusieurs serveurs : chaque
+        // sous-écriture (upload_file, write_file, delete_path, rename_path, extract_archive,
+        // set_property, outil relayé…) passe par `mcp::dispatch`, une étape chacune.
+        "sync_dir" | "upload_world" | "apply_to_servers" => Plan::Skip,
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }
