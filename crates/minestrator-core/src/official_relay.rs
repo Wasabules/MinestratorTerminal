@@ -438,6 +438,8 @@ pub(crate) fn bound_local_args(server_id: i64, name: &str, args: Value) -> Value
     let key = match name {
         "find_player" => "server_ids",
         "list_incidents" | "network_topology" => "server_id",
+        // Ping : sans `server_id`, le serveur de la session (jamais un autre, ni un hôte).
+        "ping_server" => "server_id",
         _ => return args,
     };
     match args {
@@ -1621,5 +1623,13 @@ mod tests {
         // Proxy et serveurs de jeu de link_proxy : hors portée s'ils ne sont pas le serveur de la session.
         assert!(scope_violation(5, &json!({ "proxy_server_id": 6, "backend_server_ids": [5] })).is_some());
         assert!(scope_violation(5, &json!({ "proxy_server_id": 5, "backend_server_ids": [5, 7] })).is_some());
+    }
+
+    #[test]
+    fn the_copilot_pings_only_the_server_of_its_session() {
+        // Sans serveur : celui de la session ; un autre serveur est refusé ; jamais d'hôte.
+        assert_eq!(bound_local_args(5, "ping_server", json!({ "bedrock": true }))["server_id"], json!(5));
+        assert!(scope_violation(5, &json!({ "server_id": 6 })).is_some());
+        assert!(scope_violation(5, &json!({ "server_id": 5, "port": 19132 })).is_none());
     }
 }

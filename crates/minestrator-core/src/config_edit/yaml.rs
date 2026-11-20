@@ -1177,6 +1177,146 @@ fn append_to_seq(
     Ok(splice(text, at..at, &format!("{}{line}", st.nl)))
 }
 
+// --- Retrait d'une clé ------------------------------------------------------------------------------
+
+/// Position après le saut de ligne qui suit `pos` (fin de ligne de [`eol`]).
+fn after_newline(text: &str, pos: usize) -> usize {
+    if text[pos..].starts_with("\r\n") {
+        pos + 2
+    } else if text[pos..].starts_with('\n') {
+        pos + 1
+    } else {
+        pos
+    }
+}
+
+/// Retire la clé au bout de `path` (dernier segment : une clé de section). Section du chemin
+/// absente, ancre, alias ou clé en double : erreur, rien n'est retiré. La dernière clé d'une
+/// section en bloc laisse une section vide (`{}`), jamais une valeur nulle.
+pub(super) fn remove(text: &str, path: &[Seg]) -> Result<String, String> {
+    let Some((Seg::Key(last), parents)) = path.split_last() else {
+        return Err(
+            "retrait d'un élément de liste par index non pris en charge : réécris la liste entière"
+                .into(),
+        );
+    };
+    let doc = parse(text)?;
+    let st = Style::detect(&doc);
+    let Some(root) = &doc.root else {
+        return Err("clé absente (document vide)".into());
+    };
+    let mut node = root;
+    let mut slot = Slot::Root;
+    for (i, seg) in parents.iter().enumerate() {
+        let here = || super::render_key_path(&path[..i]);
+        if let Kind::Alias(_) = node.kind {
+            return Err(format!(
+                "« {} » est un alias YAML (*…) : modifie l'ancre d'origine",
+                here()
+            ));
+        }
+        if node.anchored && i > 0 {
+            return Err(format!(
+                "« {} » est ancrée (&…) et réutilisée ailleurs par alias : retrait refusé (edit_file)",
+                here()
+            ));
+        }
+        match (seg, &node.kind) {
+            (Seg::Key(k), Kind::Map(entries)) => {
+                let found: Vec<&Entry> = entries.iter().filter(|e| &e.key == k).collect();
+                match found.as_slice() {
+                    [] => return Err(format!("section « {k} » absente")),
+                    [e] => {
+                        slot = Slot::Entry(e);
+                        node = &e.value;
+                    }
+                    _ => {
+                        return Err(format!(
+                            "clé « {k} » en double dans le fichier : corrige d'abord le doublon"
+                        ))
+                    }
+                }
+            }
+            (Seg::Index(n), Kind::Seq(items)) => match items.get(*n) {
+                Some(item) => {
+                    slot = Slot::Item {
+                        seq: node,
+                        index: *n,
+                    };
+                    node = item;
+                }
+                None => {
+                    return Err(format!(
+                        "index [{n}] hors de la liste « {} » ({} élément(s))",
+                        here(),
+                        items.len()
+                    ))
+                }
+            },
+            (Seg::Key(_), _) => return Err(format!("« {} » n'est pas une section", here())),
+            (Seg::Index(_), _) => return Err(format!("« {} » n'est pas une liste", here())),
+        }
+    }
+    if node.anchored || matches!(node.kind, Kind::Alias(_)) {
+        return Err(
+            "section ancrée (&…) ou alias (*…), réutilisée ailleurs : retrait refusé (edit_file)"
+                .into(),
+        );
+    }
+    let Kind::Map(entries) = &node.kind else {
+        return Err(format!(
+            "« {} » n'est pas une section",
+            super::render_key_path(parents)
+        ));
+    };
+    let idx: Vec<usize> = entries
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| &e.key == last)
+        .map(|(i, _)| i)
+        .collect();
+    let i = match idx.as_slice() {
+        [] => return Err("clé absente".into()),
+        [i] => *i,
+        _ => {
+            return Err(format!(
+                "clé « {last} » en double dans le fichier : corrige d'abord le doublon"
+            ))
+        }
+    };
+    let e = &entries[i];
+    if e.value.anchored {
+        return Err(
+            "valeur ancrée (&…), réutilisée ailleurs par alias : retrait refusé (edit_file)".into(),
+        );
+    }
+    // Section en ligne, ou dernière clé d'une section : la section est réécrite (vide : `{}`).
+    if node.flow || entries.len() == 1 {
+        let mut v = doc.value(node);
+        if let Value::Object(m) = &mut v {
+            m.remove(last.as_str());
+        }
+        return replace(&doc, slot, node, &v, st);
+    }
+    let colon = colon_after(text, e.key_end)?;
+    let ls = line_start(text, e.key_start);
+    let value_empty = is_null_scalar(&e.value) && e.value.start == e.value.end;
+    let end = if value_empty || e.value.start < colon {
+        eol(text, e.key_start)
+    } else {
+        eol(text, e.value.end.max(e.key_end))
+    };
+    if text[ls..e.key_start].trim().is_empty() {
+        // Lignes de la clé et de sa valeur.
+        return Ok(splice(text, ls..after_newline(text, end), ""));
+    }
+    // Première clé d'un élément de liste (`- a: 1`) : la clé suivante remonte sur la ligne du tiret.
+    match entries.get(i + 1) {
+        Some(next) if i == 0 => Ok(splice(text, e.key_start..next.key_start, "")),
+        _ => Err("clé partageant sa ligne avec une autre construction : retrait par clé non pris en charge (edit_file)".into()),
+    }
+}
+
 // --- Secrets ---------------------------------------------------------------------------------------
 
 /// Plages des valeurs secrètes (scalaires sous une clé secrète, à tout niveau).

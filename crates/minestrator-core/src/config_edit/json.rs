@@ -493,6 +493,86 @@ fn append_item(text: &str, arr: &Node, value: &Value, u: &str, nl: &str) -> Resu
     }
 }
 
+// --- Retrait d'une clé --------------------------------------------------------------------------------
+
+/// Fin de la ligne de `pos` et position après son saut de ligne.
+fn line_end_after(text: &str, pos: usize) -> (usize, usize) {
+    let end = text[pos..].find('\n').map_or(text.len(), |i| pos + i);
+    (end, (end + 1).min(text.len()))
+}
+
+/// Retire la clé au bout de `path` (dernier segment : une clé d'objet), avec sa virgule. Un
+/// membre seul sur ses lignes part avec elles ; le dernier membre d'un objet le laisse vide (`{}`).
+pub(super) fn remove(text: &str, path: &[Seg]) -> Result<String, String> {
+    let Some((Seg::Key(last), parents)) = path.split_last() else {
+        return Err(
+            "retrait d'un élément de liste par index non pris en charge : réécris la liste entière"
+                .into(),
+        );
+    };
+    if text.trim().is_empty() {
+        return Err("clé absente (document vide)".into());
+    }
+    let root = parse(text)?;
+    let mut node = &root;
+    for (i, seg) in parents.iter().enumerate() {
+        let here = || super::render_key_path(&path[..i]);
+        match (seg, &node.kind) {
+            (Seg::Key(k), Kind::Obj(members)) => {
+                let found: Vec<&Member> = members.iter().filter(|m| &m.key == k).collect();
+                match found.as_slice() {
+                    [m] => node = &m.value,
+                    [] => return Err(format!("section « {k} » absente")),
+                    _ => return Err(format!("clé « {k} » en double dans le fichier")),
+                }
+            }
+            (Seg::Index(n), Kind::Arr(items)) => {
+                node = items.get(*n).ok_or_else(|| {
+                    format!("index [{n}] hors de la liste ({} élément(s))", items.len())
+                })?;
+            }
+            (Seg::Key(_), _) => return Err(format!("« {} » n'est pas un objet", here())),
+            (Seg::Index(_), _) => return Err(format!("« {} » n'est pas une liste", here())),
+        }
+    }
+    let Kind::Obj(members) = &node.kind else {
+        return Err(format!(
+            "« {} » n'est pas un objet",
+            super::render_key_path(parents)
+        ));
+    };
+    let idx: Vec<usize> = members
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| &m.key == last)
+        .map(|(i, _)| i)
+        .collect();
+    let i = match idx.as_slice() {
+        [] => return Err("clé absente".into()),
+        [i] => *i,
+        _ => return Err(format!("clé « {last} » en double dans le fichier")),
+    };
+    let m = &members[i];
+    if members.len() == 1 {
+        return Ok(splice(text, node.start..node.end, "{}"));
+    }
+    if i + 1 == members.len() {
+        // Dernier membre : de la fin de la valeur précédente (sa virgule comprise) à sa fin.
+        return Ok(splice(text, members[i - 1].value.end..m.value.end, ""));
+    }
+    let after = trailing_comma(text, m.value.end).unwrap_or(m.value.end);
+    let ls = line_start(text, m.key_start);
+    let (eol, next_line) = line_end_after(text, after);
+    let rest = text[after..eol].trim();
+    if text[ls..m.key_start].trim().is_empty() && (rest.is_empty() || rest.starts_with("//")) {
+        return Ok(splice(text, ls..next_line, ""));
+    }
+    let skip = text[after..]
+        .find(|c: char| c != ' ' && c != '\t')
+        .map_or(text.len(), |p| after + p);
+    Ok(splice(text, m.key_start..skip, ""))
+}
+
 // --- Secrets ------------------------------------------------------------------------------------------
 
 /// Plages des valeurs secrètes.

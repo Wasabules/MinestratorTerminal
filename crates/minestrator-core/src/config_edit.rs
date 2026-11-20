@@ -26,6 +26,9 @@ mod json;
 mod props;
 mod toml_cfg;
 mod yaml;
+// Retrait de clés (`set_config` avec `remove`, `link_proxy` avec `prune`, annulation clé par clé).
+mod remove;
+pub(crate) use remove::{edit_text_removing, parse_removals};
 
 use crate::Core;
 use serde::Serialize;
@@ -1268,11 +1271,16 @@ pub(crate) async fn set_config_tool(core: &Core, args: &Value) -> Result<String,
         .get("path")
         .and_then(Value::as_str)
         .ok_or("paramètre `path` (texte) requis")?;
-    let requests = parse_changes(args.get("changes"))?;
-    if requests.len() > MAX_CHANGES {
+    // `remove` : clés à retirer ; `changes` devient alors facultatif.
+    let removals = parse_removals(args.get("remove"))?;
+    let requests = match args.get("changes") {
+        None | Some(Value::Null) if !removals.is_empty() => Vec::new(),
+        v => parse_changes(v)?,
+    };
+    if requests.len() + removals.len() > MAX_CHANGES {
         return Err(format!(
             "{} modifications : {MAX_CHANGES} au plus par appel (découpe en plusieurs appels)",
-            requests.len()
+            requests.len() + removals.len()
         ));
     }
     let flag = |k: &str, d: bool| args.get(k).and_then(Value::as_bool).unwrap_or(d);
@@ -1282,7 +1290,12 @@ pub(crate) async fn set_config_tool(core: &Core, args: &Value) -> Result<String,
         skip_masked: false,
     };
     let dry_run = flag("dry_run", false);
-    let (path, outcome, written) = core.config_edit(id, path, &requests, opts, dry_run).await?;
+    let (path, outcome, written) = if removals.is_empty() {
+        core.config_edit(id, path, &requests, opts, dry_run).await?
+    } else {
+        core.config_edit_removing(id, path, &requests, &removals, opts, dry_run)
+            .await?
+    };
     let out = render_outcome(&path, &outcome, dry_run, written);
     Ok(render_for_ai(core, out))
 }

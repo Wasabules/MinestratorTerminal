@@ -135,14 +135,27 @@ impl Plan {
     }
 }
 
-/// Clés visées par `set_config` (`changes[].key`) ; `None` si illisibles.
+/// Clés visées par `set_config` (`changes[].key`, et les clés retirées de `remove`) ; `None` si
+/// illisibles.
 fn config_keys(args: &Value) -> Option<Vec<String>> {
-    let keys: Vec<String> = args
-        .get("changes")?
-        .as_array()?
-        .iter()
-        .map(|c| c.get("key").and_then(Value::as_str).map(str::to_string))
-        .collect::<Option<_>>()?;
+    let mut keys: Vec<String> = match args.get("changes") {
+        None | Some(Value::Null) => Vec::new(),
+        Some(changes) => changes
+            .as_array()?
+            .iter()
+            .map(|c| c.get("key").and_then(Value::as_str).map(str::to_string))
+            .collect::<Option<_>>()?,
+    };
+    match args.get("remove") {
+        None | Some(Value::Null) => {}
+        Some(Value::String(s)) => keys.push(s.trim().to_string()),
+        Some(Value::Array(a)) => keys.extend(
+            a.iter()
+                .map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .collect::<Option<Vec<_>>>()?,
+        ),
+        Some(_) => return None,
+    }
     (!keys.is_empty()).then_some(keys)
 }
 
@@ -277,6 +290,9 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Réseau proxy : chaque fichier (config du proxy, secret, paper-global.yml, spigot.yml) et
         // l'online-mode passent par `mcp::dispatch` (`guarded_write`), une étape chacun.
         "link_proxy" => Plan::Skip,
+        // Préréglage de réseau : installations (install_mod), configs (set_config) et clé de
+        // Floodgate (copy_between_servers) passent par `guarded_write`, une étape chacune.
+        "network_preset" => Plan::Skip,
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }
@@ -616,9 +632,13 @@ fn config_tree(path: &str, data: &[u8]) -> Result<Value, String> {
     format.tree(text.trim_start_matches('\u{feff}'))
 }
 
-/// Valeur d'une clé dans un arbre de config.
-fn key_value<'a>(tree: &'a Value, key: &str) -> Result<Option<&'a Value>, String> {
-    let segs = crate::config_edit::parse_key_path(key)?;
+/// Valeur d'une clé dans un arbre de config (`path` : fichier, pour la forme des clés — une clé de
+/// `.properties` est prise entière, `rcon.password` compris).
+fn key_value<'a>(path: &str, tree: &'a Value, key: &str) -> Result<Option<&'a Value>, String> {
+    let segs = match crate::config_edit::Format::detect(path) {
+        Some(f) => f.parse_key(key)?,
+        None => crate::config_edit::parse_key_path(key)?,
+    };
     Ok(crate::config_edit::get_path(tree, &segs))
 }
 
@@ -632,13 +652,15 @@ async fn key_fps<R: Remote>(r: &R, path: &str, keys: &[String]) -> Option<Vec<Ke
     let data = r.read(path, FILE_CAP).await.ok()?;
     let tree = config_tree(path, &data).ok()?;
     keys.iter()
-        .map(|k| key_value(&tree, k).ok().map(|v| KeyFp { key: k.clone(), after: value_hash(v) }))
+        .map(|k| key_value(path, &tree, k).ok().map(|v| KeyFp { key: k.clone(), after: value_hash(v) }))
         .collect()
 }
 
 /// Annulation clé par clé d'un fichier réécrit depuis l'action : `Ok(None)` si les clés ont déjà
-/// leur valeur d'avant, `Ok(Some(texte))` = contenu actuel avec ces seules clés remises. `Err` :
-/// pourquoi c'est impossible (clé modifiée depuis, clé créée par l'action, fichier illisible).
+/// leur valeur d'avant, `Ok(Some(texte))` = contenu actuel avec ces seules clés remises. Une clé
+/// modifiée reprend sa valeur, une clé **retirée** par l'action est recréée (en fin de sa
+/// section), une clé **créée** par l'action est retirée (sa section, si l'action l'a créée aussi,
+/// reste vide). `Err` : pourquoi c'est impossible (clé modifiée depuis, fichier illisible).
 async fn revert_keys<R: Remote>(
     r: &R,
     path: &str,
@@ -649,30 +671,40 @@ async fn revert_keys<R: Remote>(
     let cur_tree = config_tree(path, &current)?;
     let before_tree = config_tree(path, before)?;
     let mut requests = Vec::new();
+    let mut removals = Vec::new();
     for k in keys {
-        let now = key_value(&cur_tree, &k.key)?;
-        let then = key_value(&before_tree, &k.key)?;
+        let now = key_value(path, &cur_tree, &k.key)?;
+        let then = key_value(path, &before_tree, &k.key)?;
         if value_hash(now) == value_hash(then) {
             continue;
         }
         if value_hash(now) != k.after {
             return Err(format!("la clé « {} » a changé depuis", k.key));
         }
-        let Some(then) = then else {
-            return Err(format!(
-                "la clé « {} » a été créée par l'action (retrait clé par clé non pris en charge)",
-                k.key
-            ));
-        };
-        requests.push(crate::config_edit::EditRequest { key: k.key.clone(), value: then.clone() });
+        match then {
+            // Modifiée ou retirée par l'action : valeur d'avant (recréée si elle a disparu).
+            Some(then) => requests.push(crate::config_edit::EditRequest { key: k.key.clone(), value: then.clone() }),
+            // Créée par l'action : retirée.
+            None => removals.push(k.key.clone()),
+        }
     }
-    if requests.is_empty() {
+    if requests.is_empty() && removals.is_empty() {
         return Ok(None);
     }
     let format = crate::config_edit::Format::detect(path).ok_or("format de config non pris en charge")?;
     let text = String::from_utf8(current).map_err(|_| "fichier non UTF-8".to_string())?;
-    let opts = crate::config_edit::EditOptions { create_missing: false, keep_type: false, skip_masked: false };
-    let out = crate::config_edit::edit_text(format, path, &text, &requests, opts, &|l: &str| l.to_string())?;
+    // Clé à recréer : sa valeur d'avant est remise même si la clé a disparu (vérifié plus haut :
+    // elle n'a pas bougé depuis l'action).
+    let opts = crate::config_edit::EditOptions { create_missing: true, keep_type: false, skip_masked: false };
+    let out = crate::config_edit::edit_text_removing(
+        format,
+        path,
+        &text,
+        &requests,
+        &removals,
+        opts,
+        &|l: &str| l.to_string(),
+    )?;
     Ok(Some(out.new_text))
 }
 
@@ -1228,6 +1260,13 @@ mod tests {
         assert!(matches!(plan_for("pregenerate_world", &json!({})), Plan::Fixed(r) if r != NO_CAPTURE));
         // Base de données : sans étape propre, l'écriture de la config (set_config) en a une.
         assert_eq!(plan_for("connect_database", &json!({ "server_id": 3, "target": "luckperms" })), Plan::Skip);
+        // Préréglage de réseau : chaque installation, config et copie de clé a son étape.
+        assert_eq!(plan_for("network_preset", &json!({ "preset": "geyser", "proxy_server_id": 1 })), Plan::Skip);
+        // Retrait seul (`remove`, sans `changes`) : config capturée avec les clés retirées.
+        assert_eq!(
+            plan_for("set_config", &json!({ "server_id": 3, "path": "/velocity.toml", "remove": ["servers.factions"] })),
+            Plan::Config { server: 3, path: "/velocity.toml".into(), keys: vec!["servers.factions".into()] }
+        );
         // Simulation de set_config : pas d'étape ; écriture : le fichier est capturé.
         assert_eq!(plan_for("set_config", &json!({ "server_id": 3, "path": "/a.yml", "dry_run": true })), Plan::Skip);
         assert_eq!(
@@ -1294,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    fn key_changed_since_or_created_by_the_action_is_refused() {
+    fn key_changed_since_the_action_is_refused() {
         block(async {
             let path = "/plugins/A/config.yml";
             let s = FakeServer::new();
@@ -1306,17 +1345,75 @@ mod tests {
             let e = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap_err();
             assert!(matches!(&e, UndoError::Refused(m) if m.contains("« a » a changé")), "{e:?}");
             assert_eq!(s.text(path).unwrap(), "# autre\na: 3\n");
-            // Clé créée par l'action : pas de retrait clé par clé.
+            // `force` remet toujours la copie entière.
+            undo_ops(&s, &ops, &cap.blobs, true).await.unwrap();
+            assert_eq!(s.text(path).unwrap(), "a: 1\n");
+        });
+    }
+
+    #[test]
+    fn key_created_by_the_action_is_removed_key_by_key() {
+        block(async {
+            let path = "/plugins/A/config.yml";
             let s = FakeServer::new();
             s.put(path, "a: 1\n");
             let args = json!({ "server_id": 1, "path": path, "changes": [{ "key": "b", "value": 2 }] });
             let (ops, _, cap) = roundtrip(&s, plan_for("set_config", &args), |s| s.put(path, "a: 1\nb: 2\n")).await;
-            s.put(path, "# réécrit\na: 1\nb: 2\n");
+            // Le serveur réécrit sa config (commentaire, clé nouvelle) : seule « b » est retirée.
+            s.put(path, "# réécrit\na: 1\nb: 2\nc: 3\n");
+            let remarks = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            assert!(remarks.iter().any(|r| r.contains("seules les clés")), "{remarks:?}");
+            assert_eq!(s.text(path).unwrap(), "# réécrit\na: 1\nc: 3\n");
+            // Clé créée puis modifiée par quelqu'un d'autre : refus.
+            let s = FakeServer::new();
+            s.put(path, "a: 1\n");
+            let (ops, _, cap) = roundtrip(&s, plan_for("set_config", &args), |s| s.put(path, "a: 1\nb: 2\n")).await;
+            s.put(path, "# réécrit\na: 1\nb: 9\n");
             let e = undo_ops(&s, &ops, &cap.blobs, false).await.unwrap_err();
-            assert!(matches!(&e, UndoError::Refused(m) if m.contains("créée par l'action")), "{e:?}");
-            // `force` remet toujours la copie entière.
-            undo_ops(&s, &ops, &cap.blobs, true).await.unwrap();
-            assert_eq!(s.text(path).unwrap(), "a: 1\n");
+            assert!(matches!(&e, UndoError::Refused(m) if m.contains("« b » a changé")), "{e:?}");
+        });
+    }
+
+    #[test]
+    fn key_removed_by_the_action_comes_back() {
+        block(async {
+            // `link_proxy` avec `prune` : entrées d'exemple retirées de velocity.toml.
+            let path = "/velocity.toml";
+            let before = "bind = \"0.0.0.0:25565\"\n\n[servers]\nlobby = \"1.2.3.4:25565\"\nfactions = \"127.0.0.1:30067\"\ntry = [\"lobby\"]\n\n[forced-hosts]\n\"factions.example.com\" = [\"factions\"]\n";
+            let s = FakeServer::new();
+            s.put(path, before);
+            let args = json!({ "server_id": 1, "path": path, "remove": ["servers.factions", "forced-hosts.\"factions.example.com\""] });
+            let plan = plan_for("set_config", &args);
+            assert!(matches!(&plan, Plan::Config { keys, .. } if keys.len() == 2), "{plan:?}");
+            let after = "bind = \"0.0.0.0:25565\"\n\n[servers]\nlobby = \"1.2.3.4:25565\"\ntry = [\"lobby\"]\n\n[forced-hosts]\n";
+            let (ops, _, cap) = roundtrip(&s, plan, |s| s.put(path, after)).await;
+            let UndoOp::File { keys: Some(keys), .. } = &ops[0] else { panic!("{ops:?}") };
+            assert!(keys.iter().all(|k| k.after.is_none()), "clés absentes après l'action");
+            // Fichier intact : la copie entière revient.
+            undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            assert_eq!(s.text(path).unwrap(), before);
+            // Fichier réécrit depuis (le proxy a ajouté une clé) : les clés retirées reviennent.
+            let (ops, _, cap) = roundtrip(&s, plan_for("set_config", &args), |s| s.put(path, after)).await;
+            s.put(path, &format!("{after}\n[advanced]\nlogin-ratelimit = 3000\n"));
+            undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            let tree = config_tree(path, s.text(path).unwrap().as_bytes()).unwrap();
+            assert_eq!(tree["servers"]["factions"], json!("127.0.0.1:30067"));
+            assert_eq!(tree["forced-hosts"]["factions.example.com"], json!(["factions"]));
+            assert_eq!(tree["advanced"]["login-ratelimit"], json!(3000), "les ajouts du serveur restent");
+        });
+    }
+
+    #[test]
+    fn properties_keys_are_whole_keys_for_the_undo() {
+        block(async {
+            let path = "/server.properties";
+            let s = FakeServer::new();
+            s.put(path, "motd=A\nrcon.port=25575\n");
+            let args = json!({ "server_id": 1, "path": path, "changes": [{ "key": "rcon.port", "value": "25580" }] });
+            let (ops, _, cap) = roundtrip(&s, plan_for("set_config", &args), |s| s.put(path, "motd=A\nrcon.port=25580\n")).await;
+            s.put(path, "#Réécrit\nmotd=A\nrcon.port=25580\n");
+            undo_ops(&s, &ops, &cap.blobs, false).await.unwrap();
+            assert_eq!(s.text(path).unwrap(), "#Réécrit\nmotd=A\nrcon.port=25575\n");
         });
     }
 

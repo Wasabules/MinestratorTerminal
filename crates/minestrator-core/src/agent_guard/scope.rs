@@ -166,6 +166,14 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
                 (Ok(Some(_)), Ok(ids)) => Targets::Servers(ids),
             }
         }
+        // Préréglage de réseau : comme `link_proxy`, le proxy ET chaque serveur de jeu.
+        "network_preset" => {
+            return match (id_arg(args, "proxy_server_id"), servers_in(args)) {
+                (Err(k), _) | (_, Err(k)) => Targets::Invalid(k),
+                (Ok(None), _) => Targets::Unknown,
+                (Ok(Some(_)), Ok(ids)) => Targets::Servers(ids),
+            }
+        }
         _ => {}
     }
     match servers_in(args) {
@@ -387,5 +395,18 @@ mod tests {
         assert_eq!(created_server_id("Serveur 12 renommé."), None);
         assert_eq!(created_server_id("Erreur : quota"), None);
         assert_eq!(created_server_id("Serveur  créé"), None);
+    }
+
+    #[test]
+    fn a_network_preset_targets_the_proxy_and_each_game_server() {
+        assert_eq!(
+            write_targets("network_preset", &json!({ "preset": "geyser", "proxy_server_id": 9, "backend_server_ids": [4, 2] })),
+            Targets::Servers(vec![2, 4, 9])
+        );
+        assert_eq!(write_targets("network_preset", &json!({ "backend_server_ids": [4] })), Targets::Unknown);
+        assert!(matches!(
+            write_targets("network_preset", &json!({ "proxy_server_id": 9, "backend_server_ids": [4, "x"] })),
+            Targets::Invalid(_)
+        ));
     }
 }

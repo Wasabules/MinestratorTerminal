@@ -22,11 +22,17 @@
 //! sortent jamais. Toute valeur lue est en plus effacée des sorties ([`scrub_value`]), qui passent
 //! ensuite par l'anonymisation IA (`redact.rs`).
 
+mod install;
 mod link;
+mod ping;
+mod preset;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use install::{install_mod_tool, proxy_versions};
 pub(crate) use link::link_proxy_tool;
+pub(crate) use ping::ping_server_tool;
+pub(crate) use preset::network_preset_tool;
 
 use crate::config_edit::Format;
 use crate::findings::Severity;
@@ -212,6 +218,9 @@ pub(crate) struct ProxyConf {
     pub try_order: Vec<String>,
     /// Hôte forcé → serveurs.
     pub forced_hosts: Vec<(String, Vec<String>)>,
+    /// Hôtes forcés du premier listener (les premiers de `forced_hosts`) : BungeeCord en a un jeu
+    /// par listener, `link_proxy` n'écrit que dans le premier. Velocity : tous.
+    pub first_listener_hosts: usize,
     pub forwarding: Forwarding,
     /// Valeur brute de `player-info-forwarding-mode` (Velocity) : sa casse est gardée à l'écriture.
     pub forwarding_raw: Option<String>,
@@ -231,6 +240,7 @@ impl ProxyConf {
             entries: Vec::new(),
             try_order: Vec::new(),
             forced_hosts: Vec::new(),
+            first_listener_hosts: 0,
             forwarding: Forwarding::None,
             forwarding_raw: None,
             online_mode: None,
@@ -313,6 +323,7 @@ pub(crate) fn parse_velocity(text: &str) -> Result<ProxyConf, String> {
             .iter()
             .map(|(h, v)| (h.clone(), yaml_lite::as_list(Some(v))))
             .collect();
+        c.first_listener_hosts = c.forced_hosts.len();
     }
     c.forwarding_raw = tree
         .get("player-info-forwarding-mode")
@@ -352,12 +363,15 @@ pub(crate) fn parse_bungee(text: &str) -> Result<ProxyConf, String> {
     if let Some(first) = listeners.first() {
         c.try_order = yaml_lite::as_list(first.get("priorities"));
     }
-    for l in listeners {
+    for (i, l) in listeners.iter().enumerate() {
         if let Some(Value::Object(m)) = l.get("forced_hosts") {
             for (h, v) in m {
                 c.forced_hosts
                     .push((h.clone(), yaml_lite::as_list(Some(v))));
             }
+        }
+        if i == 0 {
+            c.first_listener_hosts = c.forced_hosts.len();
         }
     }
     c.forwarding = if yaml_lite::as_bool(tree.get("ip_forward")) == Some(true) {
@@ -1908,7 +1922,12 @@ pub(crate) fn orphan_note(label: &str, state: Option<&BackendState>) -> String {
 }
 
 /// Topologie du compte (outil `network_topology`) : sortie JSON et secrets lus (à effacer).
-async fn topology(core: &Core, focus: Option<i64>) -> Result<(Value, Vec<String>), String> {
+/// `ping` : ping Java du proxy et de chaque serveur du compte reconnu.
+async fn topology(
+    core: &Core,
+    focus: Option<i64>,
+    ping: bool,
+) -> Result<(Value, Vec<String>), String> {
     crate::mcp_ctx::progress(0.0, None, "repérage des proxys").await;
     let servers = mc_servers(core).await?;
     if let Some(f) = focus {
@@ -2069,6 +2088,38 @@ async fn topology(core: &Core, focus: Option<i64>) -> Result<(Value, Vec<String>
         all.extend(problems.iter().map(|x| (x.severity, render_problem(x, p))));
         rendered.push(render_proxy(p, ls, &problems));
     }
+    if ping {
+        crate::mcp_ctx::progress(3.0, Some(4.0), "ping des serveurs").await;
+        let mut ids: BTreeSet<i64> = proxies.iter().map(|p| p.server_id).collect();
+        ids.extend(
+            links
+                .iter()
+                .flatten()
+                .filter_map(|l| l.matched.map(|m| m.server_id)),
+        );
+        let eps: Vec<Endpoint> = ids
+            .iter()
+            .filter_map(|id| servers.iter().find(|s| s.id == *id))
+            .filter(|s| s.readable())
+            .filter_map(|s| s.endpoint.clone())
+            .collect();
+        let pings = ping::ping_many(eps).await;
+        for (v, p) in rendered.iter_mut().zip(&proxies) {
+            if let Some(x) = pings.get(&p.server_id) {
+                v["ping"] = x.clone();
+            }
+            if let Some(Value::Array(list)) = v.get_mut("servers") {
+                for s in list {
+                    let id = s
+                        .pointer("/account_server/server_id")
+                        .and_then(Value::as_i64);
+                    if let Some(x) = id.and_then(|id| pings.get(&id)) {
+                        s["ping"] = x.clone();
+                    }
+                }
+            }
+        }
+    }
     all.sort_by_key(|(s, _)| *s);
     let count = |s: Severity| all.iter().filter(|(x, _)| *x == s).count();
     let summary = format!(
@@ -2116,7 +2167,8 @@ pub(crate) async fn network_topology_tool(core: &Core, args: &Value) -> Result<S
                 .ok_or("`server_id` : entier attendu")?,
         ),
     };
-    let (out, secrets) = topology(core, focus).await?;
+    let ping = args.get("ping").and_then(Value::as_bool).unwrap_or(false);
+    let (out, secrets) = topology(core, focus, ping).await?;
     Ok(crate::config_edit::render_for_ai(
         core,
         scrub_value(out, &secrets),
