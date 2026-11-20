@@ -96,7 +96,7 @@ outils. Arguments vérifiés (identifiants entiers, texte court sur une ligne).
 |---|---|---|
 | `diagnose_crash` | `server_id` | Trouver la cause d'un crash ou d'un démarrage impossible, corriger, vérifier. |
 | `prepare_public_launch` | `server_id` | Liste de contrôle avant l'ouverture aux joueurs (sécurité, stabilité, capacité, filets). |
-| `setup_velocity_network` | `proxy_server_id`, `backend_server_ids` | Proxy Velocity + serveurs Paper : `network_topology`, puis `link_proxy` en dry_run et application après accord (transfert moderne ; secret réutilisé ou généré par l'outil, jamais lu ni écrit par l'agent). |
+| `setup_velocity_network` | `mybox_id?`, `template?`, `proxy_server_id?`, `backend_server_ids?` | Réseau Velocity complet depuis un blueprint : `network_template` (ou `export_network` d'un proxy existant), ajustements avec l'utilisateur, `plan_network`, puis `apply_network` après accord (confirmation avant tout effet ; secret de transfert jamais lu ni écrit par l'agent), vérification, reprise idempotente après un échec. Seuls les modèles connus passent dans le texte. |
 | `deploy_plugin` | `server_id`, `local_path`, `plugin_name?` | Déployer un plugin en développement, redémarrer, vérifier, revenir en arrière. |
 | `optimize_performance` | `server_id` | Mesurer, proposer, appliquer un réglage à la fois et mesurer à nouveau. |
 | `security_audit` | `server_id` | Accès, opérateurs, plugins, journaux, actions récentes des agents. |
@@ -809,7 +809,8 @@ constructeur, il vise le proxy **et** chaque serveur de jeu. `ping_server` (grou
 lecture exclusive (`LOCAL_KEEP_TOOLS`), **offerte au Copilote** : elle ne vise qu'un `server_id`
 du compte, donc la portée de sa session s'applique (`scope_violation` refuse un autre serveur ;
 sans `server_id`, `bound_local_args` y met celui de la session), sans aucun effet sur le serveur. Le
-prompt `setup_velocity_network` enchaîne `network_topology` puis `link_proxy`.
+prompt `setup_velocity_network` passe par un blueprint : `network_template` (ou `export_network`),
+`plan_network`, puis `apply_network` (voir « Monter un réseau entier »).
 
 #### Depuis l'ordinateur et sur plusieurs serveurs
 
@@ -975,6 +976,218 @@ JAR reproduit ce montage.
 `server.game_version`, `server.loader`, `server.java` et `startup.jar_file` (voir « Étapes `manual`
 reliées aux outils officiels »).
 
+#### Monter un réseau entier
+
+Décrire un réseau Minecraft complet dans **un seul document** (« blueprint ») — un proxy Velocity
+et un lobby, un survie et un créatif sur Paper, avec plugins, configs, base partagée, routage par
+domaine et mondes — et le monter sur sa MyBox sans le panel (`crates/minestrator-core/src/blueprint.rs`,
+`blueprint/plan.rs`, `blueprint/apply.rs`, `blueprint/export.rs`). Rien n'est réimplémenté : chaque
+étape est faite par l'outil élémentaire (`mybox_create_server`, logique de `set_server_platform`,
+`apply_manifest`, `sync_dir`, `upload_world`, `link_proxy`, `network_preset`,
+`pregenerate_world`, `network_topology`, `ping_server`). Absents du MCP officiel ; Minecraft Java.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `network_template` | | `template?`, `mybox_id?` (requis avec `template`), `version?`, `platform?`, `domain?` | Sans `template` : la liste des modèles. Sinon `blueprint` pré-rempli, `resources` (allocation de chaque serveur, place libre de la MyBox, `warning` si elle manque), `notes`, `next`. |
+| `export_network` | | `server_id` (proxy, ou serveur relié à un seul proxy) | `{ blueprint, notes, next }` : blueprint du réseau existant ; secrets masqués comme `export_manifest`, aucun chemin de l'ordinateur. |
+| `plan_network` | | `blueprint` | **Ne modifie rien.** `status`, `counts` par statut, `capacity`, `servers[{name, proxy, server_id, match, role?, entry?, items[{id, phase, status, summary, detail?}]}]`, `network_items` (liaison, préréglages, place), `order` (phases et serveurs concernés), `create_with` (jeu et localisation des serveurs créés), `to_confirm`, `confirm_names`, `blocked`, `manual`, `next`. |
+| `apply_network` | ✎ | `blueprint`, `dry_run?` (défaut **true**), `confirm_names?[]`, `snapshot?` (défaut true), `start?` (défaut true) | `dry_run` : le plan (`dry_run: true`). Sinon : `status` (`terminé`, `arrêté après un échec`, `annulé`, `déjà conforme`), `servers[{name, server_id}]`, `created`, `snapshots`, `steps[{id, phase, server_id?, outcome, detail?}]`, `failed {step, error}`, `manual`, `verify` (topologie et ping), `resume`, `next`. |
+
+##### Format du blueprint (v1)
+
+Objet JSON passé tel quel dans `blueprint` (un texte JSON est aussi accepté). **Champ inconnu =
+erreur** (à tout niveau, manifestes inclus), chemins de l'ordinateur absolus, références vérifiées.
+
+```json
+{
+  "version": 1,
+  "name": "Réseau Aegis",
+  "mybox_id": 111068,
+  "proxy": {
+    "name": "Proxy", "platform": "velocity", "cpu": 1, "ram": 2, "mode": "modern",
+    "forced_hosts": { "play.exemple.fr": "Lobby", "survie.exemple.fr": "Survie" },
+    "try": ["Lobby"], "prune": true, "bedrock_port": 40001
+  },
+  "servers": [
+    { "name": "Lobby", "role": "lobby", "entry": "lobby", "platform": "paper", "version": "1.21.4", "cpu": 1, "ram": 3,
+      "manifest": { "properties": { "gamemode": "adventure", "pvp": false } },
+      "world": { "local_path": "D:/mondes/lobby", "world_name": "lobby" } },
+    { "name": "Survie", "role": "survival", "platform": "paper", "version": "1.21.4", "cpu": 2, "ram": 6,
+      "manifest": {
+        "properties": { "difficulty": "normal", "max-players": 60 },
+        "content": [ { "kind": "plugin", "source": "modrinth", "project": "essentialsx" },
+                     { "kind": "plugin", "source": "modrinth", "project": "coreprotect" } ],
+        "configs": [ { "path": "/plugins/CoreProtect/config.yml", "set": { "default-radius": 15 } } ],
+        "schedules": [ { "name": "Redémarrage nocturne", "cron": "0 5 * * *", "tasks": [ { "action": "power", "payload": "restart" } ] } ]
+      },
+      "sync": { "local_dir": "D:/depot/survie/plugins", "remote_dir": "/plugins", "exclude": ["*.log"] },
+      "pregenerate": { "radius": 3000 } },
+    { "name": "Créatif", "role": "creative", "platform": "paper", "version": "1.21.4", "cpu": 1, "ram": 4,
+      "manifest": { "properties": { "gamemode": "creative", "rcon.password": "{{secret:rcon_creatif}}" },
+                    "content": [ { "kind": "plugin", "source": "modrinth", "project": "worldedit" } ] } }
+  ],
+  "presets": ["luckperms", "geyser"],
+  "database": { "database_id": 4521 }
+}
+```
+
+| Champ | Contenu | Règles |
+|---|---|---|
+| `version` | `1` | Seule version. |
+| `name` | libellé du réseau | 1 à 80 caractères, affichage seulement. |
+| `mybox_id` | MyBox du réseau | Rapprochement par nom et création s'y font ; sa place libre est vérifiée. |
+| `egg_id`, `location_id` | jeu et localisation des serveurs créés | Défaut : l'egg « Minecraft » du catalogue (`egg_id` 1 au 2026-11-20), la localisation des serveurs de la MyBox, sinon la première en stock (ignorée pour une MyBox Pro). Un jeu qui demande des champs à la création est refusé. |
+| `proxy.name`, `proxy.server_id` | le proxy | Nom requis (1 à 50 caractères). |
+| `proxy.platform`, `proxy.version` | `velocity` (défaut), `bungeecord`, `waterfall` ; version du proxy | Une plateforme de jeu est refusée ici. |
+| `proxy.cpu`, `proxy.ram` | cœurs, Go | Entiers ≥ 1 ; requis pour créer. |
+| `proxy.mode` | `modern` \| `legacy` | `modern` : Velocity seulement. |
+| `proxy.forced_hosts` | `{ domaine: nom \| [noms] }` | Domaine validé comme `link_proxy` (sans port, minuscules) ; noms = `name` ou `entry` d'un serveur de jeu du blueprint ; BungeeCord : un serveur par domaine ; 50 au plus. |
+| `proxy.try` | `[noms]` | Liste de repli ; défaut : celle de `link_proxy` (le rôle `lobby` passe en tête des serveurs). |
+| `proxy.prune` | booléen | Retire les entrées qui ne mènent à aucun serveur (exemples `lobby`/`factions`/`minigames` de Velocity). |
+| `proxy.bedrock_port` | port UDP | Préréglage `geyser` seulement. |
+| `proxy.manifest`, `proxy.sync` | comme pour un serveur | |
+| `servers[]` | 1 à 20 serveurs de jeu | Noms uniques (casse ignorée), `server_id` uniques. |
+| `servers[].role` | `[a-z0-9_-]`, 32 au plus | Libre ; `lobby` : premier de la liste de repli par défaut, rôle donné par les modèles. |
+| `servers[].entry` | nom de l'entrée sur le proxy | Règles de `link_proxy` (lettres, chiffres, `-`, `_`, 32 au plus, pas `try`). Défaut : celui que choisit `link_proxy`. |
+| `servers[].platform`, `.version` | `paper`, `purpur`, `folia`, `spigot`, `vanilla`, `fabric`, `forge`, `neoforge`… ; version de Minecraft | Un proxy est refusé ici ; Quilt refusé (ni catalogue ni JAR). Absents : ce qui est en place. |
+| `servers[].manifest` | manifeste v1 **sans `server`** | `properties`, `content`, `configs`, `files`, `players`, `startup`, `schedules` (format de « Construire et reproduire un serveur ») ; `version` facultative. Nom, plateforme et version se donnent au niveau du serveur. `{{secret:NOM}}` accepté (résolu par `apply_manifest`). |
+| `servers[].sync` | `{ local_dir, remote_dir, delete_extra?, include?, exclude? }` ou liste (10 au plus) | Règles de `sync_dir` (chemin absolu, `delete_extra` refusé à la racine). |
+| `servers[].world` | `{ local_path, world_name?, replace? }` | Règles d'`upload_world` ; `world_name` devient `level-name`. `replace` : remplacer un monde que le blueprint n'a pas installé (l'ancien est renommé, jamais supprimé). |
+| `servers[].pregenerate` | `{ radius, world?, center?, shape? }` | Règles de `pregenerate_world` ; Chunky est ajouté au contenu du manifeste (plugin ou mod selon la plateforme) s'il n'y est pas. |
+| `presets` | `["luckperms", "geyser"]` | Exigent un proxy ; appliqués dans cet ordre. |
+| `database` | `{ database_id, mybox_id? }` | Base partagée du préréglage `luckperms` (sinon la seule base de la MyBox du proxy) ; autre plugin : `connect_database`. |
+
+**Rapprochement.** Un serveur avec `server_id` doit exister sur le compte ; sans, il est cherché
+par son **nom exact** parmi les serveurs de la MyBox du blueprint : un seul → repris, aucun → **à
+créer** (`cpu` et `ram` requis, sinon bloqué), plusieurs → bloqué (préciser `server_id`). Serveur
+en pause, suspendu ou expiré, autre jeu que Minecraft Java, deux éléments sur le même serveur :
+bloqué. Un serveur désigné par `server_id` dont le nom diffère est renommé (étape `server.name` du
+manifeste).
+
+##### Plan (`plan_network`)
+
+Chaque élément a un identifiant stable (`<serveur>:server`, `:resources`, `:platform`,
+`:first_start`, `:content`, `:manifest`, `:sync[k]`, `:world`, `:pregenerate`, `network:capacity`,
+`network:link`, `network:preset.<nom>`) et un statut : **`ok`** (conforme), **`create`**, **`change`**,
+**`manual`** (action humaine, n'empêche pas le reste) ou **`blocked`** (rien ne sera fait tant qu'il
+en reste).
+
+- **Place libre** (`capacity`) : CPU et RAM des serveurs à créer, plus l'écart des
+  redimensionnements de serveurs actifs, face à ce qui reste dans la MyBox (`mybox_capacity`), et
+  emplacements actifs libres. « Pas assez de place » est **bloquant et chiffré** (« CPU : 4 cœur(s)
+  demandé(s), 0 restant(s) — il manque 4 cœur(s) »).
+- **Plateforme et version** : simulation de `set_server_platform` (catalogue de l'hébergeur ou JAR
+  officiel, Java relevé au besoin) ; `change_version` est destructif : le serveur figure dans
+  `confirm_names`. Serveur à créer : voie résolue après la création.
+- **Premier démarrage nécessaire** quand un fichier généré manque (`server.properties`,
+  `velocity.toml`, `config.yml` de BungeeCord), qu'une config du manifeste n'existe pas encore (plugin
+  pas encore démarré), ou que la liaison ou un préréglage l'attend (`paper-global.yml`, config de
+  LuckPerms) ; toujours pour un serveur créé.
+- **Manifeste** : `plan_manifest` (contenu résolu sur les marketplaces). **Dossiers** : `sync_dir` en
+  simulation. **Monde** : marqueur `/.minestrator-blueprint.json` (empreinte de la source : chemins
+  et tailles de ses fichiers), sinon `upload_world` en simulation ; un monde présent que le blueprint
+  n'a pas installé est `manual` sans `world.replace: true`. **Prégénération** : marqueur (mêmes
+  rayon, monde, forme, centre), sinon estimation (chunks, disque).
+- **Réseau** : `link_proxy` et `network_preset` en simulation quand tous les serveurs existent et
+  que le proxy a déjà démarré ; sinon décrits (simulés à l'application, au moment venu).
+- `order` : phases d'`apply_network` et serveurs concernés ; `to_confirm` : ce que l'utilisateur
+  confirmera (créations et ressources, redimensionnements, opérations de plateforme, mondes remplacés
+  et arrêts, entrées retirées du proxy, effets non réversibles des préréglages).
+
+##### Application (`apply_network`)
+
+1. **Plan recalculé** ; un élément `blocked` : refus, rien n'est fait. `dry_run` (défaut) : le plan.
+   Tout conforme : « déjà conforme », rien n'est fait (aucune question).
+2. **Avant tout effet** (l'ère MCP sans état rejoue l'appel jusque-là : seules des lectures
+   précèdent) : mode constructeur vérifié pour **chaque serveur rapproché, par son nom comme par son
+   identifiant** ; confirmation de l'humain (récapitulatif `to_confirm`, élicitation ; refus = rien
+   n'est fait ; client sans élicitation : l'appel avec `dry_run=false` vaut accord, comme
+   `network_preset`) ; pour chaque `change_version` d'un serveur existant, **nom exact retapé**
+   (élicitation), sinon `confirm_names` = noms exacts donnés par l'utilisateur, jamais devinés ;
+   snapshot **attendue** de chaque serveur existant que le plan modifie (`snapshot=false` pour s'en
+   passer ; sans elle rien n'est fait). Les sous-outils sont ensuite appelés avec `snapshot=false`.
+3. **Phases**, dans l'ordre :
+   1. `servers` : redimensionnements (`mybox_resize_server`), puis créations (`mybox_create_server`,
+      attente de l'installation par l'hébergeur — 20 min au plus —, arrêt s'il a démarré) ; le
+      serveur créé rejoint la portée du mode constructeur de la session ;
+   2. `platform` : logique de `set_server_platform` sans nouvelle confirmation (serveur neuf : une
+      version plus ancienne que celle installée passe par une réinstallation propre, rien à perdre) ;
+      `change_version` étant asynchrone, attente que l'hébergeur ait fini (20 min au plus, sinon
+      arrêt : relancer plus tard) ;
+   3. `content` : contenu du manifeste seul (`apply_manifest steps=["content"]`), pour que le premier
+      démarrage génère les configs des plugins ;
+   4. `world` : serveur arrêté s'il tourne, `upload_world` (ancien monde renommé), marqueur ;
+   5. `first_start` : démarrage, attente de `running` (10 min au plus), arrêt (forcé au besoin) ;
+   6. `manifest` : `apply_manifest` complet avec `apply_official` ;
+   7. `sync` : `sync_dir` ;
+   8. `link` : `link_proxy` (simulé d'abord) ;
+   9. `presets` : `network_preset` (simulé d'abord) ; si un plugin vient d'être installé (config pas
+      encore générée), les serveurs concernés démarrent puis s'arrêtent et le préréglage est relancé
+      une fois (de même pour `link_proxy`) ;
+   10. `start` (`start=true`) : serveurs de jeu puis proxy — arrêtés : démarrés ; modifiés par l'appel
+       et en marche : redémarrés ; attente de `running` ;
+   11. `pregenerate` : `pregenerate_world start` sur le serveur démarré, marqueur ;
+   12. `verify` (lectures) : `network_topology` avec `ping` (problèmes critiques et importants),
+       `ping_server` de chaque serveur.
+4. **Arrêt au premier échec** (les étapes suivantes « non exécutée ») ; `failed` dit laquelle et
+   pourquoi, `resume` comment reprendre : **relancer avec le même blueprint**, les serveurs créés
+   sont repris par leur nom et ce qui est conforme est sauté (idempotent). Annulation suivie entre
+   deux étapes ; progression MCP par phase.
+
+**Garde des agents.** `apply_network` n'a pas d'étape propre (`Plan::Skip`) : chaque sous-écriture
+(création, redimensionnement, opération officielle de plateforme, JAR, manifeste, fichiers,
+alimentation, liaison, préréglage, prégénération, marqueur) est une étape de son changeset
+(`list_changesets`, `rollback_changeset`), avec les règles de chaque outil. Les sous-outils sont
+appelés avec l'enveloppe de `mcp::dispatch` (garde, masques des secrets, cache purgé) directement
+dans leur module (`blueprint::plan::sub_dispatch`) : en debug, le grand `match` de `dispatch_inner`
+ne tient pas deux fois sur la pile d'un fil tokio.
+
+**Confirmations des sous-outils.** Aucune n'est demandée après un effet : `change_version` est
+confirmé au début, les arrêts pour un monde sont faits par l'outil lui-même (`upload_world` sans
+`stop`), et les confirmations simples de `network_preset` (bascule d'un stockage local de LuckPerms,
+clé de Floodgate remplacée) sont **pré-accordées** (`mcp_ctx::preapproved`) seulement si elles
+figuraient au récapitulatif — ou si elles ne touchent qu'un serveur créé par l'appel ou un plugin
+que le préréglage vient d'installer (aucune donnée à perdre) ; sinon arrêt : « nouvelle confirmation
+nécessaire, relance ». Une confirmation par nom retapé n'est jamais pré-accordée.
+
+**Marqueur** `/.minestrator-blueprint.json` (racine du serveur, écrit par `write_file`, annulable) :
+`world` (empreinte de la source, dossier, date) et `pregenerate` (rayon, monde, forme, centre,
+date). Le supprimer force une nouvelle installation du monde ou un nouveau lancement de la
+prégénération à la prochaine application.
+
+##### Export et modèles
+
+- **`export_network`** : `network_topology` du proxy (entrées et serveurs du compte reconnus), hôtes
+  forcés et liste de repli lus dans sa configuration (le secret lu au passage n'est jamais repris),
+  `export_manifest` de chaque serveur (sans joueurs : les alias d'anonymisation ne servent pas
+  ailleurs ; `server` retiré, plateforme et version reportées au niveau du serveur), ressources de la
+  MyBox, transfert (`modern`, `legacy`). Préréglages repérés : `geyser` (Geyser sur le proxy),
+  `luckperms` (LuckPerms partout ; `database` à compléter). Entrées qui ne mènent à aucun serveur du
+  compte : citées dans `notes`. Le blueprint exporté est relu par le validateur ; ce qui manque est
+  dit dans `notes`.
+- **`network_template`** : `proxy-lobby-survie` (Velocity + Lobby + Survie),
+  `proxy-lobby-survie-creatif` (+ Créatif), `survie-seul`. Ressources réparties sur la place libre de
+  la MyBox : chacun reçoit son minimum (proxy 1 cœur / 1 Go, lobby 1 / 2, survie 1 / 3, créatif
+  1 / 2), puis le reste va vers le confortable (proxy 1 / 2, lobby 1 / 3, survie 2 / 6, créatif 1 / 4),
+  survie d'abord ; place insuffisante : minimums gardés et `warning` chiffré (le plan le bloquera).
+  Plugins proposés par slug Modrinth sans version (`essentialsx`, `coreprotect`, `worldedit`, slugs
+  vérifiés le 2026-11-20), réglages `server.properties`, prégénération de 3 000 blocs pour la survie,
+  `domain` → hôte forcé vers le lobby, `prune: true` (exemples de Velocity retirés).
+
+**Classement.** `plan_network`, `export_network`, `network_template` : lectures (groupe `build`) ;
+`plan_network` est ouvert sur le monde (marketplaces) et lit le disque de l'ordinateur (`sync`,
+`world`) : `LOCAL_DISK_TOOLS`. `apply_network` : modifiant, `INFRA_TOOLS` et `LOCAL_DISK_TOOLS`,
+idempotent, destructif, ouvert sur le monde. Les quatre sont dans `BLUEPRINT_TOOLS` : **jamais**
+donnés au Copilote, même en lecture. Mode constructeur : règle `Targets::Create` pour un blueprint
+sans `server_id`, sinon les `server_id` cités (`agent_guard::scope::write_targets`) ; un serveur
+désigné par son seul nom est vérifié par l'outil avant tout effet, et chaque sous-écriture est
+revérifiée.
+
+**Essayé en réel** (2026-11-20, lectures seulement) : modèles et plan sur la MyBox principale ; la
+création, la plateforme, l'application des manifestes, la liaison et les préréglages par
+`apply_network` ne sont vérifiés que sur un faux compte (tests du module) : **à confirmer par
+l'intégrateur** en écriture réelle.
+
 #### Garde des agents
 
 Journal et annulation des actions des agents (`crates/minestrator-core/src/agent_guard.rs`),
@@ -1056,6 +1269,9 @@ Secrets des agents).
 - **Réseaux proxy** : `network_topology` (proxys Velocity / BungeeCord → serveurs du compte,
   cohérence et problèmes, secrets comparés sans être montrés) → `link_proxy` (relier des serveurs
   à un proxy, secret réutilisé ou généré sans jamais apparaître, dry_run par défaut)
+- **Réseau entier** : `network_template` ou `export_network` → `plan_network` → `apply_network`
+  (proxy et serveurs créés ou repris, plateforme, contenu, configs, mondes, liaison, préréglages,
+  prégénération, vérification ; idempotent, confirmation avant tout effet)
 - **Depuis l'ordinateur, sur plusieurs serveurs** : `sync_dir` (dossier local synchronisé, git
   compris, suppressions bornées, dry_run par défaut), `upload_world` (monde local installé, ancien
   monde renommé, snapshot préalable), `apply_to_servers` (même outil sur une liste de serveurs)
@@ -1169,7 +1385,7 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 | `schedules` | `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `add_schedule_task`, `update_schedule_task`, `delete_schedule_task`, `reorder_schedule_tasks` |
 | `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command`, `apply_to_servers` |
 | `agent` | Boucle « agir puis vérifier » (`run_command`, `wait_for`, `tail_console`, `deploy_and_verify`…). |
-| `build` | Configurations structurées, manifestes et réseaux proxy (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`, `network_topology`, `link_proxy`…), prégénération et base de données (`pregenerate_world`, `connect_database`), plateforme et version (`set_server_platform`). |
+| `build` | Configurations structurées, manifestes et réseaux proxy (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`, `network_topology`, `link_proxy`…), prégénération et base de données (`pregenerate_world`, `connect_database`), plateforme et version (`set_server_platform`), réseau entier depuis un blueprint (`plan_network`, `apply_network`, `export_network`, `network_template`). |
 | `guard` | Garde des agents (`list_agent_actions`, `rollback_changeset`…). |
 | `official` | Outils du MCP officiel relayés par la passerelle (si elle est activée). |
 
@@ -1224,6 +1440,7 @@ d'étape.
 | `set_property` | ancienne valeur remise — jamais pour un réglage **secret**, dont la valeur n'est pas conservée, ni pour une valeur écrite par référence `{{secret:NOM}}` |
 | `set_startup_params` | ancienne commande de démarrage remise |
 | `sync_dir`, `upload_world`, `apply_to_servers` | pas d'étape propre : chaque envoi, suppression, renommage, extraction, réglage ou appel relayé est une étape à part (règles ci-dessus) |
+| `apply_network` | pas d'étape propre : chaque sous-écriture (création, plateforme, manifeste, dossier, monde, liaison, préréglage, alimentation, marqueur) est une étape à part, avec la règle de son outil |
 
 Non annulables par nature (étape enregistrée, puis passée à l'annulation) : `send_command`,
 `broadcast_command`, `power_action`, `player_action`, `create_snapshot`, `install_ficsit_mod`,

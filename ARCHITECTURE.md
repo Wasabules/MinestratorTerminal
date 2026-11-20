@@ -383,6 +383,26 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   Bedrock du proxy). `network/ping.rs` (`ping_server`, option `ping` de `network_topology`) :
   Server List Ping Java (repli legacy 0xFE) et ping RakNet Bedrock, vers l'adresse d'un serveur du
   compte seulement.
+- **`blueprint`** — **réseau entier depuis un fichier** : un proxy et ses serveurs de jeu décrits
+  en un document JSON (format v1, validé strictement : `Network::parse`), monté sur une MyBox sans
+  le panel. `plan_network` (lecture) : rapprochement (`server_id`, sinon nom exact dans la MyBox),
+  place libre de la MyBox, puis simulation des outils élémentaires serveur par serveur
+  (`set_server_platform`, `plan_manifest`, `sync_dir`, `upload_world`) et pour le réseau
+  (`link_proxy`, `network_preset`), statut `ok` / `create` / `change` / `manual` / `blocked` par
+  élément et ordre d'exécution. `apply_network` (`blueprint/apply.rs`) : `dry_run` par défaut ;
+  avant tout effet, mode constructeur vérifié pour chaque serveur rapproché (par nom compris),
+  récapitulatif confirmé par l'humain, nom exact retapé pour chaque `change_version`, snapshots ;
+  puis phases dans l'ordre (création, plateforme avec attente de la fin de `change_version`,
+  contenu, mondes, premier démarrage pour générer les fichiers, manifestes, dossiers, liaison,
+  préréglages, démarrage, prégénération, vérification), chaque écriture par l'outil élémentaire
+  et la garde des agents (`plan::sub_dispatch` : enveloppe de `mcp::dispatch` sans repasser par
+  son grand `match`, trop lourd en debug pour deux niveaux), arrêt au premier échec, idempotent
+  (marqueur `/.minestrator-blueprint.json` pour le monde et la prégénération). Les confirmations
+  simples d'un sous-outil sont pré-accordées (`mcp_ctx::preapproved`) seulement si elles figuraient
+  dans le récapitulatif. `blueprint/export.rs` : `export_network` (blueprint d'un réseau existant)
+  et `network_template` (modèles répartis sur la place libre). Accès au compte derrière le trait
+  `Net`, testé sur un faux compte. Dans `INFRA_TOOLS` (`apply_network`), `LOCAL_DISK_TOOLS`
+  (`plan_network`, `apply_network`) et `BLUEPRINT_TOOLS` (jamais au Copilote).
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app
