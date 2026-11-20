@@ -324,6 +324,21 @@ fn copilot_process() -> Option<Option<i64>> {
         .map(|v| v.trim().parse::<i64>().ok())
 }
 
+/// L'appel en cours vient-il du **Copilote** ? Oui pour un processus MCP lancé pour ses agents CLI,
+/// pour un appel du protocole d'origine Copilote, et pour tout outil exécuté hors d'un appel du
+/// protocole MCP (diagnostic, chat ou « Appliquer » du Copilote de l'app, même règle que
+/// [`write_identity`]) : deny-by-default, une sous-tâche détachée de son appel compte aussi.
+/// Sert aux secrets des agents (`agent_secrets.rs`), que le Copilote ne peut pas résoudre.
+pub(crate) fn copilot_call() -> bool {
+    if copilot_process().is_some() {
+        return true;
+    }
+    match CALL.try_with(|c| c.origin) {
+        Ok(origin) => origin == ChangeOrigin::Copilot,
+        Err(_) => mcp_ctx::session_id().is_none(),
+    }
+}
+
 /// Session, origine et client d'un appel reçu par le protocole.
 fn protocol_identity() -> (String, ChangeOrigin, Option<String>) {
     if let Some(server) = copilot_process() {
@@ -1384,6 +1399,22 @@ mod tests {
         let (session, origin, client) = write_identity(&json!({ "server_id": 7 }));
         assert_eq!(session, copilot_session_key(Some(7), &today()));
         assert_eq!((origin, client), (ChangeOrigin::Copilot, None));
+    }
+
+    #[tokio::test]
+    async fn copilot_calls_are_recognized_and_unknown_contexts_count_as_copilot() {
+        // Hors de tout appel du protocole : Copilote de l'app (ou sous-tâche détachée).
+        assert!(copilot_call());
+        let ctx = |origin| CallCtx { session: "s".into(), client: None, origin, step: Mutex::new(None) };
+        // Appel d'un client MCP externe : pas le Copilote.
+        assert!(!CALL.scope(ctx(ChangeOrigin::Mcp), async { copilot_call() }).await);
+        // Appel du protocole d'origine Copilote (agent CLI).
+        assert!(CALL.scope(ctx(ChangeOrigin::Copilot), async { copilot_call() }).await);
+        // Sous-tâche lancée hors du contexte de l'appel : refusée par défaut.
+        let detached = CALL
+            .scope(ctx(ChangeOrigin::Mcp), async { tokio::spawn(async { copilot_call() }).await.unwrap() })
+            .await;
+        assert!(detached);
     }
 
     #[test]

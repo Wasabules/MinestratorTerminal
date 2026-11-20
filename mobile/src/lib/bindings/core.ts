@@ -2835,3 +2835,32 @@ export type WebhookInfo = {
   destination: WebhookDestination,
   has_url: boolean,
 };
+
+// --- Secrets des agents (agent_secrets.rs) ---
+
+/**
+ * Secret des agents, tel que listé (jamais sa valeur).
+ */
+export type AgentSecret = {
+  /**
+   * Nom, tel qu'écrit dans la référence `{{secret:NOM}}` (`[a-z0-9_-]`, 64 caractères au plus).
+   */
+  name: string,
+  /**
+   * À quoi sert le secret (texte libre, non secret, montré aux agents).
+   */
+  description: string,
+  /**
+   * Date de création (secondes Unix).
+   */
+  created_at: number,
+  /**
+   * Valeur tirée au hasard (« Générer », `generate_secret`) plutôt que saisie.
+   */
+  generated: boolean,
+};
+
+/**
+ * Caractères d'un secret généré.
+ */
+export type SecretCharset = "alphanumeric" | "hex" | "url_safe" | "symbols";

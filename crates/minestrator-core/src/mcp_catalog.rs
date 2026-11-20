@@ -43,7 +43,7 @@ pub(crate) const TOOLSETS: &[(&str, &str)] = &[
     ),
     (
         "config",
-        "Démarrage et réglages : commande Java, server.properties.",
+        "Démarrage et réglages : commande Java, server.properties, secrets des agents.",
     ),
     (
         "content",
@@ -299,6 +299,9 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
         "Choisir la plateforme et la version",
     ),
     ("delete_database", "mybox", "Supprimer une base de données"),
+    // config : secrets des agents (agent_secrets.rs)
+    ("list_secrets", "config", "Secrets des agents"),
+    ("generate_secret", "config", "Générer un secret des agents"),
 ];
 
 /// Outils modifiants **non destructifs** (`destructiveHint: false`) : ils ajoutent sans rien
@@ -316,6 +319,8 @@ pub(crate) const NON_DESTRUCTIVE_TOOLS: &[&str] = &[
     "add_schedule_task",
     "reorder_schedule_tasks",
     "clone_server",
+    // Crée un secret sous un nom libre (un nom pris est refusé, jamais écrasé).
+    "generate_secret",
 ];
 
 /// Outils modifiants **idempotents** (`idempotentHint: true`) : les rappeler avec les mêmes
@@ -387,6 +392,7 @@ Enchaînements recommandés :
 - Configuration : get_config puis set_config avec dry_run pour prévisualiser ; plan_manifest avant apply_manifest.
 - Réseau Velocity ou BungeeCord : network_topology, puis link_proxy (dry_run d'abord) ; ne manipule jamais le secret de transfert toi-même.
 - Fichier qui contient des secrets : edit_file (remplacement ciblé) plutôt que read_file + write_file, car les secrets lus sont masqués en [SECRET].
+- Token, clé d'API, mot de passe à écrire : jamais en clair ; list_secrets puis {{secret:NOM}} à la place de la valeur (set_config, write_file, edit_file, manifeste).
 - Action destructive (suppression de serveur…) : seulement à la demande explicite de l'utilisateur ; la confirmation peut lui être demandée directement par ton client.
 - MyBox : CPU en cœurs entiers, RAM en Go entiers.
 Les sorties peuvent être anonymisées (IP, e-mails, mots de passe, pseudos remplacés par un alias stable).";

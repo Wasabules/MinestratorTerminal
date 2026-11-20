@@ -3,9 +3,17 @@
 //! Masque : mots de passe des commandes d'authentification (`/login`, `/register`, `/authme`…),
 //! adresses IPv4, et e-mails. Implémentation **sans regex** (scan manuel) pour éviter une
 //! dépendance ; heuristiques volontairement prudentes (mieux vaut masquer un peu trop que fuiter).
+//!
+//! **Secrets des agents** ([`register_secret`], [`mask_known_secrets`]) : toute valeur d'un secret
+//! des agents connue du processus (résolue, créée ou chargée par `agent_secrets.rs`) est remplacée
+//! par sa référence `{{secret:NOM}}`, quelle que soit la clé qui la porte, dans [`redact`] comme
+//! dans `Core::redact_ai` (même quand l'anonymisation IA est désactivée) et à la sortie de chaque
+//! outil MCP (`mcp::dispatch`).
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::RwLock;
 
 /// Réglages de confidentialité (persistés dans `privacy.json`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -55,6 +63,9 @@ const AUTH_SUBCMDS: &[&str] = &["register", "login", "changepassword", "setpassw
 
 /// Point d'entrée : anonymise un texte multi-lignes.
 pub fn redact(text: &str) -> String {
+    // Secrets des agents d'abord, sur tout le texte : leur référence reste lisible ensuite.
+    let text = mask_known_secrets(text);
+    let text = text.as_ref();
     // Écrit directement dans un buffer préalloué (pas de `Vec<String>` intermédiaire) ; chaque
     // ligne n'alloue que si un masque s'applique réellement (chaîne de `Cow`, voir `redact_line`).
     let mut out = String::with_capacity(text.len());
@@ -130,6 +141,11 @@ fn mask_secrets(line: Cow<str>) -> Cow<str> {
             .unwrap_or(before.len());
         let key = before[key_start..].to_ascii_lowercase();
         let value = line[pos + sep.len_utf8()..].trim();
+        // Référence `{{secret:NOM}}` (secret des agents) : rien de secret, elle reste lisible ;
+        // les séparateurs qu'elle contient ne sont pas des clés.
+        if starts_with_secret_ref(value) || inside_secret_ref(&line, pos) {
+            continue;
+        }
         if is_secret_key(&key) && !value.is_empty() {
             // Clé JSON ou valeur entre guillemets : le masque est entre guillemets aussi, virgule
             // finale comprise, pour qu'un JSON anonymisé reste valide.
@@ -141,6 +157,141 @@ fn mask_secrets(line: Cow<str>) -> Cow<str> {
         }
     }
     line
+}
+
+/// Début d'une référence à un secret des agents.
+const SECRET_REF_OPEN: &str = "{{secret:";
+
+/// La valeur commence-t-elle par une référence `{{secret:NOM}}` (entre guillemets ou non) ?
+fn starts_with_secret_ref(value: &str) -> bool {
+    value.trim_start_matches(['"', '\'']).starts_with(SECRET_REF_OPEN)
+}
+
+/// L'octet `pos` de la ligne est-il à l'intérieur d'une référence `{{secret:NOM}}` ?
+fn inside_secret_ref(line: &str, pos: usize) -> bool {
+    let mut from = 0;
+    while let Some(i) = line[from..].find(SECRET_REF_OPEN) {
+        let start = from + i;
+        let end = line[start..].find("}}").map_or(line.len(), |e| start + e + 2);
+        if (start..end).contains(&pos) {
+            return true;
+        }
+        if start >= pos || end >= line.len() {
+            return false;
+        }
+        from = end;
+    }
+    false
+}
+
+// --- Secrets des agents : valeurs connues du processus -------------------------------------
+
+/// Valeurs des secrets des agents connues de ce processus, sous chacune de leurs formes écrites
+/// (brute, échappée JSON, YAML entre apostrophes, `.properties`) → référence `{{secret:NOM}}`.
+/// Triées de la plus longue à la plus courte : une valeur contenue dans une autre ne la coupe pas.
+static KNOWN_SECRETS: RwLock<Vec<(String, String)>> = RwLock::new(Vec::new());
+/// Raccourci : aucun secret connu, aucun parcours.
+static HAS_KNOWN_SECRETS: AtomicBool = AtomicBool::new(false);
+/// En deçà, une valeur cherchée dans les sorties couperait du texte ordinaire (les secrets des
+/// agents en ont au moins 8 : `agent_secrets::VALUE_MIN_CHARS`).
+const MIN_KNOWN_SECRET_CHARS: usize = 6;
+
+/// Formes sous lesquelles une valeur peut apparaître dans un fichier ou une sortie : brute, dans
+/// une chaîne JSON / YAML ou TOML entre guillemets (`\"`, `\\`), YAML entre apostrophes (`''`),
+/// `.properties` (`\\`, `\uXXXX`, `\#` ou `\!` en tête), comme les écrivent les éditeurs de
+/// `config_edit`.
+pub(crate) fn secret_forms(value: &str) -> Vec<String> {
+    let mut forms = vec![value.to_string()];
+    if let Ok(json) = serde_json::to_string(value) {
+        forms.push(json[1..json.len() - 1].to_string());
+    }
+    forms.push(value.replace('\'', "''"));
+    let mut props = String::with_capacity(value.len());
+    for (i, c) in value.chars().enumerate() {
+        match c {
+            '\\' => props.push_str("\\\\"),
+            ' ' | '#' | '!' if i == 0 => {
+                props.push('\\');
+                props.push(c);
+            }
+            c if (c as u32) < 0x20 || (c as u32) > 0x7e => {
+                let mut buf = [0u16; 2];
+                for unit in c.encode_utf16(&mut buf) {
+                    props.push_str(&format!("\\u{unit:04X}"));
+                }
+            }
+            c => props.push(c),
+        }
+    }
+    forms.push(props);
+    forms.sort();
+    forms.dedup();
+    forms
+}
+
+/// Enregistre la valeur d'un secret des agents : elle sera remplacée par `{{secret:NOM}}` dans
+/// toute sortie anonymisée de ce processus. Sans effet sur une valeur trop courte pour être
+/// cherchée sans dégâts (les secrets des agents en sont toujours plus longs).
+pub(crate) fn register_secret(name: &str, value: &str) {
+    if value.chars().count() < MIN_KNOWN_SECRET_CHARS {
+        return;
+    }
+    let reference = format!("{SECRET_REF_OPEN}{name}}}}}");
+    let mut known = KNOWN_SECRETS.write().unwrap_or_else(|e| e.into_inner());
+    for form in secret_forms(value) {
+        if !known.iter().any(|(f, _)| *f == form) {
+            known.push((form, reference.clone()));
+        }
+    }
+    known.sort_by_key(|a| std::cmp::Reverse(a.0.len()));
+    HAS_KNOWN_SECRETS.store(true, Ordering::Release);
+}
+
+/// Remplace chaque valeur connue d'un secret des agents par sa référence `{{secret:NOM}}`.
+/// N'alloue que si une valeur est trouvée.
+pub(crate) fn mask_known_secrets(text: &str) -> Cow<'_, str> {
+    if !HAS_KNOWN_SECRETS.load(Ordering::Acquire) {
+        return Cow::Borrowed(text);
+    }
+    let known = KNOWN_SECRETS.read().unwrap_or_else(|e| e.into_inner());
+    let mut out: Option<String> = None;
+    for (form, reference) in known.iter() {
+        let cur = out.as_deref().unwrap_or(text);
+        if cur.contains(form.as_str()) {
+            out = Some(cur.replace(form.as_str(), reference));
+        }
+    }
+    out.map_or(Cow::Borrowed(text), Cow::Owned)
+}
+
+/// [`mask_known_secrets`] appliqué à chaque texte d'une valeur JSON (et à un nombre qui
+/// reproduirait une valeur connue, devenu nombre par conservation de type) : un JSON masqué reste
+/// valide.
+pub(crate) fn mask_known_secrets_value(v: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    if !HAS_KNOWN_SECRETS.load(Ordering::Acquire) {
+        return v;
+    }
+    match v {
+        Value::String(s) => match mask_known_secrets(&s) {
+            Cow::Borrowed(_) => Value::String(s),
+            Cow::Owned(m) => Value::String(m),
+        },
+        Value::Number(n) => {
+            let text = n.to_string();
+            match mask_known_secrets(&text) {
+                Cow::Borrowed(_) => Value::Number(n),
+                Cow::Owned(m) => Value::String(m),
+            }
+        }
+        Value::Array(a) => Value::Array(a.into_iter().map(mask_known_secrets_value).collect()),
+        Value::Object(m) => Value::Object(
+            m.into_iter()
+                .map(|(k, x)| (mask_known_secrets(&k).into_owned(), mask_known_secrets_value(x)))
+                .collect(),
+        ),
+        other => other,
+    }
 }
 
 /// `scheme://user:pass@host` → `scheme://[CREDS]@host` (masque les identifiants intégrés à l'URL).
@@ -380,5 +531,54 @@ mod tests {
         assert_eq!(redact("management-server-tls-keystore-password="), "management-server-tls-keystore-password=");
         assert_eq!(redact("token-expiry: 3600"), "token-expiry: 3600");
         assert_eq!(redact(r#""secret-mode": true"#), r#""secret-mode": true"#);
+    }
+
+    // Valeurs propres à ces tests : le registre est global au processus de test, aucune autre
+    // assertion ne doit les rencontrer.
+    #[test]
+    fn known_agent_secrets_are_replaced_by_their_reference_everywhere() {
+        use super::{mask_known_secrets, mask_known_secrets_value, register_secret};
+        let value = "Zq7-redact-unique-Xv93";
+        register_secret("bot_token", value);
+        // Sous une clé quelconque, non reconnue comme secrète.
+        assert_eq!(redact(&format!("bot.discord = {value}")), "bot.discord = {{secret:bot_token}}");
+        // Sous une clé secrète : la référence reste lisible, pas `[SECRET]`.
+        assert_eq!(redact(&format!("token: {value}")), "token: {{secret:bot_token}}");
+        assert_eq!(
+            redact(&format!(r#"  "password": "{value}","#)),
+            r#"  "password": "{{secret:bot_token}}","#
+        );
+        // Sans le réglage d'anonymisation : le masque des secrets connus seul.
+        assert_eq!(mask_known_secrets(&format!("a{value}b")), "a{{secret:bot_token}}b");
+        assert!(matches!(mask_known_secrets("rien ici"), std::borrow::Cow::Borrowed(_)));
+        // Valeur JSON : textes masqués, JSON toujours valide.
+        let v = mask_known_secrets_value(serde_json::json!({ "k": [format!("x{value}")], "n": 1 }));
+        assert_eq!(v, serde_json::json!({ "k": ["x{{secret:bot_token}}"], "n": 1 }));
+    }
+
+    #[test]
+    fn escaped_forms_of_a_known_secret_are_masked_too() {
+        use super::{mask_known_secrets, register_secret, secret_forms};
+        let value = r#"#p"q'r\s-é-unique-81"#;
+        let forms = secret_forms(value);
+        assert!(forms.contains(&r#"#p\"q'r\\s-é-unique-81"#.to_string()), "JSON {forms:?}");
+        assert!(forms.contains(&r#"#p"q''r\s-é-unique-81"#.to_string()), "YAML {forms:?}");
+        // `.properties` : caractère hors ASCII en séquence d'échappement unicode (barre + u00E9).
+        let props = format!(r#"\#p"q'r\\s-{}{}-unique-81"#, '\\', "u00E9");
+        assert!(forms.contains(&props), "properties {forms:?}");
+        register_secret("quoted", value);
+        for f in &forms {
+            assert_eq!(mask_known_secrets(&format!("v={f};")), "v={{secret:quoted}};", "{f}");
+        }
+        // Trop courte pour être cherchée sans dégâts : ignorée.
+        register_secret("court", "ab1");
+        assert_eq!(mask_known_secrets("ab1 ab1"), "ab1 ab1");
+    }
+
+    #[test]
+    fn literal_references_are_never_masked_as_secrets() {
+        assert_eq!(redact("token: {{secret:discord}}"), "token: {{secret:discord}}");
+        assert_eq!(redact(r#"password: "{{secret:db}}""#), r#"password: "{{secret:db}}""#);
+        assert_eq!(redact("url: {{secret:a}} et token=abc"), "url: {{secret:a}} et token= [SECRET]");
     }
 }

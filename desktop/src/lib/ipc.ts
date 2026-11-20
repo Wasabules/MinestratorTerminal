@@ -24,6 +24,8 @@ import type {
   ActivityPage,
   AgentAction,
   AgentActionQuery,
+  AgentSecret,
+  SecretCharset,
   Changeset,
   RollbackReport,
   Alert,
@@ -414,6 +416,23 @@ export const api = {
    */
   rollbackChangeset: (changesetId: string, steps: number | null, force: boolean) =>
     demo(invoke<RollbackReport>('rollback_changeset', { changesetId, steps, force }), fakeRollback),
+  /**
+   * Secrets des agents (écrits par référence `{{secret:NOM}}`) : noms, descriptions et dates,
+   * jamais les valeurs. Choisis par l'utilisateur, non identifiants : rien à substituer en mode démo.
+   */
+  agentSecrets: () => invoke<AgentSecret[]>('agent_secrets'),
+  /** Ajoute un secret saisi ; la valeur part au stockage sécurisé et n'est jamais relue. */
+  addAgentSecret: (name: string, description: string, value: string) =>
+    invoke<AgentSecret>('add_agent_secret', { name, description, value }),
+  /** Crée un secret aléatoire (8 à 256 caractères, 32 par défaut), jamais affiché. */
+  generateAgentSecret: (
+    name: string,
+    description: string,
+    length: number | null,
+    charset: SecretCharset | null,
+  ) => invoke<AgentSecret>('generate_agent_secret', { name, description, length, charset }),
+  /** Supprime un secret (à confirmer par l'utilisateur avant). */
+  deleteAgentSecret: (name: string) => invoke<void>('delete_agent_secret', { name }),
   /** Réglages de confidentialité (anonymisation). */
   getPrivacyConfig: () => invoke<PrivacyConfig>('get_privacy_config'),
   setPrivacyConfig: (config: PrivacyConfig) => invoke<void>('set_privacy_config', { config }),

@@ -384,6 +384,9 @@ pub fn core() -> Bindings {
         .add::<WebhookKind>()
         .add::<WebhookEvent>()
         .add::<WebhookInfo>()
+        .section("Secrets des agents (agent_secrets.rs)")
+        .add::<AgentSecret>()
+        .add::<SecretCharset>()
 }
 
 /// Racine du dépôt, d'après le dossier d'un crate du workspace (`env!("CARGO_MANIFEST_DIR")`),

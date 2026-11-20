@@ -199,6 +199,8 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     // Réseau proxy (network.rs) : configs du proxy et des serveurs de jeu lues, secrets comparés
     // en interne, rien n'est modifié.
     "network_topology",
+    // Secrets des agents (agent_secrets.rs) : noms et descriptions seulement, jamais les valeurs.
+    "list_secrets",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -273,6 +275,8 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     // (db_connect.rs) : voir INFRA_TOOLS, jamais au Copilote.
     "set_server_platform",
     "delete_database",
+    // Secret des agents aléatoire, jamais rendu (configuration persistante, voir INFRA_TOOLS).
+    "generate_secret",
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -329,6 +333,8 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // persistante). Suppression d'une base : ressource de la MyBox partagée par ses serveurs.
     "set_server_platform",
     "delete_database",
+    // Secret des agents créé dans le stockage sécurisé de l'ordinateur : configuration persistante.
+    "generate_secret",
 ];
 
 /// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
@@ -349,10 +355,16 @@ pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
     "apply_to_servers",
 ];
 
+/// Outils des **secrets des agents** (`agent_secrets.rs`). Le Copilote ne peut pas résoudre une
+/// référence `{{secret:NOM}}` (il lit du contenu non fiable) : ils ne lui servent à rien et restent
+/// hors de son catalogue, même `list_secrets` en lecture.
+pub(crate) const AGENT_SECRET_TOOLS: &[&str] = &["list_secrets", "generate_secret"];
+
 /// Outil interdit au Copilote (diagnostic, chat, agents CLI, « Appliquer ») : infrastructure,
-/// actions multi-serveurs, configuration persistante, ou accès au disque de l'ordinateur.
+/// actions multi-serveurs, configuration persistante, accès au disque de l'ordinateur, ou secrets
+/// des agents.
 pub(crate) fn copilot_forbidden(name: &str) -> bool {
-    INFRA_TOOLS.contains(&name) || LOCAL_DISK_TOOLS.contains(&name)
+    INFRA_TOOLS.contains(&name) || LOCAL_DISK_TOOLS.contains(&name) || AGENT_SECRET_TOOLS.contains(&name)
 }
 
 /// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
@@ -655,9 +667,21 @@ fn format_installed(items: &[InstalledItem], query: &str, kind: &str) -> String 
     out
 }
 
-/// Point d'entrée : enrobe [`dispatch_inner`] d'un cache TTL (lectures stables) et **purge** le
-/// cache après toute opération modifiante (l'état serveur lu a pu changer).
+/// Point d'entrée de tout outil (protocole MCP, Copilote, sous-étapes de la garde). Aucune valeur
+/// d'un secret des agents n'en ressort, quel que soit l'outil : chacune est remplacée par sa
+/// référence `{{secret:NOM}}` (`agent_secrets.rs`, `redact.rs`), sortie comme erreur.
 pub(crate) async fn dispatch(core: &Core, name: &str, args: Value) -> Result<String, String> {
+    core.refresh_secret_masks();
+    let mask = |s: String| match crate::redact::mask_known_secrets(&s) {
+        std::borrow::Cow::Borrowed(_) => s,
+        std::borrow::Cow::Owned(m) => m,
+    };
+    dispatch_unmasked(core, name, args).await.map(mask).map_err(mask)
+}
+
+/// Enrobe [`dispatch_inner`] d'un cache TTL (lectures stables) et **purge** le cache après toute
+/// opération modifiante (l'état serveur lu a pu changer).
+async fn dispatch_unmasked(core: &Core, name: &str, args: Value) -> Result<String, String> {
     if is_write_tool(name) {
         // Garde des agents (agent_guard.rs) : de quoi annuler, capturé avant l'écriture.
         let step = crate::agent_guard::before_write(core, name, &args).await;
@@ -766,9 +790,12 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
                      connue, ne pas la réécrire."
                 ));
             }
+            // Référence `{{secret:NOM}}` (mot de passe RCON…) : résolue avant l'écriture.
+            let (value, secrets) = core.resolve_secret_refs(&value)?;
             core.set_server_property(id, &property, &value).await.map_err(es)?;
             Ok(format!(
-                "Réglage « {property} » modifié sur le serveur {id} ; effet au prochain démarrage."
+                "Réglage « {property} » modifié sur le serveur {id} ; effet au prochain démarrage.{}",
+                crate::agent_secrets::used_note(&secrets)
             ))
         }
 
@@ -1127,9 +1154,10 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "write_file" => {
             let id = req_i64(&args, "server_id")?;
             let path = req_str(&args, "path")?;
-            let content = req_str(&args, "content")?;
+            // Références `{{secret:NOM}}` (agent_secrets.rs) : résolues avant l'écriture, jamais rendues.
+            let (content, secrets) = core.resolve_secret_refs(&req_str(&args, "content")?)?;
             core.sftp_write_text(id, &path, &content).await.map_err(es)?;
-            Ok(format!("Fichier « {path} » enregistré."))
+            Ok(format!("Fichier « {path} » enregistré.{}", crate::agent_secrets::used_note(&secrets)))
         }
 
         "create_dir" => {
@@ -1175,9 +1203,14 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
             let id = req_i64(&args, "server_id")?;
             let path = req_str(&args, "path")?;
             let find = req_str(&args, "find")?;
-            let replace = req_str(&args, "replace")?;
+            // Secrets des agents : résolus dans `replace` seulement (une valeur ne se cherche pas).
+            crate::agent_secrets::refuse_refs("`find`", &find)?;
+            let (replace, secrets) = core.resolve_secret_refs(&req_str(&args, "replace")?)?;
             let n = core.sftp_edit_text(id, &path, &find, &replace).await.map_err(es)?;
-            Ok(format!("{n} remplacement(s) effectué(s) dans « {path} »."))
+            Ok(format!(
+                "{n} remplacement(s) effectué(s) dans « {path} ».{}",
+                crate::agent_secrets::used_note(&secrets)
+            ))
         }
 
         "file_stat" => {
@@ -1586,6 +1619,9 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         // par la garde ; suppression d'une base (db_connect.rs) : nom exact confirmé.
         "set_server_platform" => Box::pin(crate::platform::set_server_platform_tool(core, &args)).await,
         "delete_database" => Box::pin(crate::db_connect::delete_database_tool(core, &args)).await,
+        // Secrets des agents (agent_secrets.rs) : noms seulement, valeurs jamais rendues.
+        "list_secrets" => crate::agent_secrets::list_secrets_tool(core),
+        "generate_secret" => crate::agent_secrets::generate_secret_tool(core, &args),
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1706,17 +1742,17 @@ fn build_tool_list() -> Value {
         tool("extract_archive", "Extrait une archive présente sur le serveur DANS `dest_dir` — p. ex. installer un modpack/monde/backup en place. Extraction faite PAR LE SERVEUR (rien ne transite par la machine ; formats .zip, .jar, .tar, .tar.gz/.bz2/.xz/.zst, .7z, .rar, .mcworld/.mcpack), avec repli automatique par SFTP pour .zip/.tar/.tar.gz si l'API échoue (plafonné, anti zip-slip). Les fichiers existants du même nom sont écrasés : vérifie la destination (list_files) avant. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin de l'archive sur le serveur")), ("dest_dir", prop_str("Dossier cible d'extraction (`/` = racine du serveur)"))], &["server_id", "path", "dest_dir"])),
         tool("compress_files", "Compresse des fichiers/dossiers EN .zip SUR LE SERVEUR (rapide même pour un monde de plusieurs Go : rien ne transite par la machine) — sauvegarde ponctuelle d'un monde ou d'une config AVANT une intervention risquée, ou archive à télécharger ensuite. Tous les `paths` doivent être dans le MÊME dossier : l'archive y est créée. Attend la fin (jusqu'à ~30 min) et renvoie son chemin, sa taille et le nombre de fichiers. Occupe de l'espace disque (vérifie avec disk_usage si le serveur est presque plein). N'écrase jamais une archive existante. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("paths", prop_str_array("Chemins absolus à inclure, tous dans le même dossier (ex. [\"/world\", \"/world_nether\"])")), ("name", prop_str("Nom de l'archive (optionnel ; `.zip` ajouté ; défaut : <nom>_<date>.zip)"))], &["server_id", "paths"])),
         tool("disk_usage", "Analyse de l'ESPACE DISQUE calculée par le serveur : ce qui occupe le plus de place dans un dossier (tailles récursives, du plus gros au plus petit, avec leur part en %). À la racine, ajoute l'occupation comptée face à la limite du serveur et à celle de la MyBox. Idéal pour un serveur plein (« disk full ») : descends dans les plus gros dossiers (`path`) pour trouver logs, backups, mondes ou dumps à nettoyer.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Dossier à analyser (défaut `/`)")), ("limit", prop_int("Nombre d'entrées (défaut 20, max 100)"))], &["server_id"])),
-        tool("write_file", "Écrit/écrase un fichier de config via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant")), ("content", prop_str("Nouveau contenu"))], &["server_id", "path", "content"])),
+        tool("write_file", "Écrit/écrase un fichier de config via SFTP. Secret (token, mot de passe) : écris `{{secret:NOM}}` à sa place (voir list_secrets), jamais la valeur. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant")), ("content", prop_str("Nouveau contenu"))], &["server_id", "path", "content"])),
         tool("create_dir", "Crée un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin du nouveau dossier"))], &["server_id", "path"])),
         tool("delete_path", "Supprime un fichier ou un dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin à supprimer")), ("is_dir", prop_bool("true si c'est un dossier"))], &["server_id", "path"])),
         tool("rename_path", "Renomme ou déplace un fichier/dossier via SFTP. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("from", prop_str("Chemin source")), ("to", prop_str("Chemin destination"))], &["server_id", "from", "to"])),
         tool("upload_file", "Téléverse un fichier LOCAL (BINAIRE, sans la limite 2 Mo de write_file) vers un chemin distant précis via SFTP — pour déployer un .jar, un resource pack, un monde, etc. `local_path` = chemin sur la machine qui exécute ce serveur MCP. Crée le dossier parent au besoin, écrase la cible. Vérifie ensuite avec file_stat. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("local_path", prop_str("Chemin du fichier LOCAL (machine hôte du MCP)")), ("remote_path", prop_str("Chemin distant complet, fichier inclus"))], &["server_id", "local_path", "remote_path"])),
         tool("download_file", "Télécharge un fichier distant (BINAIRE) vers un chemin LOCAL via SFTP — pour récupérer le .jar/config actuel et le comparer avant de pousser, ou faire un backup ciblé. `local_path` = chemin sur la machine qui exécute ce serveur MCP. Crée le dossier parent local au besoin.", obj(&[("server_id", prop_int("ID du serveur")), ("remote_path", prop_str("Chemin distant du fichier")), ("local_path", prop_str("Chemin LOCAL de destination (machine hôte du MCP)"))], &["server_id", "remote_path", "local_path"])),
-        tool("edit_file", "Édition PARTIELLE d'un fichier texte distant : remplace toutes les occurrences EXACTES de `find` par `replace`. Ne renvoie jamais le contenu → SÛR même si le fichier contient des secrets (contrairement à read_file+write_file, qui réécrirait `[SECRET]` par-dessus le vrai secret). Erreur si `find` est absent (aucun remplacement). À préférer à write_file pour patcher une config sans la réécrire en entier. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("find", prop_str("Texte exact à trouver (respecte casse/espaces)")), ("replace", prop_str("Texte de remplacement"))], &["server_id", "path", "find", "replace"])),
+        tool("edit_file", "Édition PARTIELLE d'un fichier texte distant : remplace toutes les occurrences EXACTES de `find` par `replace`. Ne renvoie jamais le contenu → SÛR même si le fichier contient des secrets (contrairement à read_file+write_file, qui réécrirait `[SECRET]` par-dessus le vrai secret). Erreur si `find` est absent (aucun remplacement). À préférer à write_file pour patcher une config sans la réécrire en entier. `replace` accepte `{{secret:NOM}}` (voir list_secrets). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("find", prop_str("Texte exact à trouver (respecte casse/espaces)")), ("replace", prop_str("Texte de remplacement"))], &["server_id", "path", "find", "replace"])),
         tool("file_stat", "Métadonnées d'un fichier distant : taille (octets) + empreinte sha256 — pour vérifier qu'un upload_file a réussi / que le fichier distant correspond au local. Le sha256 est vide pour un dossier.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant"))], &["server_id", "path"])),
         tool("read_startup", "Lit la commande de démarrage (flags JVM : -Xmx, GC, Aikar…), le JAR, la mémoire et l'image.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
         tool("read_properties", "Lit les réglages du serveur (server.properties : max-players, difficulty, pvp, view-distance, white-list…) via l'API, sans SFTP. Les valeurs secrètes (rcon.password…) sont masquées.", obj(&[("server_id", prop_int("ID du serveur"))], &["server_id"])),
-        tool("set_property", "Modifie UN réglage EXISTANT de server.properties (clé exacte, telle que renvoyée par read_properties). Valeur vide = vide le réglage. Effet au prochain démarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("property", prop_str("Clé exacte (ex. max-players)")), ("value", prop_str("Nouvelle valeur, en texte"))], &["server_id", "property", "value"])),
+        tool("set_property", "Modifie UN réglage EXISTANT de server.properties (clé exacte, telle que renvoyée par read_properties). Valeur vide = vide le réglage. Effet au prochain démarrage. Mot de passe (rcon.password…) : `{{secret:NOM}}` (voir list_secrets). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("property", prop_str("Clé exacte (ex. max-players)")), ("value", prop_str("Nouvelle valeur, en texte"))], &["server_id", "property", "value"])),
         tool("set_startup_params", "Modifie la commande de démarrage Java (optimiser les flags JVM). Garder `{{SERVER_JARFILE}}`. Effet au prochain démarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("parameters", prop_str("Commande Java COMPLÈTE"))], &["server_id", "parameters"])),
         tool("list_installed_mods", "Mods installés (nom + version, format compact ; loaders résumés en en-tête). Sur un gros modpack, utilise `query` pour filtrer par sous-chaîne de nom (ex. « est-ce que Sodium est installé ? ») plutôt que de tout lister.", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Filtre optionnel : sous-chaîne du nom (insensible à la casse)"))], &["server_id"])),
         tool("list_installed_plugins", "Plugins installés (nom + version, format compact). `query` filtre par sous-chaîne du nom (insensible à la casse).", obj(&[("server_id", prop_int("ID du serveur")), ("query", prop_str("Filtre optionnel : sous-chaîne du nom"))], &["server_id"])),
@@ -1761,10 +1797,10 @@ fn build_tool_list() -> Value {
         tool("wait_for", "ATTEND UNE CONDITION, une seule parmi : `state` (running | offline | starting | stopping), `pattern` (ligne de console : texte, ou expression régulière avec `regex` ; casse ignorée ; lignes après `after` si fourni, sinon à venir), `job_id` (tâche de sauvegarde, snapshot ou reprise d'un serveur en pause). `timeout_secs` défaut 60, max 600. Rend `reached`, `elapsed_secs`, `state`, `reason` (timeout, cancelled, arrêt pendant le démarrage…), `matched_line`, `job`, `cursor`. `state=running` juste après power_action restart : l'ancien « running » n'est pas retenu ; un arrêt pendant le démarrage rend la main aussitôt ; résumé `startup` (durée, ligne « Done », erreurs et avertissements de la console regroupés par signature, avec le plugin ou mod probable). Avancement signalé pendant l'attente.", obj(&[("server_id", prop_int("ID du serveur")), ("state", prop_str("État attendu : running | offline | starting | stopping")), ("pattern", prop_str("Texte attendu dans la console")), ("regex", prop_bool("`pattern` est une expression régulière (défaut false)")), ("after", prop_str("Avec `pattern` : curseur à partir duquel chercher (optionnel)")), ("job_id", prop_int("Tâche de sauvegarde à attendre (create_snapshot, reprise…)")), ("timeout_secs", prop_int("Attente maximale en secondes (défaut 60, max 600)"))], &["server_id"])),
         tool("deploy_and_verify", "DÉPLOIE UN PLUGIN OU MOD COMPILÉ ET VÉRIFIE QU'IL S'ACTIVE (boucle de développement) : lit le .jar LOCAL (`local_path`) et son descripteur (plugin.yml, paper-plugin.yml, fabric.mod.json, mods.toml… : nom, version, plateforme), l'envoie par SFTP (`remote_path`, défaut /plugins/<fichier> pour un plugin, /mods/<fichier> pour un mod), repère un autre jar du MÊME plugin sous un autre nom (mis de côté en .old avec `replace_previous`, sinon signalé), redémarre (`restart` : restart | none ; démarre un serveur éteint), attend `running` (`timeout_secs` défaut 180, max 600) puis analyse la console du démarrage. Verdict JSON : `ok`, `plugin`, `version`, `uploaded_bytes`, `startup_secs`, `enabled` (ligne « Enabling … » de Bukkit/Paper, liste des mods de Fabric, déduit pour Forge/NeoForge) et `evidence`, `loaded_version`, `errors` et `warnings` qui le concernent (source probable = ce plugin), `other_errors`, `deploy_warnings`, `console_tail`. Lit un fichier de la machine LOCALE : réservé au serveur MCP local. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("local_path", prop_str("Chemin LOCAL du .jar compilé")), ("remote_path", prop_str("Chemin distant (défaut : /plugins/ ou /mods/ selon le descripteur ; un dossier finissant par / reçoit le nom du fichier)")), ("restart", prop_str("restart (défaut) | none")), ("replace_previous", prop_bool("Renommer en .old un autre jar du même plugin (défaut false : seulement le signaler)")), ("timeout_secs", prop_int("Attente du démarrage en secondes (défaut 180, max 600)"))], &["server_id", "local_path"])),
         tool("get_config", "LIT une config STRUCTURÉE (YAML .yml/.yaml, TOML, JSON/JSONC, .properties) via SFTP. Avec `key` : la valeur TYPÉE (nombre, booléen, texte, liste, objet) ; chemin `a.b.c`, index `a.list[0]`, clé à points entre guillemets `forced-hosts.\"lobby.example.com\"` ; .properties : clé entière (`rcon.password`). Sans `key` : l'arborescence des valeurs (300 au plus). Clé absente : clés disponibles au niveau le plus proche. Secrets (password, secret, token, key…) toujours masqués en [SECRET]. À préférer à read_file avant set_config.", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant, ex. /plugins/LuckPerms/config.yml")), ("key", prop_str("Chemin de clé (optionnel ; sans : arborescence)"))], &["server_id", "path"])),
-        tool("set_config", "MODIFIE des clés d'une config structurée (YAML, TOML, JSON/JSONC, .properties) SANS casser le fichier : seule la valeur visée est réécrite (commentaires, ordre, indentation, guillemets gardés), une clé absente est créée au bon niveau. Le résultat est RELU avant écriture : s'il ne s'analyse plus, si la valeur relue diffère ou si une autre clé bouge, rien n'est écrit. Valeurs JSON typées (`10`, `true`, `\"texte\"`, liste, objet) ; un texte envoyé sur un nombre ou un booléen existant en garde le type (`keep_type`). Renvoie les changements et un diff, secrets masqués des deux côtés. Refuse une valeur contenant [SECRET], [IP], [EMAIL] ou [CREDS] (masques de lecture : la vraie valeur serait écrasée). `dry_run` : diff sans écrire. Effet au rechargement du plugin ou au redémarrage. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("changes", crate::config_edit::changes_schema()), ("create_missing", prop_bool("Créer les clés absentes (défaut true)")), ("keep_type", prop_bool("Garder le type d'un nombre/booléen existant si la valeur est un texte convertible (défaut true)")), ("dry_run", prop_bool("Montrer le diff sans écrire (défaut false)"))], &["server_id", "path", "changes"])),
+        tool("set_config", "MODIFIE des clés d'une config structurée (YAML, TOML, JSON/JSONC, .properties) SANS casser le fichier : seule la valeur visée est réécrite (commentaires, ordre, indentation, guillemets gardés), une clé absente est créée au bon niveau. Le résultat est RELU avant écriture : s'il ne s'analyse plus, si la valeur relue diffère ou si une autre clé bouge, rien n'est écrit. Valeurs JSON typées (`10`, `true`, `\"texte\"`, liste, objet) ; un texte envoyé sur un nombre ou un booléen existant en garde le type (`keep_type`). Renvoie les changements et un diff, secrets masqués des deux côtés. Refuse une valeur contenant [SECRET], [IP], [EMAIL] ou [CREDS] (masques de lecture : la vraie valeur serait écrasée). `dry_run` : diff sans écrire. Effet au rechargement du plugin ou au redémarrage. Secret (token, mot de passe) : valeur `{{secret:NOM}}` (voir list_secrets), résolue à l'écriture, jamais montrée. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("path", prop_str("Chemin distant du fichier")), ("changes", crate::config_edit::changes_schema()), ("create_missing", prop_bool("Créer les clés absentes (défaut true)")), ("keep_type", prop_bool("Garder le type d'un nombre/booléen existant si la valeur est un texte convertible (défaut true)")), ("dry_run", prop_bool("Montrer le diff sans écrire (défaut false)"))], &["server_id", "path", "changes"])),
         tool("export_manifest", "EXPORTE le MANIFESTE déclaratif d'un serveur (format v1 de plan_manifest) : jeu, version du jeu, plateforme, Java, server.properties, commande de démarrage, plugins/mods/datapacks avec leur source quand l'hébergeur les identifie (`source: null` = non réinstallable), liste blanche et opérateurs, tâches planifiées du panel ; configs seulement sur demande (`include_configs`). Secrets masqués en [SECRET] (= valeur actuelle gardée à l'application). Ni mondes ni fichiers. Ne modifie rien : point de départ pour reproduire, versionner ou comparer un serveur.", obj(&[("server_id", prop_int("ID du serveur")), ("include_configs", crate::manifest::config_selection_schema()), ("include_players", prop_bool("Exporter liste blanche et opérateurs (défaut true)"))], &["server_id"])),
         tool("plan_manifest", "COMPARE un MANIFESTE au serveur réel SANS RIEN MODIFIER : étapes ordonnées (identifiant stable, statut ok = conforme | change | add | remove | manual = action humaine ou écriture non gérée — jeu, version, Java, fichier de config pas encore généré | unsupported), valeurs actuelle et voulue, diffs des configs et fichiers (secrets masqués), contenu présent mais absent du manifeste (`unlisted`). Format v1 : {version: 1, server?: {name, game, egg_id, game_version, loader, java_version}, properties?: {clé: valeur}, startup?: {parameters, jar_file}, content?: [{kind: plugin|mod|datapack, source: modrinth|curseforge|spigot, project, version?, file?, name?, loader?}] ou {items, remove_unlisted}, configs?: [{path, set: {\"a.b\": valeur}}], files?: [{path, content}], players?: {whitelist?, ops?, remove_unlisted?}, schedules?: [{name, cron, is_active?, only_when_online?, tasks: [{action, payload, time_offset?, continue_on_failure?}]}] ou {items, remove_unlisted}} ; toute section est facultative, [SECRET] = garder la valeur actuelle. À appeler avant apply_manifest.", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema())], &["server_id", "manifest"])),
-        tool("apply_manifest", "APPLIQUE un MANIFESTE (format de plan_manifest) : recalcule le plan puis exécute les étapes change/add/remove dans l'ordre — renommage, commande de démarrage, server.properties, installation/remplacement/retrait de contenu, clés de configs (comme set_config), fichiers, joueurs (serveur démarré), tâches planifiées. IDEMPOTENT : relancé après une coupure, ne refait rien de conforme. `apply_official=true` : version, plateforme, Java et JAR aussi (sinon manual), d'abord, confirmés par l'utilisateur pour change_version ; le contenu est alors reporté à une relance (résolu pour la nouvelle version). Snapshot préalable attendue (défaut ; sans elle rien n'est modifié, `snapshot=false` pour s'en passer). `steps` : identifiants ou préfixes d'étapes du plan à appliquer seuls (\"properties\", \"content.plugin\"). Une étape échouée n'arrête que celles qui en dépendent (config d'un plugin dont l'installation a échoué). Rapport étape par étape (réussie, conforme, ignorée, échouée + raison) ; manual/unsupported restent à faire. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema()), ("steps", prop_str_array("Étapes à appliquer seules : identifiants ou préfixes (défaut : toutes)")), ("snapshot", prop_bool("Snapshot préalable attendue (défaut true)")), ("apply_official", prop_bool("Appliquer AUSSI version du jeu, plateforme, Java et JAR (étapes server.game_version, server.loader, server.java, startup.jar_file) par la logique de set_server_platform : catalogue de l'hébergeur ou JAR officiel ; change_version DESTRUCTIF, confirmé par l'utilisateur avant tout effet (défaut false : ces étapes restent manual)")), ("confirm_name", prop_str("Avec apply_official : nom EXACT du serveur, donné par l'utilisateur, si change_version est nécessaire et que ton client ne sait pas le lui demander"))], &["server_id", "manifest"])),
+        tool("apply_manifest", "APPLIQUE un MANIFESTE (format de plan_manifest) : recalcule le plan puis exécute les étapes change/add/remove dans l'ordre — renommage, commande de démarrage, server.properties, installation/remplacement/retrait de contenu, clés de configs (comme set_config), fichiers, joueurs (serveur démarré), tâches planifiées. IDEMPOTENT : relancé après une coupure, ne refait rien de conforme. `apply_official=true` : version, plateforme, Java et JAR aussi (sinon manual), d'abord, confirmés par l'utilisateur pour change_version ; le contenu est alors reporté à une relance (résolu pour la nouvelle version). Snapshot préalable attendue (défaut ; sans elle rien n'est modifié, `snapshot=false` pour s'en passer). `steps` : identifiants ou préfixes d'étapes du plan à appliquer seuls (\"properties\", \"content.plugin\"). Une étape échouée n'arrête que celles qui en dépendent (config d'un plugin dont l'installation a échoué). Rapport étape par étape (réussie, conforme, ignorée, échouée + raison) ; manual/unsupported restent à faire. Valeurs des configs et properties, contenu des fichiers : `{{secret:NOM}}` accepté (voir list_secrets). ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("manifest", crate::manifest::manifest_schema()), ("steps", prop_str_array("Étapes à appliquer seules : identifiants ou préfixes (défaut : toutes)")), ("snapshot", prop_bool("Snapshot préalable attendue (défaut true)")), ("apply_official", prop_bool("Appliquer AUSSI version du jeu, plateforme, Java et JAR (étapes server.game_version, server.loader, server.java, startup.jar_file) par la logique de set_server_platform : catalogue de l'hébergeur ou JAR officiel ; change_version DESTRUCTIF, confirmé par l'utilisateur avant tout effet (défaut false : ces étapes restent manual)")), ("confirm_name", prop_str("Avec apply_official : nom EXACT du serveur, donné par l'utilisateur, si change_version est nécessaire et que ton client ne sait pas le lui demander"))], &["server_id", "manifest"])),
         tool("clone_server", "CLONE un serveur dans une MyBox pour tester avant la prod : crée un serveur du même jeu (vérifications de mybox_create_server ; CPU/RAM de la source par défaut si la MyBox a la place, sinon ce qui reste), attend la fin de l'installation, l'arrête s'il a démarré, copie les fichiers de la source (plugins, mods, configs, server.properties… ; MONDES EXCLUS sauf include_world=true ; journaux jamais), puis applique le manifeste de la source (commande de démarrage, réglages, tâches planifiées). Long (plusieurs minutes, progression). La sortie donne `created_server_id`, y compris si une étape suivante échoue. Le clone reste arrêté. Vérifie d'abord la place (mybox_capacity, plan_placement) et confirme avec l'utilisateur. ✎ (modifiant)", obj(&[("source_server_id", prop_int("ID du serveur à cloner")), ("mybox_id", prop_int("MyBox d'accueil (mybox_capacity)")), ("name", prop_str("Nom du clone (1 à 50 caractères)")), ("cpu", prop_int("Cœurs (défaut : ceux de la source si la place le permet)")), ("ram", prop_int("Go de RAM (défaut : ceux de la source si la place le permet)")), ("include_world", prop_bool("Copier aussi les mondes (défaut false)")), ("exclude", prop_str_array("Chemins à ne pas copier, ex. [\"/plugins/dynmap/web\"]")), ("location_id", prop_int("Localisation (server_catalog) ; défaut : celle de la source si en stock")), ("required_fields", json!({ "type": "object", "description": "Champs requis du jeu : { CLÉ: valeur } (server_catalog)", "additionalProperties": { "type": "string" } }))], &["source_server_id", "mybox_id", "name"])),
         // --- Réseaux proxy (network.rs) ---
         tool("network_topology", "TOPOLOGIE des réseaux proxy du compte (Velocity, BungeeCord/Waterfall), lecture seule : repère les proxys (plateforme de l'hébergeur, jar, velocity.toml ou config.yml), lit leurs entrées (servers, try, forced-hosts, mode de transfert, online-mode) et rapproche chaque adresse d'un serveur du compte (ip:port principal, port secondaire, nom DNS ; 127.0.0.1 ne mène à aucun autre serveur). Pour chaque serveur de jeu relié : online-mode, transfert Velocity de config/paper-global.yml (paper.yml avant 1.19), settings.bungeecord de spigot.yml, BungeeGuard, FabricProxy-Lite. Secret de transfert et jetons comparés EN INTERNE (identique, différent, absent), jamais affichés. Rend proxy → serveurs nommés (adresse, serveur du compte reconnu ou non, réglages) et les problèmes triés (critique, important, info) avec leur correction. `server_id` : seulement les réseaux qui contiennent ce serveur (proxy ou serveur de jeu). À appeler avant link_proxy et après pour vérifier.", obj(&[("server_id", prop_int("Proxy ou serveur de jeu à examiner (facultatif ; défaut : tout le compte)"))], &[])),
@@ -1783,6 +1819,9 @@ fn build_tool_list() -> Value {
         // --- Plateforme et version, bases de la MyBox ---
         tool("set_server_platform", "CHOISIT LA PLATEFORME ET LA VERSION d'un serveur Minecraft sans le panel (Paper, Spigot, Vanilla, Purpur, Folia, Fabric, Forge, NeoForge, Velocity, BungeeCord, Waterfall…), et au besoin Java et le JAR de démarrage. `dry_run` VRAI par défaut : état actuel, voie retenue, identifiants résolus (entrée du catalogue, build, JAR et son sha256, version de Java) et chaque opération avec ses arguments, sans rien faire ; montre-le à l'utilisateur. Voies (`method` : auto par défaut, catalog, jar) : catalogue de l'hébergeur (change_version : entrée `version_id`, ou chargeur fabric/forge/neoforge par son nom + `build`) ; sinon JAR officiel (PaperMC : Velocity, Waterfall, Folia, Paper ; Purpur) téléchargé et vérifié, envoyé à la racine puis choisi comme fichier de démarrage. `version` : Minecraft pour un serveur de jeu (défaut : celle du monde quand la plateforme change), version du proxy pour un proxy (défaut : la dernière ; une version précise de Velocity passe par le JAR). `java` : version majeure ; sans, Java est relevé au minimum requis (jamais abaissé). `jar_file` seul : choisir un JAR déjà présent à la racine. change_version est DESTRUCTIF (JAR et bibliothèques remplacés, serveur redémarré) : confirmation demandée à l'utilisateur par son client, sinon `confirm_name` = nom EXACT du serveur donné par lui — ne le devine jamais ; snapshot attendue avant (snapshot=false pour s'en passer). Version de Minecraft ANTÉRIEURE à celle du monde : refusée (monde illisible), sauf `reinstall=true` (réinstallation propre : TOUT le contenu effacé, snapshot forcée). Chaque sous-écriture est une étape de la garde (JAR envoyé : annulable). Redémarrage ensuite. ✎ (modifiant)", obj(&[("server_id", prop_int("ID du serveur")), ("platform", prop_str("Plateforme voulue : paper, spigot, vanilla, purpur, folia, fabric, forge, neoforge, velocity, bungeecord, waterfall… (défaut : l'actuelle)")), ("version", prop_str("Version de Minecraft (serveur de jeu, ex. 1.21.4) ou du proxy (ex. Velocity 3.4.0) ; défaut : celle du monde, ou la dernière pour un proxy")), ("build", prop_str("Build précis : chargeur (get_content_files loader_builds) ou numéro de build PaperMC / Purpur (défaut : dernier stable)")), ("version_id", prop_int("Entrée du catalogue (search_game_content type=version) imposée, sans recherche")), ("java", prop_int("Version majeure de Java voulue (17, 21, 25…) ; défaut : relevée au minimum requis si besoin")), ("jar_file", prop_str("Fichier de démarrage à la racine (nom nu, .jar) : à choisir s'il existe déjà, ou nom du JAR envoyé par la voie JAR")), ("method", json!({ "type": "string", "enum": ["auto", "catalog", "jar"], "description": "auto (défaut : catalogue, puis JAR si absent), catalog, jar" })), ("reinstall", prop_bool("Réinstallation propre (contenu EFFACÉ) : seule façon de revenir à une version antérieure (défaut false)")), ("confirm_name", prop_str("Nom EXACT du serveur, donné par l'utilisateur, pour confirmer change_version")), ("snapshot", prop_bool("Snapshot attendue avant change_version (défaut true)")), ("dry_run", prop_bool("Montrer le plan sans rien faire (défaut TRUE)"))], &["server_id"])),
         tool("delete_database", "SUPPRIME DÉFINITIVEMENT une base de données d'une MyBox (tables et données perdues ; plugins et sites qui s'y connectent cassés). Vérifie d'abord que la base existe dans la MyBox (`database_id` : voir l'erreur de connect_database ou l'outil officiel get_mybox). `confirm_name` doit reprendre EXACTEMENT le nom de la base (son `dbname`, casse comprise), donné par l'utilisateur — jamais deviné ; sinon refus. Avant : sauvegardes éventuelles avec l'outil officiel list_db_backups {mybox_id, database_id}. Le mot de passe n'est jamais affiché. N'utiliser que sur demande EXPLICITE de l'utilisateur. ✎ (modifiant, irréversible)", obj(&[("mybox_id", prop_int("ID de la MyBox")), ("database_id", prop_int("ID de la base à supprimer")), ("confirm_name", prop_str("Nom EXACT de la base (dbname), donné par l'utilisateur, en confirmation"))], &["mybox_id", "database_id", "confirm_name"])),
+        // --- Secrets des agents (agent_secrets.rs) ---
+        tool("list_secrets", "SECRETS DES AGENTS : noms et descriptions, JAMAIS les valeurs. Un secret s'écrit par RÉFÉRENCE `{{secret:NOM}}` à la place de la valeur : valeurs de set_config, contenu de write_file, `replace` d'edit_file, valeur de set_property, configs, properties et fichiers d'un manifeste (plan_manifest, apply_manifest). La valeur est substituée juste avant l'écriture ; sorties, diffs et relectures montrent la référence. Pour un token de bot, une clé d'API de plugin, un mot de passe RCON… : ne demande jamais la valeur dans la conversation ; s'il manque, generate_secret (aléatoire), sinon l'utilisateur l'ajoute dans l'app (Réglages → MCP → Secrets des agents).", obj(&[], &[])),
+        tool("generate_secret", "CRÉE un secret ALÉATOIRE (générateur du système) nommé `name` ([a-z0-9_-], 64 caractères au plus ; nom déjà pris refusé), à écrire ensuite par référence `{{secret:NOM}}` (voir list_secrets) : mot de passe RCON, secret partagé entre deux plugins… La valeur n'est JAMAIS renvoyée ni affichée. `length` 8 à 256 (défaut 32) ; `charset` alphanumeric (défaut) | hex | url_safe | symbols. Suppression : dans l'app seulement. ✎ (modifiant)", obj(&[("name", prop_str("Nom du secret : lettres minuscules, chiffres, - et _")), ("description", prop_str("À quoi il sert (facultatif, non secret)")), ("length", prop_int("Nombre de caractères, 8 à 256 (défaut 32)")), ("charset", json!({ "type": "string", "enum": ["alphanumeric", "hex", "url_safe", "symbols"], "description": "Caractères : alphanumeric (défaut), hex, url_safe (lettres, chiffres, - et _), symbols (ponctuation en plus)" }))], &["name"])),
     ])
 }
 
@@ -2579,5 +2618,39 @@ mod tests {
             assert_eq!(crate::mcp_catalog::annotations(t).unwrap()["destructiveHint"], true, "{t}");
         }
         assert_eq!(crate::mcp_catalog::annotations("apply_to_servers").unwrap()["openWorldHint"], true);
+    }
+
+    #[test]
+    fn agent_secret_tools_are_classified_and_kept_from_the_copilot() {
+        // Liste : lecture, jamais en cache (un secret ajouté dans l'app doit apparaître aussitôt).
+        let r = "list_secrets";
+        assert!(!is_write_tool(r) && READ_TOOLS.contains(&r) && !WRITE_TOOLS.contains(&r));
+        assert!(cache_ttl(r).is_none());
+        // Génération : modifiante, configuration persistante (INFRA_TOOLS).
+        let w = "generate_secret";
+        assert!(is_write_tool(w) && WRITE_TOOLS.contains(&w) && INFRA_TOOLS.contains(&w));
+        assert!(cache_ttl(w).is_none());
+        // Ni l'un ni l'autre au Copilote, qui ne peut pas résoudre une référence.
+        for t in [r, w] {
+            assert!(AGENT_SECRET_TOOLS.contains(&t) && copilot_forbidden(t), "{t} : jamais au Copilote");
+            assert!(!LOCAL_KEEP_TOOLS.contains(&t) && !LOCAL_DISK_TOOLS.contains(&t), "{t}");
+            assert!(tool_for_game(t, "minecraft") && tool_for_game(t, "satisfactory"), "{t} : tous jeux");
+            assert_eq!(crate::mcp_catalog::group_of(t), Some("config"), "{t}");
+        }
+        assert_eq!(crate::agent_guard::plan_kind(w), "prévu", "règle d'annulation (raison fixe)");
+        let tools = tool_list().as_array().unwrap();
+        let schema = |n: &str| tools.iter().find(|t| t["name"] == n).unwrap_or_else(|| panic!("{n} absent"))["inputSchema"].clone();
+        assert_eq!(schema(r)["required"], json!([]));
+        assert_eq!(schema(w)["required"], json!(["name"]));
+        assert_eq!(schema(w)["properties"]["charset"]["enum"], json!(["alphanumeric", "hex", "url_safe", "symbols"]));
+        // Aucun paramètre de valeur : un secret ne passe jamais par les arguments (journalisés).
+        assert!(schema(w)["properties"].get("value").is_none());
+        let a = crate::mcp_catalog::annotations(w).unwrap();
+        assert_eq!((a["destructiveHint"].clone(), a["idempotentHint"].clone()), (json!(false), json!(false)));
+        // Les outils qui écrivent du contenu fourni par l'agent annoncent la référence.
+        for t in ["write_file", "edit_file", "set_config", "set_property", "apply_manifest"] {
+            let desc = tools.iter().find(|x| x["name"] == t).unwrap()["description"].as_str().unwrap();
+            assert!(desc.contains("{{secret:NOM}}"), "{t}");
+        }
     }
 }

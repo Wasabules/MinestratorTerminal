@@ -323,6 +323,45 @@ pub async fn rollback_changeset(
     core.rollback_changeset(&changeset_id, steps, force).await
 }
 
+// --- Secrets des agents (agent_secrets.rs) : écrits par référence `{{secret:NOM}}` ---------------
+
+/// Secrets des agents enregistrés : noms, descriptions, dates — jamais les valeurs.
+#[tauri::command]
+pub async fn agent_secrets(
+    core: State<'_, Arc<Core>>,
+) -> Result<Vec<minestrator_core::AgentSecret>, Error> {
+    core.agent_secrets()
+}
+
+/// Ajoute un secret saisi : la valeur part au stockage sécurisé et n'est jamais relue par l'UI.
+#[tauri::command]
+pub async fn add_agent_secret(
+    core: State<'_, Arc<Core>>,
+    name: String,
+    description: String,
+    value: String,
+) -> Result<minestrator_core::AgentSecret, Error> {
+    core.add_agent_secret(&name, &description, &value)
+}
+
+/// Crée un secret aléatoire (générateur du système), jamais affiché.
+#[tauri::command]
+pub async fn generate_agent_secret(
+    core: State<'_, Arc<Core>>,
+    name: String,
+    description: String,
+    length: Option<u32>,
+    charset: Option<minestrator_core::SecretCharset>,
+) -> Result<minestrator_core::AgentSecret, Error> {
+    core.generate_agent_secret(&name, &description, length, charset)
+}
+
+/// Supprime un secret (confirmé par l'utilisateur dans l'UI).
+#[tauri::command]
+pub async fn delete_agent_secret(core: State<'_, Arc<Core>>, name: String) -> Result<(), Error> {
+    core.delete_agent_secret(&name)
+}
+
 #[tauri::command]
 pub fn get_privacy_config(core: State<'_, Arc<Core>>) -> PrivacyConfig {
     core.get_privacy_config()

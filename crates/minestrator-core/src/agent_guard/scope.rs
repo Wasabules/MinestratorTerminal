@@ -75,6 +75,8 @@ pub(crate) enum Targets {
     AllRunning,
     /// Aucune cible lisible (outil au niveau du compte, ou outil inconnu).
     Unknown,
+    /// Aucun serveur touché : réglage local de l'ordinateur (secret des agents généré). Permis.
+    Local,
     /// Un identifiant présent mais illisible (refus, comme la portée du Copilote).
     Invalid(String),
 }
@@ -166,6 +168,9 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
                 (Ok(Some(_)), Ok(ids)) => Targets::Servers(ids),
             }
         }
+        // Secret des agents : stockage sécurisé de l'ordinateur, aucun serveur. Un agent en mode
+        // constructeur peut en créer un pour le serveur qu'il monte.
+        "generate_secret" => return Targets::Local,
         _ => {}
     }
     match servers_in(args) {
@@ -189,7 +194,7 @@ pub(crate) fn check(
         ids.iter().filter(|id| !permitted(**id)).map(|id| id.to_string()).collect()
     };
     match targets {
-        Targets::Create => Ok(()),
+        Targets::Create | Targets::Local => Ok(()),
         Targets::Servers(ids) => {
             let out = outside(ids);
             if out.is_empty() {
@@ -394,6 +399,14 @@ mod tests {
         for t in ["sync_dir", "upload_world"] {
             assert_eq!(write_targets(t, &json!({ "server_id": 5, "local_dir": "C:/x" })), Targets::Servers(vec![5]), "{t}");
         }
+    }
+
+    #[test]
+    fn generated_secret_touches_no_server_and_is_permitted_in_builder_mode() {
+        assert_eq!(write_targets("generate_secret", &json!({ "name": "rcon" })), Targets::Local);
+        // Même avec un identifiant de serveur glissé dans les arguments : rien n'est écrit dessus.
+        assert_eq!(write_targets("generate_secret", &json!({ "name": "x", "server_id": 9 })), Targets::Local);
+        assert!(check(&Targets::Local, None, |_| false).is_ok());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 //! Stockage des secrets : clés API MineStrator (compte actif sous `api-key`, comptes inactifs sous
 //! `api-key-<idUtilisateur>`), clés LLM du Copilote, secrets par jeu, mots de passe SFTP par
-//! serveur. **Aucun secret n'est écrit en clair par l'app** : chaque plateforme passe par son
-//! stockage sécurisé natif.
+//! serveur, secrets des agents (`agent-secret-<nom>`). **Aucun secret n'est écrit en clair par
+//! l'app** : chaque plateforme passe par son stockage sécurisé natif.
 //!
 //! | Contexte | Backend |
 //! |---|---|
@@ -13,8 +13,9 @@
 //! Les identifiants de compte (`KEYRING_ACCOUNT*`) sont communs à tous les backends.
 
 use crate::config::{
-    KEYRING_ACCOUNT, KEYRING_ACCOUNT_GAME_PREFIX, KEYRING_ACCOUNT_KEY_PREFIX,
-    KEYRING_ACCOUNT_LLM_PREFIX, KEYRING_ACCOUNT_SFTP_PREFIX, KEYRING_ACCOUNT_WEBHOOK_PREFIX,
+    KEYRING_ACCOUNT, KEYRING_ACCOUNT_AGENT_SECRET_PREFIX, KEYRING_ACCOUNT_GAME_PREFIX,
+    KEYRING_ACCOUNT_KEY_PREFIX, KEYRING_ACCOUNT_LLM_PREFIX, KEYRING_ACCOUNT_SFTP_PREFIX,
+    KEYRING_ACCOUNT_WEBHOOK_PREFIX,
 };
 use crate::error::Result;
 
@@ -345,6 +346,17 @@ pub fn delete_webhook_url(id: &str) -> Result<()> {
     delete_account(&webhook_account(id))
 }
 
+// --- Secrets des agents (un par nom) ------------------------------------------
+//
+// Valeurs écrites dans les configs des serveurs par la référence `{{secret:<nom>}}`, jamais
+// montrées aux agents. Lecture, écriture et suppression passent par un [`SecretStore`]
+// (`crate::agent_secrets`) : le système en production, un dossier temporaire dans les tests.
+
+/// Nom de l'entrée qui garde un secret des agents.
+pub(crate) fn agent_secret_account(name: &str) -> String {
+    format!("{KEYRING_ACCOUNT_AGENT_SECRET_PREFIX}{name}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +371,6 @@ mod tests {
         assert_eq!(account_key_name(4242), "api-key-4242");
         assert_eq!(KEYRING_ACCOUNT, "api-key");
         assert_eq!(webhook_account("wh-1a2b"), "webhook-url-wh-1a2b");
+        assert_eq!(agent_secret_account("discord_token"), "agent-secret-discord_token");
     }
 }

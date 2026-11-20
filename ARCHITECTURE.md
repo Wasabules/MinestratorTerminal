@@ -430,10 +430,23 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   exportable) sur Android, avec migration puis suppression de l'ancien `secrets.json` en clair.
   Backend **fichier** réservé au daemon (et à iOS, non livré) : dossier à accès restreint, jamais le
   répertoire temporaire, `0600` sous Unix, **chiffré DPAPI** (compte du service) sous Windows.
+- **`agent_secrets`** — **secrets des agents** : valeurs (token de bot, clé d'API, mot de passe
+  RCON…) qu'un agent MCP écrit dans les configs par la référence `{{secret:NOM}}` sans jamais les
+  voir. Valeur sous `agent-secret-<nom>` dans `secrets`, index non secret (nom, description, date,
+  généré ou saisi) dans `agent_secrets.json`, relu à chaque accès (partagé par l'app et les
+  processus MCP). Résolution juste avant l'écriture (`set_config`, `write_file`, `edit_file`,
+  `set_property`, configs, réglages et fichiers d'un manifeste), erreur avant tout effet sur un nom
+  inconnu, **refus pour le Copilote** (`agent_guard::copilot_call`). Toute valeur résolue, créée ou
+  chargée est remplacée par sa référence dans les sorties (`redact::register_secret` /
+  `mask_known_secrets`, appliqués par `Core::redact_ai` quel que soit le réglage et par
+  `mcp::dispatch` sur toute sortie d'outil). Point d'accroche : `Core::resolve_secret_refs`. Outils
+  MCP `list_secrets` et `generate_secret` (CSPRNG, `INFRA_TOOLS`) ; ajout d'une valeur et
+  suppression dans l'app seulement. Testé sur le backend fichier d'un dossier temporaire.
 - **`cli_agent::RunDir`** — dossier éphémère de la config d'un agent CLI (qui peut porter la clé API) :
   privé, effacé à la fin du processus, orphelins purgés. Les outils natifs des agents (shell, disque)
   sont retirés — cf. `COPILOT.md`.
-- **`redact`** — `PrivacyConfig` + anonymisation (`redact`) des secrets/IP/e-mails avant envoi à un LLM.
+- **`redact`** — `PrivacyConfig` + anonymisation (`redact`) des secrets/IP/e-mails avant envoi à un LLM ;
+  valeurs connues des secrets des agents remplacées par `{{secret:NOM}}` (formes brute et échappées).
 - **`paste`** — export d'un texte (console, fichier) vers un service public (mclo.gs, instance MineStrator,
   pastes.dev). Contenu **toujours** anonymisé + dé-ANSI avant envoi (indépendant du réglage IA).
 
@@ -607,6 +620,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Automatisations / disponibilité** | `server_automations`, `set_auto_restart`, `save_scheduled_task`, `delete_scheduled_task`, `automation_runs`, `uptime_report` |
 | **Alertes externes** | `list_webhooks`, `save_webhook` (URL → stockage sécurisé), `delete_webhook`, `test_webhook` |
 | **Garde des agents MCP** | `agent_actions` (journal filtré), `agent_changesets`, `rollback_changeset` (après confirmation dans l'UI) ; portée des écritures dans `McpConfig` |
+| **Secrets des agents** | `agent_secrets` (noms, descriptions, dates : `AgentSecret`), `add_agent_secret` (valeur → stockage sécurisé, jamais relue), `generate_agent_secret` (longueur, `SecretCharset`), `delete_agent_secret` (après confirmation dans l'UI) |
 | **Divers / paste / MCP** | `paste_upload`, `detect_clis`, `app_exe_path` (compose la config MCP de Claude) |
 
 > **Updater / version** : côté **front** via les plugins Tauri (`updater.ts` : `check` / `downloadAndInstall`
@@ -712,7 +726,8 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   partagé avec le compteur de l'Aperçu par `mods/updates.svelte.ts`), `AssistantView` (chat Copilote streamé), `BackupsView`
   (backups + snapshots), `AutomationsView` (redémarrage automatique, tâches planifiées, historique
   d'exécution — en précisant qu'elles tournent sur cet ordinateur, pas sur le panel web),
-  `SettingsView` (dont `settings/ServiceSection` et `settings/WebhooksSection`), `CopilotView`,
+  `SettingsView` (dont `settings/ServiceSection`, `settings/WebhooksSection` et, sous MCP,
+  `settings/AgentSecretsSection`), `CopilotView`,
   `ComingSoon` (placeholder).
 - **Couches transverses** — `ipc.ts` (façade `api` typée + `humanizeError`/i18n), `events.ts`
   (abonnements typés), `types.ts` (ré-export des types générés de `bindings/`, cf. §5.3), stores rune (`stores/auth.svelte.ts`, `servers/colors.svelte`, `sftp/columns.svelte`),
