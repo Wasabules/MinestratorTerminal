@@ -203,6 +203,11 @@ pub(crate) const READ_TOOLS: &[&str] = &[
     "list_secrets",
     // Ping d'un serveur du compte (Java, Bedrock) : connexion à son adresse publique, aucun effet.
     "ping_server",
+    // Monter un réseau entier (blueprint.rs) : plan (simulations des outils élémentaires), export
+    // d'un réseau existant, modèles. Jamais au Copilote (BLUEPRINT_TOOLS).
+    "plan_network",
+    "export_network",
+    "network_template",
 ];
 
 /// Valeur renvoyée au modèle à la place d'un réglage secret (cf. `read_properties`).
@@ -281,6 +286,8 @@ pub(crate) const WRITE_TOOLS: &[&str] = &[
     "generate_secret",
     // Préréglages de réseau (LuckPerms, Geyser) sur le proxy et ses serveurs (voir INFRA_TOOLS).
     "network_preset",
+    // Réseau entier monté depuis un blueprint (voir INFRA_TOOLS et LOCAL_DISK_TOOLS).
+    "apply_network",
 ];
 
 /// Outils modifiants **jamais donnés au Copilote** : infrastructure (création, redimensionnement,
@@ -342,6 +349,8 @@ pub(crate) const INFRA_TOOLS: &[&str] = &[
     // Préréglages de réseau : plusieurs serveurs, installations depuis des sources externes, accès
     // d'une base de la MyBox, clé de Floodgate.
     "network_preset",
+    // Réseau entier : création de serveurs, plateforme, manifestes, liaison, préréglages.
+    "apply_network",
 ];
 
 /// Outils qui lisent ou écrivent sur le **disque de la machine** qui exécute le serveur MCP
@@ -360,7 +369,16 @@ pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
     "sync_dir",
     "upload_world",
     "apply_to_servers",
+    // Blueprint : dossiers synchronisés et mondes de l'ordinateur, lus au plan (simulation) et
+    // envoyés à l'application.
+    "plan_network",
+    "apply_network",
 ];
+
+/// Outils pour **monter un réseau entier** (`blueprint.rs`) : plusieurs serveurs, création,
+/// disque de l'ordinateur. Jamais au Copilote, même en lecture (il n'agit que sur le serveur de sa
+/// conversation) ; réservés à l'app et au serveur MCP local.
+pub(crate) const BLUEPRINT_TOOLS: &[&str] = &["plan_network", "apply_network", "export_network", "network_template"];
 
 /// Outils des **secrets des agents** (`agent_secrets.rs`). Le Copilote ne peut pas résoudre une
 /// référence `{{secret:NOM}}` (il lit du contenu non fiable) : ils ne lui servent à rien et restent
@@ -368,10 +386,13 @@ pub(crate) const LOCAL_DISK_TOOLS: &[&str] = &[
 pub(crate) const AGENT_SECRET_TOOLS: &[&str] = &["list_secrets", "generate_secret"];
 
 /// Outil interdit au Copilote (diagnostic, chat, agents CLI, « Appliquer ») : infrastructure,
-/// actions multi-serveurs, configuration persistante, accès au disque de l'ordinateur, ou secrets
-/// des agents.
+/// actions multi-serveurs, configuration persistante, accès au disque de l'ordinateur, secrets
+/// des agents, ou montage d'un réseau entier.
 pub(crate) fn copilot_forbidden(name: &str) -> bool {
-    INFRA_TOOLS.contains(&name) || LOCAL_DISK_TOOLS.contains(&name) || AGENT_SECRET_TOOLS.contains(&name)
+    INFRA_TOOLS.contains(&name)
+        || LOCAL_DISK_TOOLS.contains(&name)
+        || AGENT_SECRET_TOOLS.contains(&name)
+        || BLUEPRINT_TOOLS.contains(&name)
 }
 
 /// Rappel d'unités joint aux sorties MyBox : un agent ne doit pas confondre cœurs et %, Go et Mo.
@@ -419,6 +440,11 @@ pub(crate) const MINECRAFT_ONLY_TOOLS: &[&str] = &[
     // Préréglages de réseau et ping (Server List Ping, RakNet) : Minecraft seulement.
     "network_preset",
     "ping_server",
+    // Réseau Minecraft monté depuis un blueprint.
+    "plan_network",
+    "apply_network",
+    "export_network",
+    "network_template",
 ];
 
 /// Outils propres à **Satisfactory** (mods via ficsit.app).
@@ -754,6 +780,10 @@ fn cache_ttl(tool: &str) -> Option<Duration> {
         "get_config" | "export_manifest" | "plan_manifest" => 10,
         // Réseau proxy : lit les configs de plusieurs serveurs ; purgé par toute écriture.
         "network_topology" => 15,
+        // Blueprint : export (manifestes de plusieurs serveurs) et modèles (capacité de la MyBox) ;
+        // plan_network jamais (dossiers de l'ordinateur relus à chaque fois).
+        "export_network" => 15,
+        "network_template" => 10,
         // Volontairement absents : server_metrics (local, et cache propre des statistiques de
         // l'hébergeur), read_console (live),
         // analyze_performance (lance le profiler Spark), parse_spark_report (rare).
@@ -1625,6 +1655,12 @@ async fn dispatch_inner(core: &Core, name: &str, args: Value) -> Result<String, 
         "generate_secret" => crate::agent_secrets::generate_secret_tool(core, &args),
         "network_preset" => Box::pin(crate::network::network_preset_tool(core, &args)).await,
         "ping_server" => Box::pin(crate::network::ping_server_tool(core, &args)).await,
+        // Réseau entier (blueprint.rs) : simulations et sous-écritures par `mcp::dispatch` (garde
+        // des agents), confirmation avant tout effet ; sorties anonymisées dans le module.
+        "plan_network" => Box::pin(crate::blueprint::plan_network_tool(core, &args)).await,
+        "apply_network" => Box::pin(crate::blueprint::apply_network_tool(core, &args)).await,
+        "export_network" => Box::pin(crate::blueprint::export_network_tool(core, &args)).await,
+        "network_template" => Box::pin(crate::blueprint::network_template_tool(core, &args)).await,
 
         _ => Err(format!("outil inconnu : {name}")),
     }
@@ -1827,6 +1863,11 @@ fn build_tool_list() -> Value {
         // --- Secrets des agents (agent_secrets.rs) ---
         tool("list_secrets", "SECRETS DES AGENTS : noms et descriptions, JAMAIS les valeurs. Un secret s'écrit par RÉFÉRENCE `{{secret:NOM}}` à la place de la valeur : valeurs de set_config, contenu de write_file, `replace` d'edit_file, valeur de set_property, configs, properties et fichiers d'un manifeste (plan_manifest, apply_manifest). La valeur est substituée juste avant l'écriture ; sorties, diffs et relectures montrent la référence. Pour un token de bot, une clé d'API de plugin, un mot de passe RCON… : ne demande jamais la valeur dans la conversation ; s'il manque, generate_secret (aléatoire), sinon l'utilisateur l'ajoute dans l'app (Réglages → MCP → Secrets des agents).", obj(&[], &[])),
         tool("generate_secret", "CRÉE un secret ALÉATOIRE (générateur du système) nommé `name` ([a-z0-9_-], 64 caractères au plus ; nom déjà pris refusé), à écrire ensuite par référence `{{secret:NOM}}` (voir list_secrets) : mot de passe RCON, secret partagé entre deux plugins… La valeur n'est JAMAIS renvoyée ni affichée. `length` 8 à 256 (défaut 32) ; `charset` alphanumeric (défaut) | hex | url_safe | symbols. Suppression : dans l'app seulement. ✎ (modifiant)", obj(&[("name", prop_str("Nom du secret : lettres minuscules, chiffres, - et _")), ("description", prop_str("À quoi il sert (facultatif, non secret)")), ("length", prop_int("Nombre de caractères, 8 à 256 (défaut 32)")), ("charset", json!({ "type": "string", "enum": ["alphanumeric", "hex", "url_safe", "symbols"], "description": "Caractères : alphanumeric (défaut), hex, url_safe (lettres, chiffres, - et _), symbols (ponctuation en plus)" }))], &["name"])),
+        // --- Monter un réseau entier depuis un fichier (blueprint.rs) ---
+        tool("plan_network", "PLAN D'UN RÉSEAU ENTIER décrit dans UN document (blueprint : un proxy Velocity/BungeeCord et ses serveurs de jeu, format dans `blueprint`), SANS RIEN MODIFIER. Rapproche chaque serveur du compte (`server_id`, sinon nom exact dans la MyBox, sinon à créer), vérifie la place libre de la MyBox (CPU en cœurs, RAM en Go, emplacements : « pas assez de place » est bloquant et chiffré), puis simule pour chacun plateforme et version (set_server_platform), premier démarrage nécessaire (fichiers pas encore générés), manifeste (plan_manifest), dossiers de l'ordinateur (sync_dir), monde (upload_world), prégénération (Chunky), et pour le réseau la liaison (link_proxy) et les préréglages (network_preset). Rend par élément un statut ok | create | change | manual | blocked, `to_confirm` (ce que l'utilisateur confirmera), `confirm_names` (change_version destructif), `capacity`, l'ordre d'exécution (`order`). Lit les dossiers de l'ordinateur cités (sync, world). Point de départ : network_template ou export_network. À montrer à l'utilisateur avant apply_network.", obj(&[("blueprint", crate::blueprint::blueprint_schema())], &["blueprint"])),
+        tool("apply_network", "MONTE UN RÉSEAU ENTIER depuis un blueprint (format de plan_network). `dry_run` VRAI par défaut : rend le plan, rien n'est fait. Sinon, AVANT TOUT EFFET : mode constructeur vérifié pour chaque serveur rapproché (par nom comme par identifiant), confirmation de l'utilisateur (récapitulatif : serveurs créés et ressources, redimensionnements, change_version, mondes remplacés, effets des préréglages), nom exact retapé pour chaque change_version (élicitation, sinon `confirm_names` donnés par l'utilisateur, jamais devinés), snapshot attendue de chaque serveur existant modifié (snapshot=false pour s'en passer). Puis dans l'ordre : création (attente de l'installation) et redimensionnement, plateforme et version (attente de la fin de change_version), contenu, mondes (upload_world), premier démarrage puis arrêt des serveurs qui doivent générer leurs fichiers, manifestes complets (apply_manifest, apply_official), dossiers (sync_dir), liaison (link_proxy), préréglages (network_preset), démarrage (`start`, défaut true : serveurs arrêtés démarrés, serveurs modifiés redémarrés), prégénération, vérification (network_topology avec ping, ping_server). Chaque écriture est une étape annulable de la garde des agents (list_changesets, rollback_changeset). Arrêt au premier échec ; IDEMPOTENT : relancé avec le même blueprint, saute ce qui est conforme. Valeurs secrètes des manifestes : `{{secret:NOM}}` (voir list_secrets). ✎ (modifiant)", obj(&[("blueprint", crate::blueprint::blueprint_schema()), ("dry_run", prop_bool("Plan seulement, rien n'est fait (défaut true)")), ("confirm_names", prop_str_array("Noms EXACTS des serveurs dont la plateforme ou la version change (change_version), donnés par l'utilisateur, si ton client ne sait pas les lui demander")), ("snapshot", prop_bool("Snapshot attendue de chaque serveur existant modifié avant tout effet (défaut true)")), ("start", prop_bool("Démarrer à la fin les serveurs arrêtés et redémarrer ceux modifiés, jeu puis proxy ; nécessaire à la prégénération et au ping (défaut true)"))], &["blueprint"])),
+        tool("export_network", "EXPORTE le BLUEPRINT d'un réseau existant à partir de son proxy (`server_id` du proxy, ou d'un serveur relié à un seul proxy) : proxy (plateforme, version, ressources, transfert, domaines, liste de repli), chaque serveur de jeu relié (entrée, plateforme, version, ressources, manifeste d'export_manifest sans joueurs), préréglages repérés. Secrets masqués en [SECRET] (= garder la valeur actuelle) ; aucun chemin de l'ordinateur ; entrées qui ne mènent à aucun serveur du compte citées dans `notes`. Ne modifie rien : point de départ pour versionner, reproduire ou comparer un réseau (plan_network).", obj(&[("server_id", prop_int("ID du proxy (ou d'un serveur relié à un seul proxy)"))], &["server_id"])),
+        tool("network_template", "MODÈLES DE RÉSEAU pré-remplis (blueprint prêt pour plan_network). Sans `template` : la liste. `proxy-lobby-survie` (Velocity + Lobby + Survie), `proxy-lobby-survie-creatif` (+ Créatif), `survie-seul` (sans proxy). Ressources réparties selon la place libre de `mybox_id` (minimum de chacun, puis vers le confortable ; place insuffisante signalée), plugins usuels par slug Modrinth sans version imposée, réglages server.properties, prégénération du monde de survie, `domain` → routage par domaine vers le lobby. Ne modifie rien.", obj(&[("template", json!({ "type": "string", "enum": crate::blueprint::template_names(), "description": "Modèle (absent : liste des modèles)" })), ("mybox_id", prop_int("MyBox du réseau (requis avec `template`) : ressources réparties selon sa place libre")), ("version", prop_str("Version de Minecraft des serveurs de jeu (défaut : celle installée par l'hébergeur)")), ("platform", prop_str("Plateforme des serveurs de jeu (défaut paper ; purpur, folia, spigot…)")), ("domain", prop_str("Domaine des joueurs (ex. play.exemple.fr) routé vers le lobby"))], &[])),
     ])
 }
 

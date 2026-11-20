@@ -63,10 +63,27 @@ pub fn cancelled() -> bool {
 /// Demande à l'humain de confirmer une action (élicitation MCP). `expected` : texte qu'il doit
 /// retaper (nom du serveur, par exemple), `None` pour un simple oui/non.
 pub async fn confirm(message: &str, expected: Option<&str>) -> Confirmation {
+    // Confirmation simple déjà obtenue par l'outil composite qui appelle (voir `preapproved`).
+    if expected.is_none() && PREAPPROVED.try_with(|_| ()).is_ok() {
+        return Confirmation::Accepted;
+    }
     match current() {
         Some(ctx) => ctx.confirm(message, expected).await,
         None => Confirmation::Unsupported,
     }
+}
+
+tokio::task_local! {
+    static PREAPPROVED: ();
+}
+
+/// Exécute `fut` en tenant pour accordées les confirmations **simples** (oui/non) que demanderait
+/// un sous-outil : l'outil composite qui l'appelle (`apply_network`) a fait accepter par l'humain,
+/// **avant tout effet**, un récapitulatif qui les contient — en MCP sans état, une confirmation
+/// demandée après un effet ferait rejouer tout l'appel. Une confirmation par nom retapé
+/// (`expected`) n'est jamais pré-accordée.
+pub(crate) async fn preapproved<F: Future>(fut: F) -> F::Output {
+    PREAPPROVED.scope((), fut).await
 }
 
 // --- Interface du transport et aides internes ---------------------------------------------------

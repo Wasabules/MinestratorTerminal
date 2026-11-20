@@ -179,6 +179,17 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
                 (Ok(Some(_)), Ok(ids)) => Targets::Servers(ids),
             }
         }
+        // Réseau entier (blueprint) : créer reste permis ; tout serveur existant désigné par
+        // `server_id` doit l'être. Un serveur désigné par son seul nom n'est connu qu'une fois
+        // rapproché : l'outil le soumet à la même règle avant tout effet (`blueprint::apply`), et
+        // chaque sous-écriture est revérifiée.
+        "apply_network" => {
+            return match crate::blueprint::target_ids(args) {
+                Err(k) => Targets::Invalid(k),
+                Ok(ids) if ids.is_empty() => Targets::Create,
+                Ok(ids) => Targets::Servers(ids),
+            }
+        }
         _ => {}
     }
     match servers_in(args) {
@@ -454,5 +465,20 @@ mod tests {
             write_targets("network_preset", &json!({ "proxy_server_id": 9, "backend_server_ids": [4, "x"] })),
             Targets::Invalid(_)
         ));
+    }
+
+    /// Réseau entier : créer reste permis, chaque serveur existant cité par `server_id` doit l'être.
+    #[test]
+    fn a_blueprint_creates_freely_but_targets_its_existing_servers() {
+        let t = |bp: serde_json::Value| write_targets("apply_network", &json!({ "blueprint": bp }));
+        assert_eq!(t(json!({ "servers": [{ "name": "Lobby" }] })), Targets::Create);
+        let both = t(json!({ "proxy": { "name": "P", "server_id": 9 }, "servers": [{ "name": "A", "server_id": 3 }, { "name": "B" }] }));
+        assert_eq!(both, Targets::Servers(vec![3, 9]));
+        assert_eq!(t(json!("{\"servers\": [{\"name\": \"A\", \"server_id\": 4}]}")), Targets::Servers(vec![4]));
+        assert!(matches!(t(json!({ "servers": [{ "server_id": "x" }] })), Targets::Invalid(_)));
+        // Mode constructeur : un seul serveur hors portée refuse tout le blueprint ; créer passe.
+        assert!(check(&both, None, |id| id == 3).is_err());
+        assert!(check(&both, None, |id| id == 3 || id == 9).is_ok());
+        assert!(check(&Targets::Create, None, |_| false).is_ok());
     }
 }

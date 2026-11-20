@@ -95,6 +95,9 @@ mod world_upload;
 mod platform;
 // Secrets des agents : valeurs écrites par référence `{{secret:NOM}}`, jamais vues par l'agent.
 mod agent_secrets;
+// Monter un réseau entier depuis un fichier (« blueprint ») : outils MCP `plan_network`,
+// `apply_network`, `export_network` et `network_template`.
+mod blueprint;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_secrets::{AgentSecret, SecretCharset};
