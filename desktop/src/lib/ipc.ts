@@ -11,6 +11,9 @@ import {
   fakeBox,
   fakeIp,
   fakeAddress,
+  fakeDomain,
+  fakeEntry,
+  fakeHostPort,
   fakeMail,
   fakeRef,
   fakeText,
@@ -75,6 +78,14 @@ import type {
   MetricsHistory,
   ModInstallItem,
   NbtNode,
+  LinkRequest,
+  NetworkDatabase,
+  NetworkLinkPlan,
+  NetworkPing,
+  NetworkPresetPlan,
+  NetworkPresetRequest,
+  NetworkStep,
+  NetworkTopology,
   PlayerAction,
   PlayerInventory,
   PlayerProfile,
@@ -221,6 +232,186 @@ function fakeRollback(r: RollbackReport): RollbackReport {
   return {
     ...r,
     steps: r.steps.map((s) => ({ ...s, target: fakeGuardText(s.target), message: fakeGuardText(s.message) })),
+  };
+}
+
+// --- Mode démo : vue Réseau (noms de serveurs, entrées de proxy, adresses, domaines) ---
+
+/**
+ * Substituts des noms propres d'une réponse réseau. Chaque nom croisé dans les champs structurés
+ * est retenu, puis remplacé dans les textes libres (problèmes, résumés, diffs) où il apparaît noyé
+ * dans la prose ; les IP et e-mails y passent ensuite par `fakeText`. Les IP ne sont donc jamais
+ * retenues ici : `fakeHostPort` et `fakeText` les remplacent de la même façon (`fakeIp`).
+ */
+class NetFaker {
+  private names = new Map<string, string>();
+  private re: RegExp | null = null;
+
+  private keep(real: string, fake: string): string {
+    if (real.length >= 3 && real !== fake) {
+      this.names.set(real, fake);
+      this.re = null;
+    }
+    return fake;
+  }
+  server = (v: string): string => this.keep(v, fakeServer(v));
+  /**
+   * Nom d'entrée : celui déjà retenu (liste de repli, hôtes forcés après les entrées), sinon tiré du
+   * serveur de démo visé (`server`), sinon générique.
+   */
+  entry = (v: string, server?: string | null): string =>
+    this.names.get(v) ?? this.keep(v, fakeEntry(v, server ?? undefined));
+  domain = (v: string): string => this.keep(v, fakeDomain(v));
+  alias = (real: string, fake: string): string => this.keep(real, fake);
+  /** `hôte:port` ; un nom d'hôte (pas une IP) est retenu pour les textes. */
+  host = (v: string): string => {
+    const host = v.replace(/:\d+$/, '');
+    if (!/^[\d.]+$/.test(host) && host.includes('.')) this.keep(host, fakeHostPort(host));
+    return fakeHostPort(v);
+  };
+  text = (v: string): string => {
+    if (!v) return v;
+    if (!this.re && this.names.size) {
+      const keys = [...this.names.keys()]
+        .sort((a, b) => b.length - a.length)
+        .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+      this.re = new RegExp(`(?<![\\p{L}\\p{N}_.-])(?:${keys.join('|')})(?![\\p{L}\\p{N}_-])`, 'gu');
+    }
+    const named = this.re ? v.replace(this.re, (m) => this.names.get(m) ?? m) : v;
+    return fakeText(named);
+  };
+  opt = (v: string | null): string | null => (v ? this.text(v) : v);
+}
+
+function fakeTopology(t: NetworkTopology): NetworkTopology {
+  const f = new NetFaker();
+  const servers = t.servers.map((s) => ({
+    ...s,
+    name: f.server(s.name),
+    address: s.address ? f.host(s.address) : s.address,
+  }));
+  // Noms d'abord (retenus), textes ensuite : un problème cite des noms vus ailleurs. Les entrées
+  // avant la liste de repli et les hôtes forcés, qui les citent.
+  const named = t.proxies.map((p) => {
+    const entries = p.entries.map((e) => ({
+      ...e,
+      name: f.entry(e.name, e.target?.name),
+      address: f.host(e.address),
+      target: e.target
+        ? {
+            ...e.target,
+            name: e.target.name ? f.server(e.target.name) : e.target.name,
+            address: e.target.address ? f.host(e.target.address) : e.target.address,
+          }
+        : e.target,
+    }));
+    return {
+      ...p,
+      name: f.server(p.name),
+      entries,
+      try_order: p.try_order.map((e) => f.entry(e)),
+      forced_hosts: p.forced_hosts.map((h) => ({ host: f.domain(h.host), servers: h.servers.map((e) => f.entry(e)) })),
+    };
+  });
+  return {
+    ...t,
+    servers,
+    proxies: named.map((p) => ({
+      ...p,
+      secret_note: f.text(p.secret_note),
+      entries: p.entries.map((e) => ({ ...e, unread: f.opt(e.unread) })),
+      problems: p.problems.map((x) => ({ ...x, message: f.text(x.message), advice: f.text(x.advice) })),
+    })),
+    not_read: t.not_read.map(f.text),
+    notes: t.notes.map(f.text),
+  };
+}
+
+function fakePing(p: NetworkPing): NetworkPing {
+  const f = new NetFaker();
+  const name = f.server(p.name);
+  const address = p.address ? f.host(p.address) : p.address;
+  return {
+    ...p,
+    name,
+    address,
+    motd: f.text(p.motd),
+    sub_motd: f.opt(p.sub_motd),
+    error: f.opt(p.error),
+  };
+}
+
+function fakeDatabase(d: NetworkDatabase): NetworkDatabase {
+  return {
+    ...d,
+    label: d.label ? fakeText(d.label) : d.label,
+    host: fakeHostPort(d.host),
+    database: `db_${fakeRef(d.database).toLowerCase()}`,
+    username: `u_${fakeRef(d.username).toLowerCase()}`,
+  };
+}
+
+function fakeSteps(f: NetFaker, steps: NetworkStep[]): NetworkStep[] {
+  return steps.map((s) => ({ ...s, server: f.server(s.server) }));
+}
+
+function fakeStepTexts(f: NetFaker, steps: NetworkStep[]): NetworkStep[] {
+  return steps.map((s) => ({ ...s, summary: f.text(s.summary), diff: f.opt(s.diff), detail: f.opt(s.detail) }));
+}
+
+function fakeLinkPlan(p: NetworkLinkPlan): NetworkLinkPlan {
+  const f = new NetFaker();
+  const entries = p.entries.map((e) => ({
+    ...e,
+    name: f.entry(e.name, e.server),
+    address: f.host(e.address),
+    server: f.server(e.server),
+  }));
+  const named = {
+    ...p,
+    proxy_name: f.server(p.proxy_name),
+    entries,
+    try_order: p.try_order.map((e) => f.entry(e)),
+    forced_hosts: p.forced_hosts.map((h) => ({ ...h, host: f.domain(h.host), servers: h.servers.map((e) => f.entry(e)) })),
+    pruned: p.pruned.map((e) => ({ name: f.entry(e.name), address: f.host(e.address) })),
+    snapshots: p.snapshots.map((s) => ({ ...s, server: f.server(s.server) })),
+    steps: fakeSteps(f, p.steps),
+  };
+  return {
+    ...named,
+    secret_source: f.opt(p.secret_source),
+    steps: fakeStepTexts(f, named.steps),
+    warnings: p.warnings.map(f.text),
+  };
+}
+
+function fakePresetPlan(p: NetworkPresetPlan): NetworkPresetPlan {
+  const f = new NetFaker();
+  const named = {
+    ...p,
+    proxy_name: f.server(p.proxy_name),
+    servers: p.servers.map((s) => ({ ...s, entry: s.entry ? f.entry(s.entry, s.name) : s.entry, name: f.server(s.name) })),
+    snapshots: p.snapshots.map((s) => ({ ...s, server: f.server(s.server) })),
+    steps: fakeSteps(f, p.steps),
+    database: p.database
+      ? {
+          ...p.database,
+          label: p.database.label ? fakeText(p.database.label) : p.database.label,
+          host: f.host(p.database.host),
+          // Retenus aussi pour les diffs (`data.database`, `data.username` de LuckPerms).
+          database: f.alias(p.database.database, `db_${fakeRef(p.database.database).toLowerCase()}`),
+          username: f.alias(p.database.username, `u_${fakeRef(p.database.username).toLowerCase()}`),
+        }
+      : p.database,
+  };
+  return {
+    ...named,
+    steps: fakeStepTexts(f, named.steps),
+    warnings: p.warnings.map(f.text),
+    to_confirm: p.to_confirm.map(f.text),
+    bedrock: p.bedrock
+      ? { ...p.bedrock, source: f.opt(p.bedrock.source), manage_ports: f.opt(p.bedrock.manage_ports) }
+      : p.bedrock,
   };
 }
 
@@ -433,6 +624,30 @@ export const api = {
   ) => invoke<AgentSecret>('generate_agent_secret', { name, description, length, charset }),
   /** Supprime un secret (à confirmer par l'utilisateur avant). */
   deleteAgentSecret: (name: string) => invoke<void>('delete_agent_secret', { name }),
+
+  // --- Vue Réseau : réseaux proxy Velocity / BungeeCord (core/src/network/view.rs) ---
+  /**
+   * Proxys d'une MyBox (`null` : tout le compte), entrées rapprochées des serveurs du compte,
+   * réglages des serveurs de jeu, problèmes triés par gravité. Secrets comparés seulement.
+   */
+  networkTopology: (myboxId: number | null) =>
+    demo(invoke<NetworkTopology>('network_topology', { myboxId }), fakeTopology),
+  /** Ping de serveurs du compte (Java, ou Bedrock en UDP) ; un serveur muet rend `online: false`. */
+  networkPing: (serverIds: number[], bedrock = false) =>
+    demo(invoke<NetworkPing[]>('network_ping', { serverIds, bedrock }), (list) => list.map(fakePing)),
+  /** Bases de données d'une MyBox, sans mot de passe (préréglage LuckPerms). */
+  networkDatabases: (myboxId: number) =>
+    demo(invoke<NetworkDatabase[]>('network_databases', { myboxId }), (list) => list.map(fakeDatabase)),
+  /**
+   * Liaison proxy → serveurs de jeu. `apply` null : simulation (rien n'est écrit). `apply` =
+   * empreinte de la simulation confirmée : appliquée si le plan recalculé est identique, sinon
+   * rendue avec l'état `changed`, sans rien écrire.
+   */
+  networkLink: (request: LinkRequest, apply: string | null) =>
+    demo(invoke<NetworkLinkPlan>('network_link', { request, apply }), fakeLinkPlan),
+  /** Préréglage LuckPerms ou Geyser, même déroulé ; `confirmed` couvre `to_confirm`. */
+  networkPreset: (request: NetworkPresetRequest, apply: string | null, confirmed = false) =>
+    demo(invoke<NetworkPresetPlan>('network_preset', { request, apply, confirmed }), fakePresetPlan),
   /** Réglages de confidentialité (anonymisation). */
   getPrivacyConfig: () => invoke<PrivacyConfig>('get_privacy_config'),
   setPrivacyConfig: (config: PrivacyConfig) => invoke<void>('set_privacy_config', { config }),

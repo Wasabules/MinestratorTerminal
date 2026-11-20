@@ -84,6 +84,7 @@
       </p>
     </div>
     <div class="head-actions">
+      <button class="btn btn--ghost" onclick={() => tabs.openNetwork()}>{t('network.open')}</button>
       <button class="btn btn--ghost" onclick={() => tabs.openMyboxes()}>{t('mybox.manage')}</button>
       <button class="btn btn--ghost" onclick={load} disabled={loading}>
         {#if loading}<span class="spinner"></span>{/if} {t('common.refresh')}

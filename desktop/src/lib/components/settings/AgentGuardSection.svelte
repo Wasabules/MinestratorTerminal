@@ -235,7 +235,11 @@
       <div class="cs-main">
         <div class="cs-title">
           <span class="tag">
-            {cs.origin === 'copilot' ? t('agentGuard.originCopilot') : t('agentGuard.originMcp')}
+            {cs.origin === 'copilot'
+              ? t('agentGuard.originCopilot')
+              : cs.origin === 'app'
+                ? t('agentGuard.originApp')
+                : t('agentGuard.originMcp')}
           </span>
           {#if cs.client}<span class="cs-client">{cs.client}</span>{/if}
           <span class="cs-id dim" title={cs.id}>{cs.id}</span>

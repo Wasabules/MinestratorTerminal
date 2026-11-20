@@ -1914,7 +1914,7 @@ export type AgentActionQuery = {
 /**
  * Origine d'un changeset.
  */
-export type ChangeOrigin = "mcp" | "copilot";
+export type ChangeOrigin = "mcp" | "copilot" | "app";
 
 /**
  * État d'une étape vis-à-vis de l'annulation.
@@ -2864,3 +2864,629 @@ export type AgentSecret = {
  * Caractères d'un secret généré.
  */
 export type SecretCharset = "alphanumeric" | "hex" | "url_safe" | "symbols";
+
+// --- Vue Réseau : réseaux proxy (network/view.rs) ---
+
+/**
+ * Gravité d'un problème de réseau.
+ */
+export type NetworkSeverity = "critical" | "important" | "info";
+
+/**
+ * Plateforme d'un serveur, du point de vue d'un réseau proxy.
+ */
+export type NetworkPlatform = "velocity" | "bungeecord" | "paper" | "spigot" | "fabric" | "forge" | "vanilla" | "unknown";
+
+/**
+ * Logiciel d'un proxy.
+ */
+export type NetworkProxyKind = "velocity" | "bungeecord";
+
+/**
+ * Transfert des joueurs (IP, UUID, skin) du proxy vers les serveurs de jeu.
+ */
+export type ForwardingMode = "none" | "legacy" | "bungeeguard" | "modern" | "other";
+
+/**
+ * Secret d'un serveur de jeu comparé à celui du proxy — jamais sa valeur.
+ */
+export type SecretCheck = "same" | "different" | "missing" | "unknown";
+
+/**
+ * Comment une entrée a été rapprochée d'un serveur du compte.
+ */
+export type NetworkMatch = "primary" | "secondary" | "dns" | "resolved" | "port_only";
+
+/**
+ * Fichier de réglages de Paper trouvé.
+ */
+export type NetworkPaperConfig = "global" | "legacy" | "missing";
+
+/**
+ * BungeeGuard sur un proxy BungeeCord.
+ */
+export type NetworkGuard = "absent" | "token" | "token_unreadable";
+
+/**
+ * FabricProxy-Lite sur un serveur Fabric.
+ */
+export type NetworkFabricProxy = "absent" | "mod_only" | "configured";
+
+/**
+ * Réseaux proxy d'une MyBox (ou du compte) : proxys → entrées → serveurs du compte.
+ */
+export type NetworkTopology = {
+  /**
+   * Serveurs Minecraft Java de tout le compte (choix de l'assistant, noms, états).
+   */
+  servers: Array<NetworkServer>,
+  /**
+   * Proxys de la MyBox demandée (de tout le compte sans MyBox), triés par nom.
+   */
+  proxies: Array<NetworkProxy>,
+  counts: NetworkCounts,
+  /**
+   * Serveurs non lus (suspendus, proxys illisibles…), et pourquoi.
+   */
+  not_read: Array<string>,
+  notes: Array<string>,
+};
+
+/**
+ * Problèmes par gravité.
+ */
+export type NetworkCounts = {
+  critical: number,
+  important: number,
+  info: number,
+};
+
+/**
+ * Serveur Minecraft Java du compte.
+ */
+export type NetworkServer = {
+  id: number,
+  name: string,
+  mybox_id: number | null,
+  /**
+   * État d'infrastructure (`active`, `hibernation`, `suspended`…).
+   */
+  status: string,
+  /**
+   * Fichiers accessibles (actif ou en veille).
+   */
+  readable: boolean,
+  /**
+   * Plateforme repérée (hébergeur, jar de démarrage) ; `null` : inconnue.
+   */
+  platform: NetworkPlatform | null,
+  version: string | null,
+  /**
+   * `ip:port` publique.
+   */
+  address: string | null,
+  /**
+   * Proxy repéré dans la MyBox lue.
+   */
+  proxy: boolean,
+};
+
+/**
+ * Un proxy et ses entrées.
+ */
+export type NetworkProxy = {
+  server_id: number,
+  name: string,
+  kind: NetworkProxyKind,
+  /**
+   * `/velocity.toml` ou `/config.yml`.
+   */
+  config_path: string,
+  online_mode: boolean | null,
+  forwarding: ForwardingMode,
+  /**
+   * Valeur écrite de `player-info-forwarding-mode` (Velocity).
+   */
+  forwarding_raw: string | null,
+  /**
+   * Velocity : secret de transfert défini (jamais sa valeur) ; `null` pour BungeeCord.
+   */
+  secret_defined: boolean | null,
+  /**
+   * D'où vient le secret ou pourquoi il manque (chemin, sans valeur).
+   */
+  secret_note: string,
+  /**
+   * BungeeCord seulement.
+   */
+  bungeeguard: NetworkGuard | null,
+  /**
+   * Liste de repli, dans l'ordre.
+   */
+  try_order: Array<string>,
+  forced_hosts: Array<NetworkForcedHost>,
+  entries: Array<NetworkEntry>,
+  /**
+   * Triés par gravité.
+   */
+  problems: Array<NetworkProblem>,
+};
+
+/**
+ * Hôte forcé (routage par domaine).
+ */
+export type NetworkForcedHost = {
+  host: string,
+  servers: Array<string>,
+};
+
+/**
+ * Une entrée du proxy.
+ */
+export type NetworkEntry = {
+  name: string,
+  /**
+   * Adresse telle qu'écrite.
+   */
+  address: string,
+  /**
+   * Dans la liste de repli.
+   */
+  in_try: boolean,
+  /**
+   * Adresse locale (`127.0.0.1`, `localhost`) : ne mène à aucun autre serveur.
+   */
+  local: boolean,
+  /**
+   * Serveur du compte reconnu ; `null` : aucun.
+   */
+  target: NetworkTarget | null,
+  backend: NetworkBackend | null,
+  /**
+   * Réglages non lus, et pourquoi.
+   */
+  unread: string | null,
+};
+
+/**
+ * Serveur du compte visé par une entrée.
+ */
+export type NetworkTarget = {
+  server_id: number,
+  name: string | null,
+  matched_by: NetworkMatch,
+  /**
+   * Le port de l'entrée est celui du serveur.
+   */
+  port_ok: boolean,
+  /**
+   * `ip:port` principale du serveur.
+   */
+  address: string | null,
+  /**
+   * Joignable directement depuis Internet (IP publique).
+   */
+  reachable: boolean,
+  /**
+   * L'entrée vise le proxy lui-même.
+   */
+  self_proxy: boolean,
+};
+
+/**
+ * Réglages d'un serveur de jeu qui comptent derrière le proxy (secrets comparés seulement).
+ */
+export type NetworkBackend = {
+  platform: NetworkPlatform,
+  version: string | null,
+  online_mode: boolean | null,
+  paper_config: NetworkPaperConfig,
+  /**
+   * `proxies.velocity.enabled`.
+   */
+  velocity_forwarding: boolean | null,
+  /**
+   * Secret de transfert comparé (transfert moderne seulement).
+   */
+  velocity_secret: SecretCheck | null,
+  /**
+   * `spigot.yml` présent.
+   */
+  spigot_file: boolean,
+  /**
+   * `settings.bungeecord` de `spigot.yml`.
+   */
+  bungeecord: boolean | null,
+  bungeeguard: boolean,
+  /**
+   * Fabric seulement.
+   */
+  fabric_proxy: NetworkFabricProxy | null,
+  fabric_secret: SecretCheck | null,
+  /**
+   * Lui-même un proxy (chaîne de proxys, non vérifiée).
+   */
+  chained_proxy: boolean,
+};
+
+/**
+ * Problème du réseau, avec sa correction.
+ */
+export type NetworkProblem = {
+  severity: NetworkSeverity,
+  /**
+   * Serveur de jeu concerné ; `null` : le proxy.
+   */
+  server_id: number | null,
+  message: string,
+  /**
+   * Conseil (vide s'il n'y en a pas).
+   */
+  advice: string,
+  /**
+   * La correction passe par l'assistant de liaison.
+   */
+  link_fix: boolean,
+};
+
+/**
+ * Édition pinguée.
+ */
+export type NetworkPingEdition = "java" | "bedrock";
+
+/**
+ * Ping d'un serveur du compte à son adresse publique.
+ */
+export type NetworkPing = {
+  server_id: number,
+  name: string,
+  edition: NetworkPingEdition,
+  /**
+   * `ip:port` principale du serveur (`null` : inconnue).
+   */
+  address: string | null,
+  /**
+   * Port qui a répondu (UDP en Bedrock).
+   */
+  port: number | null,
+  online: boolean,
+  /**
+   * Pourquoi il ne répond pas.
+   */
+  error: string | null,
+  version: string | null,
+  protocol: number | null,
+  /**
+   * MOTD en texte brut (codes de couleur retirés).
+   */
+  motd: string,
+  sub_motd: string | null,
+  gamemode: string | null,
+  players_online: number | null,
+  players_max: number | null,
+  latency_ms: number | null,
+  /**
+   * Réponse au ping legacy (avant 1.7).
+   */
+  legacy: boolean,
+  /**
+   * Mods annoncés (Forge).
+   */
+  modded: string | null,
+};
+
+/**
+ * Base de données d'une MyBox (préréglage LuckPerms), **sans** mot de passe.
+ */
+export type NetworkDatabase = {
+  id: number,
+  label: string | null,
+  host: string,
+  port: number,
+  database: string,
+  username: string,
+  /**
+   * MySQL ou MariaDB (ou moteur inconnu, supposé tel) : utilisable par LuckPerms.
+   */
+  supported: boolean,
+};
+
+/**
+ * État d'une étape d'un plan.
+ */
+export type NetworkStepStatus = "ok" | "change" | "manual" | "refused";
+
+/**
+ * Résultat d'une étape appliquée.
+ */
+export type NetworkOutcome = "done" | "failed" | "not_run";
+
+/**
+ * Une étape d'un plan : une écriture (un fichier, un réglage, une installation) ou une action
+ * manuelle.
+ */
+export type NetworkStep = {
+  /**
+   * Identifiant stable (`<serveur>.paper`, `proxy.config`…).
+   */
+  id: string,
+  server_id: number,
+  server: string,
+  status: NetworkStepStatus,
+  summary: string,
+  /**
+   * Diff unifié, secrets masqués.
+   */
+  diff: string | null,
+  outcome: NetworkOutcome | null,
+  /**
+   * Mention de la garde (annulation) ou erreur.
+   */
+  detail: string | null,
+};
+
+/**
+ * Étapes par état.
+ */
+export type NetworkStepCounts = {
+  change: number,
+  ok: number,
+  manual: number,
+  refused: number,
+};
+
+/**
+ * Où en est un plan.
+ */
+export type NetworkPlanStatus = "simulated" | "changed" | "needs_confirmation" | "refused" | "nothing_to_do" | "done" | "failed" | "cancelled";
+
+/**
+ * Snapshot prise avant l'application.
+ */
+export type NetworkSnapshot = {
+  server_id: number,
+  server: string,
+  name: string,
+  job_id: number,
+};
+
+/**
+ * Cible d'une liste de repli ou d'un hôte forcé : identifiant d'un serveur de jeu de la
+ * demande (nombre) ou nom d'une entrée déjà déclarée (texte).
+ */
+export type LinkTarget = number | string;
+
+/**
+ * Nom d'entrée imposé pour un serveur de jeu.
+ */
+export type LinkEntryName = {
+  server_id: number,
+  name: string,
+};
+
+/**
+ * Hôte forcé demandé : domaine (sans port) → entrées.
+ */
+export type LinkForcedHost = {
+  host: string,
+  targets: Array<LinkTarget>,
+};
+
+/**
+ * Mode de transfert.
+ */
+export type LinkMode = "modern" | "legacy";
+
+/**
+ * Demande de liaison d'un proxy à des serveurs de jeu (mêmes règles que l'outil `link_proxy`).
+ */
+export type LinkRequest = {
+  proxy_server_id: number,
+  /**
+   * Ordre gardé : c'est la liste de repli par défaut.
+   */
+  backend_server_ids: Array<number>,
+  /**
+   * Noms imposés ; sinon le nom d'une entrée qui vise déjà le serveur, ou tiré de son nom.
+   */
+  names: Array<LinkEntryName>,
+  /**
+   * Liste de repli ; vide : l'actuelle si elle reste valable, sinon le premier serveur.
+   */
+  try_order: Array<LinkTarget>,
+  forced_hosts: Array<LinkForcedHost>,
+  /**
+   * Retirer les entrées qui ne mènent à aucun serveur de jeu (exemples de la config).
+   */
+  prune: boolean,
+  /**
+   * `null` : modern pour Velocity, legacy pour BungeeCord.
+   */
+  mode: LinkMode | null,
+  /**
+   * Snapshot de chaque serveur modifié avant d'écrire (attendue).
+   */
+  snapshot: boolean,
+};
+
+/**
+ * Changement d'une entrée.
+ */
+export type LinkEntryChange = "added" | "updated" | "unchanged";
+
+/**
+ * Changement d'un hôte forcé.
+ */
+export type LinkHostChange = "added" | "modified" | "unchanged" | "removed";
+
+/**
+ * Provenance du secret de transfert (jamais sa valeur).
+ */
+export type LinkSecret = "not_used" | "reused" | "generated";
+
+/**
+ * Entrée du proxy après le plan.
+ */
+export type LinkPlannedEntry = {
+  name: string,
+  address: string,
+  server_id: number,
+  server: string,
+  change: LinkEntryChange,
+};
+
+/**
+ * Hôte forcé après le plan.
+ */
+export type LinkPlannedHost = {
+  host: string,
+  servers: Array<string>,
+  change: LinkHostChange,
+};
+
+/**
+ * Entrée retirée (nettoyage).
+ */
+export type LinkPrunedEntry = {
+  name: string,
+  address: string,
+};
+
+/**
+ * Plan de liaison (simulation) ou résultat de son application.
+ */
+export type NetworkLinkPlan = {
+  proxy_id: number,
+  proxy_name: string,
+  proxy_kind: NetworkProxyKind,
+  config_path: string,
+  mode: LinkMode,
+  secret: LinkSecret,
+  /**
+   * Fichier du secret réutilisé (chemin, sans valeur).
+   */
+  secret_source: string | null,
+  entries: Array<LinkPlannedEntry>,
+  try_order: Array<string>,
+  try_changed: boolean,
+  forced_hosts: Array<LinkPlannedHost>,
+  pruned: Array<LinkPrunedEntry>,
+  steps: Array<NetworkStep>,
+  counts: NetworkStepCounts,
+  warnings: Array<string>,
+  /**
+   * Empreinte du plan simulé : à rendre pour appliquer exactement ce plan.
+   */
+  fingerprint: string,
+  status: NetworkPlanStatus,
+  /**
+   * Étapes écrites.
+   */
+  applied: number,
+  snapshots: Array<NetworkSnapshot>,
+};
+
+/**
+ * Préréglage de réseau.
+ */
+export type NetworkPresetKind = "luckperms" | "geyser";
+
+/**
+ * Demande de préréglage (mêmes règles que l'outil `network_preset`).
+ */
+export type NetworkPresetRequest = {
+  preset: NetworkPresetKind,
+  proxy_server_id: number,
+  backend_server_ids: Array<number>,
+  /**
+   * LuckPerms : MyBox de la base (défaut : celle du proxy).
+   */
+  mybox_id: number | null,
+  /**
+   * LuckPerms : base (défaut : la seule de la MyBox).
+   */
+  database_id: number | null,
+  /**
+   * Geyser : port UDP du proxy (défaut : port actuel de Geyser ou port décrit « Bedrock »).
+   */
+  bedrock_port: number | null,
+  snapshot: boolean,
+};
+
+/**
+ * Serveur concerné par un préréglage.
+ */
+export type NetworkPresetServer = {
+  server_id: number,
+  name: string,
+  proxy: boolean,
+  platform: NetworkPlatform,
+  /**
+   * Nom de son entrée sur le proxy (contexte `server` de LuckPerms).
+   */
+  entry: string | null,
+};
+
+/**
+ * Base retenue (LuckPerms), sans mot de passe.
+ */
+export type NetworkPresetDatabase = {
+  mybox_id: number,
+  id: number,
+  label: string | null,
+  host: string,
+  port: number,
+  database: string,
+  username: string,
+  /**
+   * Mot de passe lisible par l'API (sinon aucune config n'est écrite).
+   */
+  password_readable: boolean,
+};
+
+/**
+ * Port Bedrock retenu (Geyser).
+ */
+export type NetworkBedrockPort = {
+  /**
+   * `null` : aucun port utilisable, à ajouter (`manage_ports`).
+   */
+  port: number | null,
+  /**
+   * Pourquoi ce port.
+   */
+  source: string | null,
+  /**
+   * Appel de l'outil officiel `manage_ports` qui en ajoute un (JSON).
+   */
+  manage_ports: string | null,
+  /**
+   * IP MyShield : seuls quelques ports publics sont joignables.
+   */
+  myshield: boolean,
+};
+
+/**
+ * Plan d'un préréglage (simulation) ou résultat de son application.
+ */
+export type NetworkPresetPlan = {
+  preset: NetworkPresetKind,
+  proxy_name: string,
+  servers: Array<NetworkPresetServer>,
+  steps: Array<NetworkStep>,
+  counts: NetworkStepCounts,
+  warnings: Array<string>,
+  /**
+   * Effets qui ne se défont pas entièrement : à confirmer explicitement.
+   */
+  to_confirm: Array<string>,
+  database: NetworkPresetDatabase | null,
+  bedrock: NetworkBedrockPort | null,
+  /**
+   * Empreinte du plan simulé : à rendre pour appliquer exactement ce plan.
+   */
+  fingerprint: string,
+  status: NetworkPlanStatus,
+  applied: number,
+  snapshots: Array<NetworkSnapshot>,
+};

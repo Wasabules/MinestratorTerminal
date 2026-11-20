@@ -329,6 +329,13 @@ export function installBuiltinPaletteSources(): void {
         run: () => tabs.openMyboxes(),
       },
       {
+        id: 'nav:network',
+        title: t('network.title'),
+        icon: 'network',
+        keywords: [t('network.paletteKeywords')],
+        run: () => tabs.openNetwork(),
+      },
+      {
         id: 'nav:alerts',
         title: t('palette.alerts'),
         icon: 'triangle-alert',

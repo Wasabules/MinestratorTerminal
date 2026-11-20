@@ -38,6 +38,11 @@
 - **Marketplaces** — Modrinth / CurseForge / Spigot, mods Satisfactory (ficsit), Factorio,
   Thunderstore, uMod.
 - **Adaptation par jeu** — vues, outils et commandes selon le jeu détecté.
+- **Vue Réseau** *(main)* — réseaux proxy Velocity / BungeeCord d'une MyBox en schéma (proxy →
+  serveurs, état, ping, réglages et problèmes en badges), « Pinger tout », assistant « Relier des
+  serveurs » (repli, routage par domaine, nettoyage) et préréglages LuckPerms / Geyser : plan
+  simulé avec diffs, application après confirmation, annulable. Écritures réelles encore à
+  valider sur un réseau de test.
 
 ### Comptes et sécurité
 

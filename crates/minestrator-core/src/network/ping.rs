@@ -482,6 +482,16 @@ pub(crate) fn render_bedrock(st: &BedrockStatus, port: u16) -> Value {
 /// Adresses d'un serveur du compte (API), et son nom.
 async fn endpoint_of(core: &Core, id: i64) -> Result<(String, Endpoint, Value), String> {
     let overview = core.list_servers().await.map_err(|e| e.to_string())?;
+    endpoint_in(core, &overview, id).await
+}
+
+/// [`endpoint_of`] d'après une liste des serveurs déjà lue (plusieurs pings, une seule liste) :
+/// seul un serveur de cette liste est accepté.
+pub(crate) async fn endpoint_in(
+    core: &Core,
+    overview: &crate::ServersOverview,
+    id: i64,
+) -> Result<(String, Endpoint, Value), String> {
     let s = overview
         .servers
         .iter()
@@ -523,6 +533,72 @@ pub(crate) fn bedrock_ports(ep: &Endpoint, raw: &Value) -> Vec<u16> {
     ports
 }
 
+/// Réponse d'un ping et le port qui a répondu.
+pub(crate) enum Pinged {
+    Java { port: u16, status: JavaStatus },
+    Bedrock { port: u16, status: BedrockStatus },
+}
+
+/// Pingue un serveur du compte à son adresse publique (`ep`, lue par l'API). `port` doit être
+/// l'un des siens ; Bedrock sans `port` : ses ports secondaires décrits « Bedrock »/« Geyser »,
+/// les autres, puis le principal. `Err` : refus ou serveur muet, message clair.
+pub(crate) async fn ping_target(
+    id: i64,
+    name: &str,
+    ep: &Endpoint,
+    raw: &Value,
+    bedrock: bool,
+    port: Option<u16>,
+) -> Result<Pinged, String> {
+    let ip: IpAddr = ep
+        .ip
+        .parse()
+        .map_err(|_| format!("« {name} » : adresse IP illisible"))?;
+    let own: Vec<u16> = std::iter::once(ep.port)
+        .chain(ep.secondary.iter().map(|(_, p)| *p))
+        .collect();
+    if let Some(p) = port.filter(|p| !own.contains(p)) {
+        return Err(format!(
+            "port {p} : ce n'est pas un port de « {name} » ({}) ; seuls ses ports se pinguent",
+            own.iter()
+                .map(u16::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    let host = ep.dns.clone().unwrap_or_else(|| ep.ip.clone());
+    if bedrock {
+        let ports = match port {
+            Some(p) => vec![p],
+            None => bedrock_ports(ep, raw),
+        };
+        let mut tried = Vec::new();
+        for p in &ports {
+            match ping_bedrock(ip, *p).await {
+                Ok(status) => {
+                    return Ok(Pinged::Bedrock { port: *p, status });
+                }
+                Err(e) => tried.push(format!("{p} : {e}")),
+            }
+            if crate::mcp_ctx::cancelled() {
+                break;
+            }
+        }
+        return Err(format!(
+            "« {name} » ({id}) ne répond pas en Bedrock (UDP). Ports essayés — {}. Geyser doit être démarré et écouter sur un port du serveur (bedrock.port de sa config) ; un port ajouté avec manage_ports doit être celui-là.",
+            tried.join(" ; ")
+        ));
+    }
+    let p = port.unwrap_or(ep.port);
+    let status = ping_java(ip, p, &host).await.map_err(|e| {
+        format!(
+            "« {name} » ({id}) ne répond pas au ping Java sur {}:{p} : {e}",
+            ep.ip
+        )
+    })?;
+    Ok(Pinged::Java { port: p, status })
+}
+
 /// Outil MCP `ping_server`.
 pub(crate) async fn ping_server_tool(core: &Core, args: &Value) -> Result<String, String> {
     let id = args
@@ -547,62 +623,13 @@ pub(crate) async fn ping_server_tool(core: &Core, args: &Value) -> Result<String
         ),
     };
     let (name, ep, raw) = endpoint_of(core, id).await?;
-    let ip: IpAddr = ep
-        .ip
-        .parse()
-        .map_err(|_| format!("« {name} » : adresse IP illisible"))?;
-    let own: Vec<u16> = std::iter::once(ep.port)
-        .chain(ep.secondary.iter().map(|(_, p)| *p))
-        .collect();
-    if let Some(p) = port.filter(|p| !own.contains(p)) {
-        return Err(format!(
-            "port {p} : ce n'est pas un port de « {name} » ({}) ; seuls ses ports se pinguent",
-            own.iter()
-                .map(u16::to_string)
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-    }
-    let host = ep.dns.clone().unwrap_or_else(|| ep.ip.clone());
-    let mut out = if bedrock {
-        let ports = match port {
-            Some(p) => vec![p],
-            None => bedrock_ports(&ep, &raw),
-        };
-        let mut tried = Vec::new();
-        let mut found = None;
-        for p in &ports {
-            match ping_bedrock(ip, *p).await {
-                Ok(st) => {
-                    found = Some(render_bedrock(&st, *p));
-                    break;
-                }
-                Err(e) => tried.push(format!("{p} : {e}")),
-            }
-            if crate::mcp_ctx::cancelled() {
-                break;
-            }
+    let mut out = match ping_target(id, &name, &ep, &raw, bedrock, port).await? {
+        Pinged::Bedrock { port, status } => render_bedrock(&status, port),
+        Pinged::Java { port, status } => {
+            let mut v = render_java(&status);
+            v["port"] = json!(port);
+            v
         }
-        match found {
-            Some(v) => v,
-            None => {
-                return Err(format!(
-                    "« {name} » ({id}) ne répond pas en Bedrock (UDP). Ports essayés — {}. Geyser doit être démarré et écouter sur un port du serveur (bedrock.port de sa config) ; un port ajouté avec manage_ports doit être celui-là.",
-                    tried.join(" ; ")
-                ))
-            }
-        }
-    } else {
-        let p = port.unwrap_or(ep.port);
-        let st = ping_java(ip, p, &host).await.map_err(|e| {
-            format!(
-                "« {name} » ({id}) ne répond pas au ping Java sur {}:{p} : {e}",
-                ep.ip
-            )
-        })?;
-        let mut v = render_java(&st);
-        v["port"] = json!(p);
-        v
     };
     out["server_id"] = json!(id);
     out["name"] = json!(name);

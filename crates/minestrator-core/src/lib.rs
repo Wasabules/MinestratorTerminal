@@ -83,7 +83,8 @@ mod agent_guard;
 // plugin sans exposer son mot de passe.
 mod db_connect;
 mod pregen;
-// Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`.
+// Réseaux proxy (Velocity, BungeeCord) : outils MCP `network_topology` et `link_proxy`, et vue
+// Réseau de l'app (`network/view.rs`, méthodes `Core::network_*`).
 mod network;
 // Depuis l'ordinateur et sur plusieurs serveurs : outils MCP `sync_dir` (dossier local
 // synchronisé), `upload_world` (monde envoyé) et `apply_to_servers` (même outil, N serveurs).
@@ -143,6 +144,18 @@ pub use mybox::{
     PlacementPlan, PlacementRequest, ResourceUsage, ServerCatalog, SnapshotJob,
 };
 pub use nbt::NbtNode;
+// Vue Réseau de l'app : réseaux proxy typés (network/view.rs).
+pub use network::view::{
+    ForwardingMode, LinkEntryChange, LinkEntryName, LinkForcedHost, LinkHostChange, LinkMode,
+    LinkPlannedEntry, LinkPlannedHost, LinkPrunedEntry, LinkRequest, LinkSecret, LinkTarget,
+    NetworkBackend, NetworkBedrockPort, NetworkCounts, NetworkDatabase, NetworkEntry,
+    NetworkFabricProxy, NetworkForcedHost, NetworkGuard, NetworkLinkPlan, NetworkMatch,
+    NetworkOutcome, NetworkPaperConfig, NetworkPing, NetworkPingEdition, NetworkPlanStatus,
+    NetworkPlatform, NetworkPresetDatabase, NetworkPresetKind, NetworkPresetPlan,
+    NetworkPresetRequest, NetworkPresetServer, NetworkProblem, NetworkProxy, NetworkProxyKind,
+    NetworkServer, NetworkSeverity, NetworkSnapshot, NetworkStep, NetworkStepCounts,
+    NetworkStepStatus, NetworkTarget, NetworkTopology, SecretCheck,
+};
 pub use redact::PrivacyConfig;
 pub use models::{
     ActivityEntry, ActivityPage, Backup, CpuLimits, Egg, InstalledItem, LimitMb, LiveLight, LivePlayers, MarketItem, MarketPage,

@@ -382,7 +382,16 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   par `db_connect`) et `geyser` (clé de Floodgate copiée de serveur à serveur sans être lue, port
   Bedrock du proxy). `network/ping.rs` (`ping_server`, option `ping` de `network_topology`) :
   Server List Ping Java (repli legacy 0xFE) et ping RakNet Bedrock, vers l'adresse d'un serveur du
-  compte seulement.
+  compte seulement. `network/view.rs` : **façade typée de la vue Réseau de l'app**
+  (`Core::network_topology`, `network_ping`, `network_databases`, `network_link`,
+  `network_preset`) sur la même lecture et les mêmes plans que les outils (`network::collect`,
+  `link::prepare`, `preset::prepare`, `ping::ping_target`, que les outils sérialisent à
+  l'identique) ; structures ts-rs sans aucun secret (comparé seulement : `SecretCheck`), diffs
+  sans anonymisation IA (seuls les secrets des agents sont masqués). L'application recalcule le
+  plan et n'écrit rien si son empreinte (`fingerprint`, sha256) n'est plus celle de la simulation
+  confirmée (`changed`) ; ses écritures passent par la garde dans un changeset d'origine `app`
+  (`agent_guard::app_scope`), annulable comme celui d'un agent ; le mode constructeur ne
+  s'applique pas à l'humain.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app
@@ -635,6 +644,7 @@ Les commandes `#[tauri::command]` (une centaine), appelées **uniquement** via l
 | **Alertes externes** | `list_webhooks`, `save_webhook` (URL → stockage sécurisé), `delete_webhook`, `test_webhook` |
 | **Garde des agents MCP** | `agent_actions` (journal filtré), `agent_changesets`, `rollback_changeset` (après confirmation dans l'UI) ; portée des écritures dans `McpConfig` |
 | **Secrets des agents** | `agent_secrets` (noms, descriptions, dates : `AgentSecret`), `add_agent_secret` (valeur → stockage sécurisé, jamais relue), `generate_agent_secret` (longueur, `SecretCharset`), `delete_agent_secret` (après confirmation dans l'UI) |
+| **Réseau (proxys)** | `network_topology` (MyBox ou compte → `NetworkTopology` : proxys, entrées, réglages des serveurs de jeu, problèmes), `network_ping` (serveurs du compte, Java ou Bedrock → `NetworkPing[]`), `network_databases` (bases d'une MyBox, sans mot de passe), `network_link` (`LinkRequest`, `apply` = empreinte → `NetworkLinkPlan`), `network_preset` (`NetworkPresetRequest`, `apply`, `confirmed` → `NetworkPresetPlan`) |
 | **Divers / paste / MCP** | `paste_upload`, `detect_clis`, `app_exe_path` (compose la config MCP de Claude) |
 
 > **Updater / version** : côté **front** via les plugins Tauri (`updater.ts` : `check` / `downloadAndInstall`
@@ -706,7 +716,8 @@ restent montés (masqués en `display`), ce qui préserve l'état vivant (WS con
 SFTP) quand on change d'onglet. Une route dédiée les démonterait.
 
 - **`tabs/tabs.svelte.ts`** — `TabManager` (store rune). Onglet **Home permanent** + N onglets, plus des
-  onglets uniques **Réglages**, **Copilote**, **Notifications** et **MyBox** (`openMyboxes`). Un onglet serveur cible un couple `(serverId, view)`.
+  onglets uniques **Réglages**, **Copilote**, **Notifications**, **MyBox** (`openMyboxes`) et
+  **Réseau** (`openNetwork`). Un onglet serveur cible un couple `(serverId, view)`.
   **Doublons autorisés** (`openNew` vs `focusOrOpen`), plus `close`/`closeOthers`/`closeLeft`/`closeRight`
   et `moveTo` (réordonnancement par glisser). `ServerView` = `overview \| console \| sftp \| players \|
   mods \| assistant \| backups \| automations \| settings`.
@@ -741,7 +752,11 @@ SFTP) quand on change d'onglet. Une route dédiée les démonterait.
   (backups + snapshots), `AutomationsView` (redémarrage automatique, tâches planifiées, historique
   d'exécution — en précisant qu'elles tournent sur cet ordinateur, pas sur le panel web),
   `SettingsView` (dont `settings/ServiceSection`, `settings/WebhooksSection` et, sous MCP,
-  `settings/AgentSecretsSection`), `CopilotView`,
+  `settings/AgentSecretsSection`), `CopilotView`, `NetworkView` (onglet Réseau, ouvert depuis
+  l'accueil ou la palette : choix de la MyBox, schéma proxy → serveurs avec état, ping et
+  problèmes en badges, « Pinger tout » ; assistants `network/LinkWizard` et
+  `network/PresetWizard` : réglages, plan simulé avec diffs (`network/PlanSteps`), confirmation,
+  bilan avec rappel du redémarrage et de l'annulation),
   `ComingSoon` (placeholder).
 - **Couches transverses** — `ipc.ts` (façade `api` typée + `humanizeError`/i18n), `events.ts`
   (abonnements typés), `types.ts` (ré-export des types générés de `bindings/`, cf. §5.3), stores rune (`stores/auth.svelte.ts`, `servers/colors.svelte`, `sftp/columns.svelte`),

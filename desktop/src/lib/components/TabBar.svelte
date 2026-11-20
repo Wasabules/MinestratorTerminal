@@ -147,6 +147,8 @@
         return t('notifications.title');
       case 'myboxes':
         return t('mybox.title');
+      case 'network':
+        return t('network.title');
       default:
         return t('common.home');
     }
@@ -159,6 +161,7 @@
     copilot: { icon: 'activity', key: 'copilot.title' },
     notifications: { icon: 'bell', key: 'notifications.title' },
     myboxes: { icon: 'cpu', key: 'mybox.title' },
+    network: { icon: 'network', key: 'network.title' },
   };
 
   function chooseBiome(serverId: number, key: BiomeKey | null) {

@@ -362,6 +362,59 @@ pub async fn delete_agent_secret(core: State<'_, Arc<Core>>, name: String) -> Re
     core.delete_agent_secret(&name)
 }
 
+// --- Vue Réseau : réseaux proxy Velocity / BungeeCord (network/view.rs) --------------------------
+
+/// Proxys d'une MyBox (`null` : tout le compte), entrées, réglages des serveurs de jeu, problèmes.
+#[tauri::command]
+pub async fn network_topology(
+    core: State<'_, Arc<Core>>,
+    mybox_id: Option<i64>,
+) -> Result<minestrator_core::NetworkTopology, Error> {
+    core.network_topology(mybox_id).await
+}
+
+/// Ping de serveurs du compte (Java, ou Bedrock en UDP).
+#[tauri::command]
+pub async fn network_ping(
+    core: State<'_, Arc<Core>>,
+    server_ids: Vec<i64>,
+    bedrock: bool,
+) -> Result<Vec<minestrator_core::NetworkPing>, Error> {
+    core.network_ping(server_ids, bedrock).await
+}
+
+/// Bases de données d'une MyBox, sans mot de passe (préréglage LuckPerms).
+#[tauri::command]
+pub async fn network_databases(
+    core: State<'_, Arc<Core>>,
+    mybox_id: i64,
+) -> Result<Vec<minestrator_core::NetworkDatabase>, Error> {
+    core.network_databases(mybox_id).await
+}
+
+/// Liaison proxy → serveurs de jeu : simulation sans `apply`, application du plan simulé (même
+/// empreinte) après confirmation dans l'UI.
+#[tauri::command]
+pub async fn network_link(
+    core: State<'_, Arc<Core>>,
+    request: minestrator_core::LinkRequest,
+    apply: Option<String>,
+) -> Result<minestrator_core::NetworkLinkPlan, Error> {
+    core.network_link(request, apply).await
+}
+
+/// Préréglage LuckPerms ou Geyser : même déroulé ; `confirmed` couvre les effets qui ne se
+/// défont pas (`to_confirm`).
+#[tauri::command]
+pub async fn network_preset(
+    core: State<'_, Arc<Core>>,
+    request: minestrator_core::NetworkPresetRequest,
+    apply: Option<String>,
+    confirmed: bool,
+) -> Result<minestrator_core::NetworkPresetPlan, Error> {
+    core.network_preset(request, apply, confirmed).await
+}
+
 #[tauri::command]
 pub fn get_privacy_config(core: State<'_, Arc<Core>>) -> PrivacyConfig {
     core.get_privacy_config()

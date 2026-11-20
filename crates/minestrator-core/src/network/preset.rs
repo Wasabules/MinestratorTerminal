@@ -756,10 +756,28 @@ fn render(
     v
 }
 
-/// Outil MCP `network_preset`.
-pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<String, String> {
-    let a = parse_args(args)?;
-    crate::mcp_ctx::progress(0.0, None, "lecture du réseau").await;
+/// Préréglage calculé après lecture du réseau, prêt à rendre ou à appliquer (outil
+/// `network_preset`, vue Réseau de l'app).
+pub(crate) struct Prepared {
+    /// Nom du proxy (message de confirmation).
+    pub proxy_name: String,
+    pub nodes: Vec<Node>,
+    pub plan: PresetPlan,
+    /// Base (`database`, luckperms) ou port Bedrock (`bedrock_port`, `myshield`, geyser), joints
+    /// à la sortie.
+    pub extra: Value,
+    /// Les mêmes, typés (vue Réseau) : base retenue (MyBox, accès **sans** mot de passe, mot de
+    /// passe lisible ?), port Bedrock, IP MyShield.
+    pub database: Option<(i64, Creds, bool)>,
+    pub bedrock: Option<PortChoice>,
+    pub myshield: bool,
+    /// Secrets lus (jeton, mot de passe de la base) : effacés de toute sortie.
+    pub secrets: Vec<String>,
+}
+
+/// Lit le proxy et les serveurs de jeu, puis calcule le préréglage. `ai` : diffs anonymisés
+/// pour un agent (voir [`super::link::diff_redactor`]).
+pub(crate) async fn prepare(core: &Core, a: &PresetArgs, ai: bool) -> Result<Prepared, String> {
     let servers = mc_servers(core).await?;
     let find = |id: i64| -> Result<&McServer, String> {
         servers.iter().find(|s| s.id == id).ok_or_else(|| {
@@ -852,9 +870,10 @@ pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<Str
         return Err("annulé : rien n'a été modifié".into());
     }
     crate::mcp_ctx::progress(1.0, Some(3.0), "préparation du plan").await;
-    let redact = |s: &str| core.redact_ai(s);
+    let redact = super::link::diff_redactor(core, ai);
     let mut secrets: Vec<String> = proxy_state.secrets();
     let mut extra = json!({});
+    let (mut database, mut bedrock, mut myshield) = (None, None, false);
     let plan = match a.preset {
         Preset::LuckPerms => {
             let mybox = match a.mybox {
@@ -883,6 +902,14 @@ pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<Str
                 "username": creds.username,
                 "password": if creds.password.is_some() { "lu par l'API, jamais affiché" } else { "non lisible" },
             });
+            database = Some((
+                mybox,
+                Creds {
+                    password: None,
+                    ..creds.clone()
+                },
+                creds.password.is_some(),
+            ));
             plan_luckperms(
                 &nodes,
                 &creds,
@@ -918,7 +945,9 @@ pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<Str
                 .is_some_and(|m| !m.is_null())
             {
                 extra["myshield"] = json!("IP MyShield : un port public n'y est joignable que dans server.myshield.open_port_ranges (19132 et 25565-25585 au 16/11/2026)");
+                myshield = true;
             }
+            bedrock = Some(port.clone());
             let mut builds: HashMap<&'static str, String> = HashMap::new();
             for project in ["geyser", "floodgate"] {
                 if let Ok(b) = super::install::geyser_build(project, "latest").await {
@@ -935,6 +964,30 @@ pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<Str
             )
         }
     };
+    Ok(Prepared {
+        proxy_name: p.name.clone(),
+        nodes,
+        plan,
+        extra,
+        database,
+        bedrock,
+        myshield,
+        secrets,
+    })
+}
+
+/// Outil MCP `network_preset`.
+pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<String, String> {
+    let a = parse_args(args)?;
+    crate::mcp_ctx::progress(0.0, None, "lecture du réseau").await;
+    let Prepared {
+        proxy_name,
+        nodes,
+        plan,
+        extra,
+        secrets,
+        ..
+    } = prepare(core, &a, true).await?;
     let finish = |mut v: Value, status: &str, next: &str| {
         if let Value::Object(m) = &extra {
             for (k, x) in m {
@@ -990,7 +1043,7 @@ pub(crate) async fn network_preset_tool(core: &Core, args: &Value) -> Result<Str
         let message = format!(
             "Appliquer le préréglage {} sur le réseau du proxy « {} » ? À savoir : {}",
             a.preset.label(),
-            p.name,
+            proxy_name,
             plan.destructive.join(" ; ")
         );
         if crate::mcp_ctx::confirm(&message, None).await == crate::mcp_ctx::Confirmation::Declined {
