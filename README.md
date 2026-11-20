@@ -9,6 +9,7 @@ Client **desktop et Android** pour piloter ses serveurs de jeu (**Minecraft, Sat
 ![Mobile](https://img.shields.io/badge/mobile-Android-3DDC84?logo=android&logoColor=white)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
 [![Release](https://img.shields.io/github/v/release/Wasabules/MinestratorTerminal?label=version)](../../releases/latest)
+[![CI](https://github.com/Wasabules/MinestratorTerminal/actions/workflows/ci.yml/badge.svg)](https://github.com/Wasabules/MinestratorTerminal/actions/workflows/ci.yml)
 
 > **Desktop** (Windows · macOS · Linux) **+ app mobile Android**, sur le même cœur Rust. La clé API vit dans le stockage sécurisé du système ; les mises à jour s'installent depuis l'application.
 
