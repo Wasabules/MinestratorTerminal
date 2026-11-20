@@ -666,6 +666,25 @@ impl Core {
     }
 }
 
+/// Point d'accroche de `sync_dir` (`local_sync::TEXT_HOOK`) : un fichier texte qui contient une
+/// référence `{{secret:NOM}}` part résolu (comparé au fichier distant puis écrit, jamais affiché) ;
+/// sans référence, il est envoyé tel quel. Mêmes règles que partout : nom inconnu ou Copilote =
+/// refus, avant le premier envoi.
+pub(crate) fn sync_text_hook(core: &Core, _server_id: i64, _rel: &str, text: &str) -> std::result::Result<Option<String>, String> {
+    resolved_text(text, |t| core.resolve_secret_refs(t))
+}
+
+/// Logique du point d'accroche, sans `Core` (testable).
+fn resolved_text(
+    text: &str,
+    resolve: impl FnOnce(&str) -> std::result::Result<(String, Vec<String>), String>,
+) -> std::result::Result<Option<String>, String> {
+    if !has_refs(text) {
+        return Ok(None);
+    }
+    resolve(text).map(|(out, _)| Some(out))
+}
+
 /// Références des modifications de `set_config` : résolues dans les valeurs, refusées dans les clés.
 pub(crate) fn resolve_edit_requests(
     core: &Core,
@@ -802,6 +821,24 @@ pub(crate) fn generate_secret_tool(core: &Core, args: &Value) -> std::result::Re
 
 #[cfg(test)]
 mod tests {
+    /// `sync_dir` : un fichier sans référence part tel quel, sans toucher au stockage ; avec une
+    /// référence, le texte résolu remplace le fichier ; un refus arrête tout.
+    #[test]
+    fn sync_dir_hook_resolves_only_files_with_references() {
+        assert!(crate::local_sync::TEXT_HOOK.is_some(), "point d'accroche branché");
+        let untouched = super::resolved_text("motd=Bonjour
+", |_| panic!("stockage lu sans référence"));
+        assert_eq!(untouched, Ok(None));
+        let resolved = super::resolved_text("token: {{secret:discord}}
+", |t| {
+            Ok((t.replace("{{secret:discord}}", "valeur"), vec!["discord".into()]))
+        });
+        assert_eq!(resolved, Ok(Some("token: valeur
+".into())));
+        let refused = super::resolved_text("token: {{secret:inconnu}}", |_| Err("secret inconnu".into()));
+        assert_eq!(refused, Err("secret inconnu".into()));
+    }
+
     use super::*;
     use crate::secrets::DirStore;
 

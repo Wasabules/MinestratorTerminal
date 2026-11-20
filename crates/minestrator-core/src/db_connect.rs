@@ -687,7 +687,7 @@ fn set_config_args(
 }
 
 /// MyBox du serveur (liste des serveurs du compte).
-async fn mybox_of(core: &Core, server_id: i64) -> Result<i64, String> {
+pub(crate) async fn mybox_of(core: &Core, server_id: i64) -> Result<i64, String> {
     let overview = core.list_servers().await.map_err(|e| e.to_string())?;
     overview
         .servers
@@ -699,7 +699,7 @@ async fn mybox_of(core: &Core, server_id: i64) -> Result<i64, String> {
 }
 
 /// Accès de la base, API puis, faute de mot de passe lisible, outil officiel `get_mybox` (lecture).
-async fn load_creds(core: &Core, mybox_id: i64, database_id: Option<i64>) -> Result<Creds, String> {
+pub(crate) async fn load_creds(core: &Core, mybox_id: i64, database_id: Option<i64>) -> Result<Creds, String> {
     let token = core.token().map_err(|e| e.to_string())?;
     let data = core
         .api

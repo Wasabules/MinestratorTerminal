@@ -318,6 +318,120 @@ fn set_in_aot(
     r
 }
 
+// --- Retrait d'une clé ------------------------------------------------------------------------------
+
+/// Retire la clé au bout de `path` (dernier segment : une clé de table). Les commentaires écrits
+/// au-dessus d'une valeur retirée passent à la valeur suivante de la table, s'il y en a une.
+pub(super) fn remove(text: &str, path: &[Seg]) -> Result<String, String> {
+    if !matches!(path.last(), Some(Seg::Key(_))) {
+        return Err(
+            "retrait d'un élément de liste par index non pris en charge : réécris la liste entière"
+                .into(),
+        );
+    }
+    let mut doc: DocumentMut = text.parse().map_err(parse_err)?;
+    remove_in(doc.as_item_mut(), path, 0)?;
+    Ok(doc.to_string())
+}
+
+fn remove_in(cur: &mut Item, path: &[Seg], depth: usize) -> Result<(), String> {
+    if depth > 200 {
+        return Err("imbrication trop profonde".into());
+    }
+    let Some((seg, rest)) = path.split_first() else {
+        return Err("chemin vide".into());
+    };
+    if let Item::Value(TValue::InlineTable(t)) = cur {
+        return remove_in_inline(t, path);
+    }
+    match seg {
+        Seg::Key(k) => {
+            let Some(table) = cur.as_table_mut() else {
+                return Err(format!("« {k} » : le parent n'est pas une table"));
+            };
+            if rest.is_empty() {
+                return remove_key(table, k);
+            }
+            let child = table
+                .get_mut(k)
+                .ok_or_else(|| format!("section « {k} » absente"))?;
+            remove_in(child, rest, depth + 1)
+        }
+        Seg::Index(n) => match cur {
+            Item::ArrayOfTables(aot) => {
+                let len = aot.len();
+                let t = aot
+                    .get_mut(*n)
+                    .ok_or_else(|| format!("index [{n}] hors de la liste ({len} élément(s))"))?;
+                let mut item = Item::Table(std::mem::take(t));
+                let r = remove_in(&mut item, rest, depth + 1);
+                if let Item::Table(back) = item {
+                    *t = back;
+                }
+                r
+            }
+            Item::Value(TValue::Array(arr)) => {
+                let len = arr.len();
+                match arr.get_mut(*n) {
+                    Some(TValue::InlineTable(t)) => remove_in_inline(t, rest),
+                    Some(_) => Err(format!("élément [{n}] : ce n'est pas une table")),
+                    None => Err(format!("index [{n}] hors de la liste ({len} élément(s))")),
+                }
+            }
+            _ => Err(format!("[{n}] : ce n'est pas une liste")),
+        },
+    }
+}
+
+fn remove_in_inline(t: &mut InlineTable, path: &[Seg]) -> Result<(), String> {
+    let Some((Seg::Key(k), rest)) = path.split_first() else {
+        return Err("clé attendue dans une table en ligne".into());
+    };
+    if rest.is_empty() {
+        return t.remove(k).map(drop).ok_or_else(|| "clé absente".into());
+    }
+    match t.get_mut(k) {
+        Some(TValue::InlineTable(inner)) => remove_in_inline(inner, rest),
+        Some(TValue::Array(arr)) => match rest.split_first() {
+            Some((Seg::Index(n), tail)) => match arr.get_mut(*n) {
+                Some(TValue::InlineTable(inner)) => remove_in_inline(inner, tail),
+                _ => Err(format!("« {k} »[{n}] : pas une table en ligne")),
+            },
+            _ => Err(format!("« {k} » est une liste : index [n] attendu")),
+        },
+        Some(_) => Err(format!("« {k} » est une valeur, pas une table")),
+        None => Err(format!("section « {k} » absente")),
+    }
+}
+
+/// Retire `k` d'une table ; ses commentaires de tête passent à la valeur suivante.
+fn remove_key(table: &mut Table, k: &str) -> Result<(), String> {
+    let idx = table
+        .iter()
+        .position(|(key, _)| key == k)
+        .ok_or("clé absente")?;
+    let (key, item) = table.remove_entry(k).ok_or("clé absente")?;
+    let prefix = key
+        .leaf_decor()
+        .prefix()
+        .and_then(|p| p.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if prefix.contains('#') && matches!(item, Item::Value(_)) {
+        if let Some((mut next, Item::Value(_))) = table.iter_mut().nth(idx) {
+            let own = next
+                .leaf_decor()
+                .prefix()
+                .and_then(|p| p.as_str())
+                .unwrap_or_default()
+                .trim_start_matches(['\r', '\n'])
+                .to_string();
+            next.leaf_decor_mut().set_prefix(format!("{prefix}{own}"));
+        }
+    }
+    Ok(())
+}
+
 // --- Secrets ----------------------------------------------------------------------------------------
 
 /// Plages des valeurs secrètes (positions de l'analyseur).

@@ -171,6 +171,14 @@ pub(crate) fn write_targets(name: &str, args: &Value) -> Targets {
         // Secret des agents : stockage sécurisé de l'ordinateur, aucun serveur. Un agent en mode
         // constructeur peut en créer un pour le serveur qu'il monte.
         "generate_secret" => return Targets::Local,
+        // Préréglage de réseau : comme `link_proxy`, le proxy ET chaque serveur de jeu.
+        "network_preset" => {
+            return match (id_arg(args, "proxy_server_id"), servers_in(args)) {
+                (Err(k), _) | (_, Err(k)) => Targets::Invalid(k),
+                (Ok(None), _) => Targets::Unknown,
+                (Ok(Some(_)), Ok(ids)) => Targets::Servers(ids),
+            }
+        }
         _ => {}
     }
     match servers_in(args) {
@@ -433,5 +441,18 @@ mod tests {
             Targets::MyBox(3)
         );
         assert_eq!(write_targets("delete_database", &json!({ "database_id": 99 })), Targets::Unknown);
+    }
+
+    #[test]
+    fn a_network_preset_targets_the_proxy_and_each_game_server() {
+        assert_eq!(
+            write_targets("network_preset", &json!({ "preset": "geyser", "proxy_server_id": 9, "backend_server_ids": [4, 2] })),
+            Targets::Servers(vec![2, 4, 9])
+        );
+        assert_eq!(write_targets("network_preset", &json!({ "backend_server_ids": [4] })), Targets::Unknown);
+        assert!(matches!(
+            write_targets("network_preset", &json!({ "proxy_server_id": 9, "backend_server_ids": [4, "x"] })),
+            Targets::Invalid(_)
+        ));
     }
 }

@@ -276,6 +276,9 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
     ),
     ("network_topology", "build", "Topologie d'un réseau proxy"),
     ("link_proxy", "build", "Relier des serveurs à un proxy"),
+    // Préréglages de réseau (LuckPerms, Geyser) ; ping d'un serveur (diagnostic en lecture).
+    ("network_preset", "build", "Préréglage de réseau (LuckPerms, Geyser)"),
+    ("ping_server", "diagnostics", "Pinguer un serveur (Java, Bedrock)"),
     // guard
     (
         "list_agent_actions",
@@ -347,6 +350,8 @@ pub(crate) const IDEMPOTENT_TOOLS: &[&str] = &[
     "sync_dir",
     // Fixe plateforme, version, Java et JAR : rappelé à l'identique, rien à changer.
     "set_server_platform",
+    // Fixe des valeurs finales ; un plugin présent n'est pas réinstallé, une clé identique pas recopiée.
+    "network_preset",
 ];
 
 /// Outils qui sortent du compte MineStrator (`openWorldHint: true`) : marketplaces, ficsit.app,
@@ -370,6 +375,8 @@ pub(crate) const OPEN_WORLD_TOOLS: &[&str] = &[
     "apply_to_servers",
     // JAR officiel téléchargé depuis PaperMC ou Purpur (voie JAR).
     "set_server_platform",
+    // LuckPerms (Modrinth), Geyser et Floodgate (GeyserMC) installés au besoin.
+    "network_preset",
 ];
 
 /// Outils locaux dont la confirmation (`confirm_name`) est demandée à l'humain quand le client

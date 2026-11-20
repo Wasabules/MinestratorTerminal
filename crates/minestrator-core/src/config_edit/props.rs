@@ -14,6 +14,8 @@ use std::ops::Range;
 struct Entry {
     key: String,
     value: String,
+    /// Début de la ligne logique (octets).
+    start: usize,
     /// Début de la partie valeur (octets) dans le texte.
     value_start: usize,
     /// Fin de la ligne logique (avant le saut de ligne).
@@ -134,6 +136,7 @@ fn entries(text: &str) -> Vec<Entry> {
         out.push(Entry {
             key,
             value: unescape(&trimmed[v..]),
+            start,
             value_start,
             end,
             has_sep,
@@ -229,6 +232,34 @@ pub(super) fn set(
             Ok(out)
         }
     }
+}
+
+/// Retire la clé : toutes ses lignes logiques (une occurrence plus ancienne reprendrait sinon
+/// la main, Java gardant la dernière).
+pub(super) fn remove(text: &str, path: &[Seg]) -> Result<String, String> {
+    let [Seg::Key(key)] = path else {
+        return Err(
+            "un `.properties` n'a qu'un niveau : donne la clé entière (ex. `rcon.password`)".into(),
+        );
+    };
+    let found: Vec<Entry> = entries(text)
+        .into_iter()
+        .filter(|e| &e.key == key)
+        .collect();
+    if found.is_empty() {
+        return Err("clé absente".into());
+    }
+    let mut out = text.to_string();
+    for e in found.iter().rev() {
+        let mut end = e.end;
+        if out[end..].starts_with("\r\n") {
+            end += 2;
+        } else if out[end..].starts_with('\n') {
+            end += 1;
+        }
+        out.replace_range(e.start..end, "");
+    }
+    Ok(out)
 }
 
 /// Plages des valeurs secrètes.

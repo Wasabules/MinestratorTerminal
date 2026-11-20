@@ -1050,6 +1050,7 @@ fn a_default_velocity_is_linked_in_modern_mode_without_showing_the_secret() {
         &ProxyInput {
             state: &p,
             config_text: VELOCITY_DEFAULT,
+            account: &AccountView::default(),
         },
         &backends,
         &args(100, &[1, 2]),
@@ -1107,7 +1108,7 @@ fn a_default_velocity_is_linked_in_modern_mode_without_showing_the_secret() {
     assert_eq!(paper1.status, Status::Change);
     assert!(paper1.diff.as_deref().unwrap().contains("[SECRET]"));
     match &paper1.action {
-        Some(Action::Config { path, changes }) => {
+        Some(Action::Config { path, changes, .. }) => {
             assert_eq!(path, PAPER_GLOBAL);
             assert!(changes.contains(&("proxies.velocity.secret".to_string(), json!(SECRET_NEW))));
             assert!(changes.contains(&("proxies.velocity.enabled".to_string(), json!(true))));
@@ -1152,6 +1153,7 @@ fn a_linked_network_needs_nothing_more() {
         &ProxyInput {
             state: &p,
             config_text: &text,
+            account: &AccountView::default(),
         },
         &backends,
         &args(100, &[1]),
@@ -1188,6 +1190,7 @@ fn existing_entries_are_reused_and_try_is_kept_or_set() {
     let proxy = ProxyInput {
         state: &p,
         config_text: &text,
+        account: &AccountView::default(),
     };
     let plan = build_plan(&proxy, &backends, &args(100, &[1, 2]), None, &no_redact).unwrap();
     assert_eq!(plan.entries[0].name, "hub", "entrée existante réutilisée");
@@ -1242,6 +1245,7 @@ fn an_entry_on_a_wrong_port_keeps_its_name_and_gets_the_right_address() {
         &ProxyInput {
             state: &p,
             config_text: &text,
+            account: &AccountView::default(),
         },
         &[b1, b2],
         &args(100, &[1, 2]),
@@ -1309,6 +1313,7 @@ fn unsupported_backends_become_manual_steps() {
         &ProxyInput {
             state: &p,
             config_text: VELOCITY_DEFAULT,
+            account: &AccountView::default(),
         },
         &backends,
         &args(100, &[1, 2, 3, 4]),
@@ -1355,6 +1360,7 @@ fn bungeecord_is_linked_in_legacy_mode_and_asks_for_bungeeguard() {
     let proxy = ProxyInput {
         state: &p,
         config_text: BUNGEE_DEFAULT,
+        account: &AccountView::default(),
     };
     let plan = build_plan(&proxy, &backends, &args(100, &[1]), None, &no_redact).unwrap();
     assert_eq!(
@@ -1403,6 +1409,7 @@ fn velocity_legacy_mode_turns_modern_forwarding_off_on_paper() {
         &ProxyInput {
             state: &p,
             config_text: &text,
+            account: &AccountView::default(),
         },
         &backends,
         &a,
@@ -1444,6 +1451,7 @@ fn an_invalid_file_refuses_the_step() {
         &ProxyInput {
             state: &p,
             config_text: VELOCITY_DEFAULT,
+            account: &AccountView::default(),
         },
         &backends,
         &args(100, &[1]),
@@ -1452,4 +1460,330 @@ fn an_invalid_file_refuses_the_step() {
     )
     .unwrap();
     assert_eq!(step(&plan, "1.paper").status, Status::Refused);
+}
+
+// --- Routage par domaine et nettoyage (`forced_hosts`, `prune`) ---------------------------------
+
+/// Applique l'écriture d'une étape de config au texte (comme `set_config`).
+fn applied(text: &str, s: &Step) -> String {
+    use crate::config_edit::{EditOptions, EditRequest};
+    let Some(Action::Config {
+        path,
+        changes,
+        remove,
+    }) = &s.action
+    else {
+        panic!("pas d'écriture : {s:?}")
+    };
+    let reqs: Vec<EditRequest> = changes
+        .iter()
+        .map(|(k, v)| EditRequest {
+            key: k.clone(),
+            value: v.clone(),
+        })
+        .collect();
+    crate::config_edit::edit_text_removing(
+        Format::detect(path).unwrap(),
+        path,
+        text,
+        &reqs,
+        remove,
+        EditOptions::default(),
+        &no_redact,
+    )
+    .unwrap()
+    .new_text
+}
+
+/// Serveurs du compte : 1 et 2 (serveurs de jeu), 100 (le proxy), 7 (hors de l'appel).
+fn account() -> AccountView {
+    AccountView {
+        endpoints: vec![
+            ep(1, "203.0.113.10", 23628),
+            ep(2, "203.0.113.11", 25000),
+            ep(7, "203.0.113.17", 25017),
+            ep(100, "198.51.100.5", 25565),
+        ],
+        resolved: HashMap::new(),
+    }
+}
+
+fn two_papers() -> Vec<BackendInput> {
+    let paper = || files(Some(paper_global(true, SECRET_PROXY)), Some(spigot(false)));
+    vec![
+        paper_backend(1, "Lobby", "203.0.113.10", 23628, paper(), Some(false)),
+        paper_backend(2, "Survie", "203.0.113.11", 25000, paper(), Some(false)),
+    ]
+}
+
+fn host_of<'a>(plan: &'a Plan, h: &str) -> &'a str {
+    plan.hosts
+        .iter()
+        .find(|x| x.host == h)
+        .map(|x| x.status)
+        .unwrap_or("absent")
+}
+
+#[test]
+fn forced_hosts_and_prune_are_read_from_the_arguments() {
+    let a = args(100, &[1, 2]);
+    assert!(!a.prune, "prune : faux par défaut");
+    assert!(a.forced_hosts.is_empty());
+    let a = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1, 2], "prune": true,
+        "forced_hosts": { "Play.Exemple.FR.": "survie", "lobby.exemple.fr": [1, "hub"] }
+    }))
+    .unwrap();
+    assert!(a.prune);
+    let mut hosts = a.forced_hosts.clone();
+    hosts.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(
+        hosts,
+        [
+            (
+                "lobby.exemple.fr".to_string(),
+                vec![TryItem::Server(1), TryItem::Name("hub".into())]
+            ),
+            (
+                "play.exemple.fr".to_string(),
+                vec![TryItem::Name("survie".into())]
+            ),
+        ]
+    );
+    for bad in [
+        json!({ "play.exemple.fr:25565": "a" }),
+        json!({ "-x.fr": "a" }),
+        json!({ "a b.fr": "a" }),
+        json!({ "ok.fr": [] }),
+        json!({ "ok.fr": true }),
+        json!({ "OK.fr": "a", "ok.fr": "b" }),
+        json!(["ok.fr"]),
+    ] {
+        let r = parse_args(
+            &json!({ "proxy_server_id": 100, "backend_server_ids": [1], "forced_hosts": bad }),
+        );
+        assert!(r.is_err(), "{bad} accepté");
+    }
+    assert!(example_domain("lobby.example.com") && example_domain("x.test"));
+    assert!(!example_domain("play.exemple.fr"));
+}
+
+#[test]
+fn prune_removes_dead_entries_and_keeps_try_and_forced_hosts_valid() {
+    // Réseau existant : « lobby » (exemple) sera repris ; « factions », « minigames » (locales),
+    // « ailleurs » (adresse inconnue du compte), « boucle » (le proxy lui-même) ne mènent à rien ;
+    // « autre » vise le serveur 7 du compte, hors de l'appel : gardée.
+    let text = VELOCITY_DEFAULT.replace("\"NONE\"", "\"modern\"").replace(
+        "minigames = \"127.0.0.1:30068\"",
+        "minigames = \"127.0.0.1:30068\"\nailleurs = \"192.0.2.50:25565\"\nboucle = \"198.51.100.5:25565\"\nautre = \"203.0.113.17:25017\"",
+    );
+    let p = proxy_state(&text, Some(SECRET_PROXY));
+    let acc = account();
+    let proxy = ProxyInput {
+        state: &p,
+        config_text: &text,
+        account: &acc,
+    };
+    let backends = two_papers();
+    let mut a = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1, 2], "prune": true,
+        "forced_hosts": { "play.exemple.fr": "survie", "hub.exemple.fr": 1 }
+    }))
+    .unwrap();
+    let plan = build_plan(&proxy, &backends, &a, None, &no_redact).unwrap();
+    let mut pruned: Vec<&str> = plan.pruned.iter().map(|e| e.name.as_str()).collect();
+    pruned.sort_unstable();
+    assert_eq!(pruned, ["ailleurs", "boucle", "factions", "minigames"]);
+    assert_eq!(plan.try_order, ["lobby"], "liste de repli valable : gardée");
+    let host = |h: &str| {
+        plan.hosts
+            .iter()
+            .find(|x| x.host == h)
+            .unwrap_or_else(|| panic!("{h} : {:?}", plan.hosts))
+    };
+    assert_eq!(host("play.exemple.fr").servers, ["survie"]);
+    assert_eq!(host("play.exemple.fr").status, "ajouté");
+    assert_eq!(
+        host("hub.exemple.fr").servers,
+        ["lobby"],
+        "ID d'un serveur de l'appel → son entrée"
+    );
+    for h in [
+        "lobby.example.com",
+        "factions.example.com",
+        "minigames.example.com",
+    ] {
+        assert_eq!(host(h).status, "retiré", "{h}");
+    }
+    let cfg = step(&plan, "proxy.config");
+    assert_eq!(cfg.status, Status::Change);
+    let diff = cfg.diff.as_deref().unwrap();
+    assert!(
+        diff.contains("-factions = ") && diff.contains("-boucle = "),
+        "{diff}"
+    );
+    assert!(
+        diff.contains("+\"play.exemple.fr\" = [\"survie\"]"),
+        "{diff}"
+    );
+    assert!(
+        !diff.contains("-autre = "),
+        "entrée vers un serveur du compte gardée : {diff}"
+    );
+
+    // Le résultat est une config que Velocity accepte : repli et hôtes forcés déclarés.
+    let out = applied(&text, cfg);
+    let conf = parse_velocity(&out).unwrap();
+    let mut names: Vec<&str> = conf.entries.iter().map(|e| e.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["autre", "lobby", "survie"]);
+    assert!(conf.try_order.iter().all(|t| conf.entry(t).is_some()));
+    for (h, targets) in &conf.forced_hosts {
+        assert!(
+            targets.iter().all(|t| conf.entry(t).is_some()),
+            "{h} → {targets:?}"
+        );
+    }
+    let mut hosts: Vec<&str> = conf.forced_hosts.iter().map(|(h, _)| h.as_str()).collect();
+    hosts.sort_unstable();
+    assert_eq!(hosts, ["hub.exemple.fr", "play.exemple.fr"]);
+
+    // Relancé sur le résultat : rien de plus à écrire (idempotent).
+    let p2 = proxy_state(&out, Some(SECRET_PROXY));
+    let proxy2 = ProxyInput {
+        state: &p2,
+        config_text: &out,
+        account: &acc,
+    };
+    let again = build_plan(&proxy2, &backends, &a, None, &no_redact).unwrap();
+    assert_eq!(
+        step(&again, "proxy.config").status,
+        Status::Ok,
+        "{:?}",
+        step(&again, "proxy.config")
+    );
+    assert!(again.pruned.is_empty());
+
+    // Une entrée citée par l'appel n'est jamais retirée, même locale.
+    a.try_order = Some(vec![TryItem::Name("factions".into()), TryItem::Server(1)]);
+    let plan = build_plan(&proxy, &backends, &a, None, &no_redact).unwrap();
+    assert!(!plan.pruned.iter().any(|e| e.name == "factions"));
+    assert_eq!(plan.try_order, ["factions", "lobby"]);
+    assert_eq!(
+        host_of(&plan, "factions.example.com"),
+        "retiré",
+        "domaine d'exemple"
+    );
+}
+
+#[test]
+fn without_prune_entries_and_hosts_stay_and_prune_is_suggested() {
+    let p = proxy_state(VELOCITY_DEFAULT, Some(SECRET_PROXY));
+    let acc = account();
+    let proxy = ProxyInput {
+        state: &p,
+        config_text: VELOCITY_DEFAULT,
+        account: &acc,
+    };
+    let a = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1, 2],
+        "forced_hosts": { "survie.exemple.fr": ["survie", "lobby"] }
+    }))
+    .unwrap();
+    let plan = build_plan(&proxy, &two_papers(), &a, None, &no_redact).unwrap();
+    assert!(plan.pruned.is_empty());
+    assert_eq!(host_of(&plan, "factions.example.com"), "inchangé");
+    assert_eq!(host_of(&plan, "survie.exemple.fr"), "ajouté");
+    assert!(
+        plan.warnings.iter().any(|w| w.contains("prune=true")),
+        "{:?}",
+        plan.warnings
+    );
+    let out = applied(VELOCITY_DEFAULT, step(&plan, "proxy.config"));
+    let conf = parse_velocity(&out).unwrap();
+    assert!(conf.entry("factions").is_some());
+    assert!(conf
+        .forced_hosts
+        .iter()
+        .any(|(h, t)| h == "survie.exemple.fr" && t == &["survie", "lobby"]));
+    // Domaine vers un nom inconnu : refus avant toute écriture.
+    let bad = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1, 2],
+        "forced_hosts": { "x.exemple.fr": "inconnu" }
+    }))
+    .unwrap();
+    assert!(build_plan(&proxy, &two_papers(), &bad, None, &no_redact)
+        .unwrap_err()
+        .contains("inconnu"));
+}
+
+#[test]
+fn bungeecord_forced_hosts_live_in_the_first_listener() {
+    let p = proxy_state(BUNGEE_DEFAULT, None);
+    let acc = account();
+    let proxy = ProxyInput {
+        state: &p,
+        config_text: BUNGEE_DEFAULT,
+        account: &acc,
+    };
+    let paper = || files(Some(paper_global(false, "")), Some(spigot(true)));
+    let backends = vec![paper_backend(
+        1,
+        "Lobby",
+        "203.0.113.10",
+        23628,
+        paper(),
+        Some(false),
+    )];
+    // Un domaine vers deux serveurs : BungeeCord ne sait pas.
+    let two = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1],
+        "forced_hosts": { "play.exemple.fr": ["lobby", "1"] }
+    }))
+    .unwrap();
+    assert!(
+        build_plan(&proxy, &backends, &two, None, &no_redact).is_ok(),
+        "même entrée deux fois : une seule"
+    );
+    let a = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1], "prune": true,
+        "forced_hosts": { "play.exemple.fr": 1 }
+    }))
+    .unwrap();
+    let plan = build_plan(&proxy, &backends, &a, None, &no_redact).unwrap();
+    // L'hôte d'exemple vise « pvp », jamais déclaré : retiré avec prune.
+    assert_eq!(host_of(&plan, "pvp.md-5.net"), "retiré");
+    let out = applied(BUNGEE_DEFAULT, step(&plan, "proxy.config"));
+    let conf = parse_bungee(&out).unwrap();
+    assert_eq!(
+        conf.forced_hosts,
+        [("play.exemple.fr".to_string(), vec!["lobby".to_string()])]
+    );
+    let tree = Format::Yaml.tree(&out).unwrap();
+    assert_eq!(
+        tree["listeners"][0]["forced_hosts"]["play.exemple.fr"],
+        json!("lobby")
+    );
+    assert_eq!(
+        tree["servers"]["lobby"]["address"],
+        json!("203.0.113.10:23628")
+    );
+    // Deux serveurs distincts pour un domaine : refusé.
+    let mut more = backends.clone();
+    more.push(paper_backend(
+        2,
+        "Survie",
+        "203.0.113.11",
+        25000,
+        paper(),
+        Some(false),
+    ));
+    let two = parse_args(&json!({
+        "proxy_server_id": 100, "backend_server_ids": [1, 2],
+        "forced_hosts": { "play.exemple.fr": [1, 2] }
+    }))
+    .unwrap();
+    assert!(build_plan(&proxy, &more, &two, None, &no_redact)
+        .unwrap_err()
+        .contains("un seul serveur"));
 }

@@ -19,7 +19,7 @@
 //!   annulable chacun ; l'outil lui-même n'a pas d'étape (`Plan::Skip`). Envois d'abord, puis
 //!   suppressions ; arrêt au premier échec.
 //! - **Point d'accroche** [`TEXT_HOOK`] : traitement des fichiers texte avant comparaison et envoi
-//!   (références de secrets `{{secret:NOM}}`, apportées par un autre lot).
+//!   (références de secrets `{{secret:NOM}}` résolues par `agent_secrets.rs`).
 //!
 //! Le côté serveur est abstrait par [`ServerSide`] (partagé avec `world_upload`) : SFTP et garde
 //! en production ([`CoreSide`]), faux serveur de la garde dans les tests.
@@ -71,10 +71,9 @@ const GUARD_NOTES_CAP: usize = 20;
 /// Appelé seulement pour les fichiers UTF-8 sans octet nul de [`TEXT_HOOK_MAX_BYTES`] au plus.
 pub(crate) type TextHook = fn(&Core, i64, &str, &str) -> Result<Option<String>, String>;
 
-/// **Point d'accroche** de `sync_dir` : `None` tant que rien n'est branché. L'intégrateur y met
-/// la résolution des références de secrets `{{secret:NOM}}` (autre lot), par exemple
-/// `Some(crate::secret_refs::expand)` : le texte résolu est alors comparé et écrit, jamais affiché.
-pub(crate) const TEXT_HOOK: Option<TextHook> = None;
+/// **Point d'accroche** de `sync_dir` : résolution des références de secrets `{{secret:NOM}}`
+/// (`agent_secrets.rs`) ; le texte résolu est comparé et écrit, jamais affiché.
+pub(crate) const TEXT_HOOK: Option<TextHook> = Some(crate::agent_secrets::sync_text_hook);
 
 /// Forme du point d'accroche vue par la logique générique (sans `Core`).
 pub(crate) type Prepare<'a> = &'a (dyn Fn(&str, &str) -> Result<Option<String>, String> + Sync);
