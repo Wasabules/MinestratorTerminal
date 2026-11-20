@@ -8,6 +8,29 @@ unique des notes de version. Format inspiré de [Keep a Changelog](https://keepa
 
 ---
 
+## v0.8.1
+
+### Téléchargement
+
+- **L'application Android pèse désormais une douzaine de mégaoctets au lieu de 137.** Elle est
+  proposée en deux fichiers : `_android.apk` pour presque tous les téléphones, et
+  `_android-armv7.apk` pour les anciens téléphones 32 bits. La mise à jour depuis l'application
+  choisit d'elle-même le bon fichier. Seule exception : un ancien téléphone 32 bits encore en
+  0.8.0 doit installer une fois à la main le fichier `_android-armv7.apk`.
+- **Version portable pour Windows** : une archive `.zip` à décompresser puis lancer, sans
+  installation ni droits administrateur. Elle signale les nouvelles versions et ouvre la page de
+  téléchargement. La supervision en arrière-plan reste réservée à la version installée.
+
+### Corrections
+
+- Dans la liste de tous les joueurs, les en-têtes « Temps de jeu » et « Dernière venue » se
+  chevauchaient.
+- Dans l'onglet MyBox, la raison pour laquelle la création d'un serveur est impossible
+  s'affichait comme un fragment isolé (« plus de CPU libre ») : elle est désormais écrite en
+  toutes lettres.
+
+---
+
 ## v0.8.0
 
 ### Réseaux proxy Velocity et BungeeCord
