@@ -415,8 +415,8 @@ réel, `apply_manifest` exécute l'écart, `clone_server` crée une copie de tes
 | `get_config` | | `server_id`, `path`, `key?` | Avec `key` : valeur **typée** (`found`, `type`, `value` ; section trop longue → son arborescence). Clé absente : `deepest_existing` et `available_keys` (clés du niveau le plus proche). Sans `key` : arborescence aplatie (`keys[{key, type, value}]`, 300 valeurs au plus, listes de scalaires d'un bloc), `secrets_masked`. |
 | `set_config` | ✎ | `server_id`, `path`, `changes[{key, value}]`, `create_missing?`, `keep_type?`, `dry_run?` | Modifications vérifiées puis écrites (SFTP) : par clé `modifiée`, `créée` ou `inchangée` avec ancienne et nouvelle valeur (masquées si secrètes) et note de type ; diff unifié masqué ; `written` ; rien n'est écrit si tout est déjà conforme ou en `dry_run`. 100 modifications au plus par appel. `create_missing=false` : une clé absente fait tout refuser. |
 | `export_manifest` | | `server_id`, `include_configs?[chemin \| {path, keys}]`, `include_players?` | `{ manifest, notes }` : manifeste v1 du serveur — jeu (`game`, `egg_id`), `game_version` et `loader` (détectés par l'hébergeur), `java_version` (image d'exécution), `properties` (secrets en `[SECRET]` ; `server-port`, `server-ip`, `query.port`, `rcon.port`, propres à l'allocation du serveur, omis), `startup`, `content` (fichier, version, source et projet quand l'hébergeur les identifie, sinon `source: null`), `players` (alias si l'anonymisation IA est active), `schedules`, `configs` demandées (toutes les valeurs, 300 au plus, ou les clés données). Notes : contenu non identifié, secrets masqués, ce qui n'est pas exporté (mondes, fichiers). |
-| `plan_manifest` | | `server_id`, `manifest` | **Ne modifie rien.** `steps[{id, status, summary, current?, target?, diff?, depends_on?, official?}]` dans l'ordre d'application, `counts` par statut, `to_apply`, `unlisted` (présent sur le serveur, absent du manifeste, gardé), `next`. `official` : outil du MCP officiel qui fait une étape `manual` (voir ci-dessous). |
-| `apply_manifest` | ✎ | `server_id`, `manifest`, `steps?`, `snapshot?` | Plan recalculé puis étapes `change`/`add`/`remove` exécutées dans l'ordre. Snapshot préalable **attendue** par défaut (15 min au plus ; sans elle rien n'est modifié). Rapport : `steps[{id, status, outcome, summary, detail?}]` (`réussie`, `conforme`, `ignorée`, `échouée` + raison, `non sélectionnée`, `non exécutée` après annulation), totaux, `manual` (ce qui reste à faire), `official` (`[{step, official}]` : outil officiel de chaque étape manuelle qui en a un), `next`. Progression par étape, arrêt propre sur annulation. |
+| `plan_manifest` | | `server_id`, `manifest` | **Ne modifie rien.** `steps[{id, status, summary, current?, target?, diff?, depends_on?, official?}]` dans l'ordre d'application, `counts` par statut, `to_apply`, `unlisted` (présent sur le serveur, absent du manifeste, gardé), `apply_official` (`{steps, how}` : étapes `manual` de version, plateforme, Java et JAR que `apply_official: true` appliquerait), `next`. `official` : outil du MCP officiel qui fait une étape `manual` (voir ci-dessous). |
+| `apply_manifest` | ✎ | `server_id`, `manifest`, `steps?`, `snapshot?`, `apply_official?` (défaut false), `confirm_name?` | Plan recalculé puis étapes `change`/`add`/`remove` exécutées dans l'ordre. Snapshot préalable **attendue** par défaut (15 min au plus ; sans elle rien n'est modifié). `apply_official` : étapes de version, plateforme, Java et JAR appliquées **d'abord** par la logique de `set_server_platform` (voir ci-dessous). Rapport : `steps[{id, status, outcome, summary, detail?}]` (`réussie`, `conforme`, `ignorée`, `échouée` + raison, `non sélectionnée`, `non exécutée` après annulation ou report), totaux, `manual` (ce qui reste à faire), `official` (`[{step, official}]` : outil officiel de chaque étape manuelle qui en a un, sauf celles appliquées), `apply_official` (rappel, sans l'option), `next`. Progression par étape, arrêt propre sur annulation. |
 | `clone_server` | ✎ | `source_server_id`, `mybox_id`, `name`, `cpu?`, `ram?`, `include_world?`, `exclude?[]`, `location_id?`, `required_fields?` | Crée un serveur du même jeu (validations de `mybox_create_server` ; CPU/RAM de la source si la MyBox a la place, sinon ce qui reste ; localisation de la source si en stock), attend la fin de l'installation (20 min au plus), l'arrête s'il a démarré, copie les fichiers de la source (`copy_between_servers`, écrasement des fichiers par défaut du serveur neuf ; mondes exclus — `level-name`, ses dimensions et tout dossier racine contenant un `level.dat` — sauf `include_world` ; `logs`, `crash-reports`, `debug` jamais ; `exclude` peut viser un sous-dossier ; ports et adresse du clone rétablis dans `server.properties` après la copie), puis applique le manifeste de la source sans snapshot. Sortie : `created_server_id`, ressources, durée d'installation, lots de copie, rapport du manifeste, `warnings`. En cas d'échec après la création, l'erreur cite `created_server_id=<id>`. |
 
 Classement : `get_config`, `export_manifest`, `plan_manifest` sont des lectures (cache de 10 s,
@@ -494,6 +494,23 @@ groupe `official` actif, écritures permises, outil relayé ; sinon `availabilit
 | `server.game_version`, `server.loader` | `change_version` (destructif : `confirm_name` = nom exact du serveur, donné par l'utilisateur) | chargeur `fabric` / `forge` / `neoforge` : `loader`, `game_version` (+ `build` facultatif) ; autre plateforme (Paper, Spigot, Vanilla…) : `version_id`, `game_version` | `get_content_files type=loader_builds` pour un build précis ; `search_game_content type=version` pour l'`id` d'une entrée. Une version **antérieure** est signalée : la plateforme la refuse, seule une réinstallation propre (`reinstall`, contenu perdu) le permet. Quilt : aucun outil officiel. Les deux étapes pointent le même appel. |
 | `server.java` | `manage_java` | `java_version_id` | `manage_java` sans autre paramètre liste les versions et leurs identifiants ; redémarrage ensuite. |
 | `startup.jar_file` | `set_startup_config` | `file` | Le JAR doit déjà exister sur le serveur (`list_files`) ; redémarrage ensuite. La passerelle relaie cet outil à côté de `set_startup_params`, qui ne change que la commande. |
+
+**`apply_official: true`** (opt-in d'`apply_manifest` ; sans lui, rien ne change) : ces étapes
+sont appliquées par la logique de `set_server_platform` (« Plateforme et version sans le panel »),
+qui appelle elle-même les outils officiels avec la clé du trousseau — la passerelle n'est **pas**
+requise (`available` ne concerne que l'appel direct par le client). Étapes concernées : celles
+de `plan_manifest` → `apply_official.steps` (`manual`, avec un outil officiel, sélectionnées par
+`steps`). Déroulement : plateforme, version, Java et JAR du manifeste résolus (lectures seules :
+catalogue, builds, JAR officiel, versions de Java) ; si `change_version` est nécessaire,
+**confirmation de l'utilisateur avant tout effet** (élicitation, sinon `confirm_name` = nom exact du
+serveur, donné par lui ; refus ou absence : erreur, rien n'est modifié) ; snapshot du manifeste
+(sans snapshot propre en plus) ; ces étapes d'abord (envoi du JAR, Java, `change_version`, fichier
+de démarrage), puis les autres. Une étape bloquée (version antérieure, plateforme sans voie) est
+`échouée` avec la raison, sans arrêter le reste. Si la plateforme ou la version a changé, les
+étapes de contenu (et ce qui en dépend) sont **reportées** (`non exécutée`) : le contenu a été
+résolu pour l'ancienne version ; relancer `apply_manifest` (idempotent) une fois l'opération
+terminée. Avec la voie du catalogue, un `startup.jar_file` différent est ignoré (l'hébergeur
+choisit le fichier). Pas de `reinstall` par le manifeste.
 
 #### Monter un serveur : prégénération et base de données
 
@@ -588,6 +605,28 @@ l'autre) ; aucun accès au disque de l'ordinateur.
   officiel `manage_database` (`action: reset_password`, corps connu) plutôt que par `PATCH
   /mybox/{id}/database/password` (corps non documenté, jamais essayé), relecture du nouveau mot de
   passe, puis écriture directe. Non annulable (le mot de passe ne revient pas en arrière).
+
+**`delete_database`** (`core/src/db_connect.rs`, groupe `mybox`) : supprimer une base de la MyBox.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `delete_database` | ✎ | `mybox_id`, `database_id`, `confirm_name` | **Suppression définitive** : `database` (id, nom, libellé, hôte — jamais le mot de passe), `deleted`, `job_id`, `verified` (la base n'est plus listée par `GET /mybox/{id}`), `undo` (sauvegardes de l'hébergeur), `next` (configs des plugins à nettoyer). |
+
+- **Appel** : `DELETE /mybox/{id_mybox}/database/{id}` (non documenté ; essayé en réel le
+  2026-11-19 : réponse `0`, job asynchrone, la base disparaît de `GET /mybox/{id}`),
+  `ApiClient::delete_mybox_database`. Après l'appel, la MyBox est relue (jusqu'à 4 fois, 2 s
+  d'écart) pour vérifier que la base n'y est plus.
+- **Avant tout effet** : la base doit exister dans la MyBox (`databases[]`, champs réels `id`,
+  `dbname`, `host`, `port`, `username`, `password`, `description` ; sinon la liste des bases est
+  rendue en erreur), puis confirmation de son **nom exact** (`dbname`, casse comprise) : retapé
+  par l'humain si son client sait le demander (élicitation), sinon `confirm_name` donné par
+  l'utilisateur — jamais deviné, jamais révélé dans le refus.
+- Rappelle l'outil officiel **`list_db_backups`** (`mybox_id`, `database_id` : sauvegardes
+  automatiques éventuelles, à consulter avant) ; la seule voie de retour est `restore_db_backup`.
+  Le mot de passe, lu avec l'entrée, n'apparaît dans aucune sortie ni erreur (nettoyées).
+- **Classement** : modifiant, dans `INFRA_TOOLS` (ressource de la MyBox partagée par ses
+  serveurs) ; étape **non annulable** de la garde ; mode constructeur : toute la MyBox (règle
+  standard d'un outil qui ne désigne qu'une `mybox_id`).
 
 #### Réseaux proxy (Velocity, BungeeCord)
 
@@ -755,6 +794,75 @@ agents (`Plan::Skip`) : chaque sous-écriture passe par `agent_guard::guarded_wr
   au premier échec. Sortie de chaque outil gardée (JSON court tel quel, sinon tronquée à 4 000
   caractères), le tout anonymisé (`redact`). Au journal des agents, les arguments relayés sont
   résumés comme un appel direct (contenu de fichier remplacé par sa taille).
+
+#### Plateforme et version sans le panel
+
+Choisir la plateforme (Paper, Spigot, Vanilla, Purpur, Folia, Fabric, Forge, NeoForge, Velocity,
+BungeeCord, Waterfall…), la version, Java et le JAR de démarrage d'un serveur Minecraft
+(`crates/minestrator-core/src/platform.rs`, `platform/jar.rs`). Appelle en interne les outils du
+MCP officiel avec la clé du trousseau, **sans** exiger la passerelle.
+
+| Outil | | Entrées | Renvoie |
+|---|---|---|---|
+| `set_server_platform` | ✎ | `server_id`, `platform?`, `version?`, `build?`, `version_id?`, `java?`, `jar_file?`, `method?` (`auto` \| `catalog` \| `jar`), `reinstall?`, `confirm_name?`, `snapshot?` (défaut true), `dry_run?` (défaut **true**) | `current` (plateforme et version détectées, Java et sa variante, JAR), `target` (plateforme, version, voie `catalogue` / `catalogue (chargeur)` / `jar`, Java, JAR), `resolved` (entrée du catalogue, ou chargeur et build, ou JAR : source, version, build, canal, fichier, taille, sha256, Java minimal), `resolved_java`, `operations[{tool, official, arguments, summary}]` dans l'ordre, `confirmation`, `warnings`, `blocking` (rien n'est fait tant qu'il y en a), puis `results[{tool, outcome, detail}]`, `snapshot_taken`, `status`, `next`. |
+
+**Catalogue de l'hébergeur** (`search_game_content type=version`, relevé en lecture le
+2026-11-19) : Paper, Spigot, Vanilla, Arclight, Spongeforge… par version de Minecraft ;
+**proxys proposés** : `Velocity` (entrée 3993, **une seule**, la dernière version : 4.3.1, « 1.8 et
+plus ») et `BungeeCord` (entrée 4010, version non précisée) ; **absents** : Waterfall, Purpur,
+Folia, Quilt, Mohist, Pufferfish. Fabric, Forge et NeoForge s'installent par leur nom (`loader` +
+`game_version` + `build`, builds lus par `get_content_files type=loader_builds`). Le serveur
+« Velocity » du compte de test (egg Minecraft, en pause, illisible) lance un jar Velocity : la voie
+JAR reproduit ce montage.
+
+- **Voies** (`method`) : `auto` (défaut) cherche l'entrée exacte du catalogue (version de
+  Minecraft pour un jeu, version du proxy pour un proxy ; une entrée sans version, BungeeCord,
+  installe la dernière) et applique `change_version` ; sinon, si la plateforme a une source
+  officielle, la **voie JAR** : JAR téléchargé côté Rust depuis **PaperMC** (API Fill v3 :
+  Velocity, Waterfall, Folia, Paper ; dernière version publiée supportée et dernier build `STABLE`
+  par défaut, sha256 et taille vérifiés) ou **Purpur** (`api.purpurmc.org` : taille et archive
+  vérifiées, l'API ne publie qu'un md5), écrit dans un fichier temporaire local puis envoyé à la
+  racine par `upload_file` (étape annulable de la garde, fichier temporaire effacé ; non renvoyé
+  s'il est déjà là avec la même taille), puis choisi par `set_startup_config file`. `catalog` :
+  catalogue seulement ; `jar` : JAR seulement (pas pour les chargeurs, installés par leur
+  installateur). Quilt : ni l'un ni l'autre (refus expliqué). `version_id` impose une entrée du
+  catalogue sans recherche.
+- **Version** : par défaut, celle du **monde** quand la plateforme de jeu change (Paper 1.21.4 →
+  Purpur 1.21.4), la dernière pour un proxy ; une version précise de Velocity (3.4.0…) passe par la
+  voie JAR. Une version de Minecraft **antérieure** à celle du monde est refusée (`blocking` : la
+  plateforme la refuse, chunks illisibles), sauf `reinstall: true` par le catalogue
+  (réinstallation propre : **tout le contenu effacé**, snapshot forcée) ; jamais par la voie JAR.
+  Passage d'un serveur de jeu à un proxy (ou l'inverse) : signalé.
+- **Java** : `java` (version majeure) appliqué tel quel s'il diffère (avertissement s'il est
+  inférieur au minimum) ; sinon relevé **automatiquement** au minimum requis si l'actuel est plus
+  ancien — Java minimal publié par PaperMC (Velocity 4.x : 25, 3.x : 21), sinon d'après Minecraft
+  (26.x : 25 ; 1.20.5 à 1.21.x : 21 ; 1.17 à 1.20.4 : 17) — jamais abaissé. Identifiant tiré de
+  `GET /site/java/versions` (`Java 21`, `Java 21 - Performance`, `Java 21 - GraalVM`…), même
+  variante que l'actuelle si elle existe. Appliqué **avant** `change_version` (qui redémarre).
+- **JAR seul** (`jar_file` sans plateforme) : fichier vérifié à la racine (SFTP) puis
+  `set_startup_config file`. Avec la voie du catalogue, `jar_file` est refusé (l'hébergeur choisit
+  le fichier) ; avec la voie JAR, il nomme le fichier envoyé.
+- **Confirmation** : `change_version` est **destructif** (JAR et bibliothèques remplacés, serveur
+  redémarré, `reinstall` efface tout). Avant **tout effet** (l'ère MCP sans état rejoue l'appel :
+  seules des lectures précèdent), l'humain retape le nom exact du serveur si son client sait le
+  lui demander (élicitation ; `confirm_name` devient facultatif), sinon `confirm_name` = nom exact,
+  **donné par l'utilisateur**, vérifié localement (jamais révélé dans l'erreur). Officiellement,
+  `change_version` ne prend pas `confirm_name` : il n'est pas transmis. La voie JAR, Java et le
+  JAR seul n'en demandent pas (non destructifs : l'ancien JAR reste, réversible).
+- **Exécution** : `dry_run` (défaut) n'exécute rien. Sinon : confirmation, snapshot attendue
+  avant `change_version` (`snapshot=false` pour s'en passer), puis dans l'ordre envoi du JAR,
+  `manage_java`, `change_version` (asynchrone : suivre avec `server_status` ou `wait_for`),
+  `set_startup_config` ; arrêt au premier échec (les suivantes « non exécutée ») ou sur
+  annulation, progression MCP. Chaque outil officiel est une **étape de la garde des agents**
+  (`platform::official_write` : même enveloppe que `mcp::dispatch`, non annulable, raison dans
+  `undo::plan_for`) ; l'outil composite n'en crée pas (`Plan::Skip`). Sorties anonymisées.
+- **Classement** : modifiant, dans `INFRA_TOOLS` (jamais au Copilote : destructif, téléchargement
+  externe, configuration persistante), groupe `build`, Minecraft seulement, idempotent, ouvert sur
+  le monde (PaperMC, Purpur). Mode constructeur : le serveur visé.
+
+`apply_manifest` avec **`apply_official: true`** applique par cette même logique les étapes
+`server.game_version`, `server.loader`, `server.java` et `startup.jar_file` (voir « Étapes `manual`
+reliées aux outils officiels »).
 
 #### Garde des agents
 
@@ -927,11 +1035,11 @@ inactif n'apparaît pas dans `tools/list` et son appel est refusé (ressources c
 | `players` | `list_players`, `player_action`, `find_player` |
 | `backups` | `list_backups`, `list_snapshots`, `create_snapshot` |
 | `diagnostics` | `server_metrics`, `analyze_performance`, `parse_spark_report`, `diagnose_startup`, `inspect_region`, `world_info`, `audit_server`, `search_logs`, `error_digest`, `uptime_report`, `list_incidents` |
-| `mybox` | `mybox_info`, `mybox_capacity`, `server_catalog`, `plan_placement`, `mybox_smartscan`, `mybox_create_server`, `mybox_resize_server`, `rename_server`, `rename_mybox`, `mybox_pause_server`, `mybox_reorder_servers`, `mybox_delete_server` |
+| `mybox` | `mybox_info`, `mybox_capacity`, `server_catalog`, `plan_placement`, `mybox_smartscan`, `mybox_create_server`, `mybox_resize_server`, `rename_server`, `rename_mybox`, `mybox_pause_server`, `mybox_reorder_servers`, `mybox_delete_server`, `delete_database` |
 | `schedules` | `list_schedules`, `create_schedule`, `update_schedule`, `delete_schedule`, `add_schedule_task`, `update_schedule_task`, `delete_schedule_task`, `reorder_schedule_tasks` |
 | `fleet` | `copy_between_servers`, `diff_files`, `broadcast_command`, `apply_to_servers` |
 | `agent` | Boucle « agir puis vérifier » (`run_command`, `wait_for`, `tail_console`, `deploy_and_verify`…). |
-| `build` | Configurations structurées, manifestes et réseaux proxy (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`, `network_topology`, `link_proxy`…), prégénération et base de données (`pregenerate_world`, `connect_database`). |
+| `build` | Configurations structurées, manifestes et réseaux proxy (`get_config`, `set_config`, `export_manifest`, `plan_manifest`, `apply_manifest`, `clone_server`, `network_topology`, `link_proxy`…), prégénération et base de données (`pregenerate_world`, `connect_database`), plateforme et version (`set_server_platform`). |
 | `guard` | Garde des agents (`list_agent_actions`, `rollback_changeset`…). |
 | `official` | Outils du MCP officiel relayés par la passerelle (si elle est activée). |
 
@@ -990,6 +1098,9 @@ d'étape.
 Non annulables par nature (étape enregistrée, puis passée à l'annulation) : `send_command`,
 `broadcast_command`, `power_action`, `player_action`, `create_snapshot`, `install_ficsit_mod`,
 infrastructure MyBox, tâches planifiées, restaurations. `rollback_changeset` n'ajoute pas d'étape.
+`set_server_platform` non plus (outil composite) : le JAR envoyé est une étape annulable
+(`upload_file`), chaque outil officiel appelé (`change_version`, `manage_java`,
+`set_startup_config`) une étape non annulable ; `delete_database` est une étape non annulable.
 
 **Plafonds** : 16 Mio par fichier copié, 32 Mio par étape, 64 Mio par changeset, 256 Mio pour toute
 la base (au-delà, les copies des changesets les plus anciens sont effacées et leurs étapes deviennent

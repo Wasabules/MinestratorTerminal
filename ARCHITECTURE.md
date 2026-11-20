@@ -361,6 +361,14 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   un outil d'`INFRA_TOOLS`) sur une liste de serveurs, `server_id` injecté, contrôles d'un appel
   direct puis par serveur (jeu, mode constructeur), appels par `mcp::dispatch`, rapport par
   serveur. Dans `LOCAL_DISK_TOOLS` et `INFRA_TOOLS`.
+- **`platform`** — outil **`set_server_platform`** : plateforme, version, Java et JAR d'un serveur
+  Minecraft sans le panel. Lectures (catalogue `search_game_content`, builds `get_content_files`
+  en `readonly=1`, `GET /site/java/versions`), voie du catalogue (`change_version`) ou voie JAR
+  (`platform/jar.rs` : JAR officiel PaperMC Fill v3 ou Purpur, vérifié, envoyé par `upload_file`
+  via la garde, choisi par `set_startup_config`) ; confirmation du nom exact avant tout effet ;
+  outils officiels appelés comme étapes de la garde (`official_write`). Réutilisé par
+  `apply_manifest` (`apply_official`). Dans `INFRA_TOOLS`. `db_connect` porte aussi
+  **`delete_database`** (`DELETE /mybox/{id}/database/{id}`, nom exact confirmé).
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

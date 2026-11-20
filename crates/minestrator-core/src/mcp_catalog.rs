@@ -292,6 +292,13 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
     ("sync_dir", "files", "Synchroniser un dossier local"),
     ("upload_world", "files", "Installer un monde depuis l'ordinateur"),
     ("apply_to_servers", "fleet", "Même outil sur plusieurs serveurs"),
+    // Plateforme et version d'un serveur (platform.rs), suppression d'une base de la MyBox.
+    (
+        "set_server_platform",
+        "build",
+        "Choisir la plateforme et la version",
+    ),
+    ("delete_database", "mybox", "Supprimer une base de données"),
 ];
 
 /// Outils modifiants **non destructifs** (`destructiveHint: false`) : ils ajoutent sans rien
@@ -333,6 +340,8 @@ pub(crate) const IDEMPOTENT_TOOLS: &[&str] = &[
     "link_proxy",
     // Relancée sur un dossier déjà synchronisé, rien n'est envoyé ni supprimé.
     "sync_dir",
+    // Fixe plateforme, version, Java et JAR : rappelé à l'identique, rien à changer.
+    "set_server_platform",
 ];
 
 /// Outils qui sortent du compte MineStrator (`openWorldHint: true`) : marketplaces, ficsit.app,
@@ -354,11 +363,18 @@ pub(crate) const OPEN_WORLD_TOOLS: &[&str] = &[
     "pregenerate_world",
     // Peut relayer install_mod / update_mods (marketplaces).
     "apply_to_servers",
+    // JAR officiel téléchargé depuis PaperMC ou Purpur (voie JAR).
+    "set_server_platform",
 ];
 
 /// Outils locaux dont la confirmation (`confirm_name`) est demandée à l'humain quand le client
 /// sait le faire (élicitation) : l'argument devient alors facultatif dans leur schéma.
-pub(crate) const HUMAN_CONFIRMED_TOOLS: &[&str] = &["mybox_delete_server"];
+pub(crate) const HUMAN_CONFIRMED_TOOLS: &[&str] = &[
+    "mybox_delete_server",
+    // Changement de version (change_version) et suppression d'une base : nom exact retapé.
+    "set_server_platform",
+    "delete_database",
+];
 
 /// Instructions données au modèle à l'initialisation (enchaînements recommandés). Les outils des
 /// autres groupes (`agent`, `build`, `guard`) sont cités même s'ils sont désactivés.

@@ -406,4 +406,19 @@ mod tests {
         assert_eq!(created_server_id("Erreur : quota"), None);
         assert_eq!(created_server_id("Serveur  créé"), None);
     }
+
+    /// Lot plateforme : `set_server_platform` vise son serveur ; `delete_database`, qui ne désigne
+    /// qu'une `mybox_id` (`database_id` n'est pas un serveur), toute la MyBox (règle standard).
+    #[test]
+    fn platform_and_database_deletion_follow_the_standard_rules() {
+        assert_eq!(
+            write_targets("set_server_platform", &json!({ "server_id": 5, "platform": "velocity" })),
+            Targets::Servers(vec![5])
+        );
+        assert_eq!(
+            write_targets("delete_database", &json!({ "mybox_id": 3, "database_id": 99, "confirm_name": "x" })),
+            Targets::MyBox(3)
+        );
+        assert_eq!(write_targets("delete_database", &json!({ "database_id": 99 })), Targets::Unknown);
+    }
 }

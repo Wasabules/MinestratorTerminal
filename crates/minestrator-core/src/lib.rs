@@ -90,6 +90,9 @@ mod network;
 mod fleet_apply;
 mod local_sync;
 mod world_upload;
+// Plateforme et version d'un serveur sans le panel : outil MCP `set_server_platform` (catalogue de
+// l'hébergeur ou JAR officiel), aussi utilisé par `apply_manifest` (`apply_official`).
+mod platform;
 
 pub use accounts::{Account, AccountSwitch};
 pub use agent_guard::{
