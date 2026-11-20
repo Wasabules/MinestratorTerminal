@@ -8,6 +8,55 @@ unique des notes de version. Format inspiré de [Keep a Changelog](https://keepa
 
 ---
 
+## v0.8.0
+
+### Réseaux proxy Velocity et BungeeCord
+
+- **Nouvelle vue « Réseau »** sur ordinateur : pour chaque MyBox, le proxy et ses serveurs de jeu
+  en schéma, avec leur état, leur réponse au ping et les problèmes détectés, chacun accompagné
+  d'un conseil (serveur non déclaré, mode de transfert des joueurs incohérent, proxy en écoute
+  sur le mauvais port…). Un bouton vérifie que tous les serveurs répondent.
+- **Assistant « Relier des serveurs »** : il déclare les serveurs de jeu sur le proxy, fixe
+  l'ordre de connexion, la liste de repli, le mode de transfert des joueurs et le routage par
+  nom de domaine, et retire les entrées d'exemple du proxy. Les changements sont simulés et
+  montrés avant d'être appliqués, une snapshot peut être prise avant, et tout reste annulable.
+- **Préréglages LuckPerms et Geyser** : permissions partagées entre le proxy et les serveurs sur
+  une même base de données, synchronisées instantanément ; accès des joueurs Bedrock par le
+  proxy.
+
+### Agents IA et serveur MCP
+
+- **Monter un réseau entier depuis un seul fichier** : un plan décrit le proxy, ses serveurs,
+  leur plateforme, leurs plugins, leurs configurations et leurs fichiers. L'agent peut le
+  simuler, l'appliquer (serveurs créés, plateformes changées, plugins installés, serveurs reliés
+  au proxy), le relancer sans rien refaire de ce qui est déjà en place, ou le produire à partir
+  d'un réseau existant.
+- **Un agent travaille en voyant le résultat** : il suit la console en direct, envoie une
+  commande et lit sa réponse, attend qu'un serveur ait démarré, et peut déployer un plugin puis
+  vérifier qu'il s'est bien chargé.
+- **Configurer un serveur sans casser ses fichiers** : modification ciblée des configurations
+  YAML, TOML, JSON et properties (commentaires et mise en forme conservés, fichier relu avant
+  écriture), description complète d'un serveur dans un manifeste réutilisable, copie de test
+  d'un serveur.
+- **Plateforme et version changées sans passer par le panel** (Paper, Velocity, BungeeCord…),
+  pré-génération du monde, branchement d'un plugin à une base de données de la MyBox sans que
+  l'agent voie le mot de passe, suppression d'une base.
+- **Envoi depuis l'ordinateur** : synchronisation d'un dossier entier (plugins, configurations)
+  et envoi d'un monde ; une même action peut viser plusieurs serveurs d'un coup.
+- **Secrets des agents** : un token de bot, une clé d'API ou un mot de passe se range dans le
+  trousseau de l'ordinateur (section « Secrets des agents » des réglages MCP). L'agent y fait
+  référence par son nom, la vraie valeur est écrite sur le serveur et il ne la voit jamais.
+- **Garde des agents** : chaque appel reçu par le serveur MCP est journalisé, et les
+  modifications d'un agent sont regroupées par session et annulables d'un bouton dans les
+  réglages MCP. Un mode « constructeur » limite les écritures aux serveurs que l'agent a créés
+  ou que vous avez autorisés.
+- Les groupes d'outils proposés aux clients MCP se choisissent dans les réglages. Le serveur MCP
+  gère les versions récentes du protocole, traite plusieurs requêtes à la fois, signale
+  l'avancement des opérations longues, accepte leur annulation et, quand le client le permet,
+  demande confirmation à l'humain avant une action destructive. Il passe à 107 outils.
+
+---
+
 ## v0.7.1
 
 ### Sécurité
