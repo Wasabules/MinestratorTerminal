@@ -95,7 +95,7 @@ jobs:
             echo "- Windows : \`.exe\` (pour votre compte, sans droits administrateur ; propose le service de supervision en arrière-plan), \`.msi\` (pour tous les utilisateurs, droits administrateur) ou \`_x64-portable.zip\` (version portable : à décompresser et lancer, sans installation)"
             echo "- macOS : \`.dmg\` (universel Intel + Apple Silicon)"
             echo "- Linux : \`.AppImage\`, \`.deb\` ou \`.rpm\`"
-            echo "- Android : \`_android.apk\` (presque tous les téléphones, 64 bits) ou \`_android-armv7.apk\` (anciens téléphones 32 bits), signés, à installer manuellement"
+            echo "- Android : \`_android-arm64.apk\` (presque tous les téléphones, 64 bits) ou \`_android-armv7.apk\` (anciens téléphones 32 bits), signés, à installer manuellement"
             echo ""
             echo "La mise à jour automatique proposera cette version aux applications déjà installées."
             echo ""
@@ -250,9 +250,10 @@ jobs:
           apk_for() {
             find mobile/src-tauri/gen/android/app/build/outputs/apk/"$1" -name '*-release.apk' ! -name '*unsigned*' | head -1
           }
-          # L'arm64 garde le nom sans suffixe et part en premier : les versions ≤ 0.8.0 de l'app
-          # prennent le premier `.apk` de la release pour se mettre à jour.
-          for pair in "arm64:android" "arm:android-armv7"; do
+          # Les versions ≤ 0.8.0 de l'app installent le premier `.apk` de la release, et l'API
+          # GitHub trie les fichiers par nom, pas par ordre d'envoi : `-arm64` passe avant `-armv7`,
+          # elles reçoivent donc l'APK 64 bits. Tout nouveau nom d'APK doit garder cet ordre.
+          for pair in "arm64:android-arm64" "arm:android-armv7"; do
             ABI="${pair%%:*}"; SUFFIX="${pair#*:}"
             APK=$(apk_for "$ABI")
             if [ -z "$APK" ]; then echo "APK release signé introuvable pour $ABI" >&2; exit 1; fi

@@ -24,9 +24,11 @@ seul, accompagné de `portable.txt`. Ce fichier fait répondre `true` à la comm
 `applyUpdate()` ouvre alors la page de la dernière release au lieu d'installer : l'installeur NSIS
 installerait l'app à côté de l'exécutable portable.
 
-**Android** : un APK par architecture (`_android.apk` pour arm64, `_android-armv7.apk`).
-`mobile/src-tauri/src/update.rs` choisit celui qui correspond au téléphone ; l'arm64 garde le nom
-sans suffixe et est attaché en premier, pour les versions ≤ 0.8.0 qui prennent le premier `.apk`.
+**Android** : un APK par architecture (`_android-arm64.apk`, `_android-armv7.apk`).
+`mobile/src-tauri/src/update.rs` choisit celui qui correspond au téléphone. Les versions ≤ 0.8.0
+installent le premier `.apk` de la release, et l'API GitHub renvoie les fichiers **triés par
+nom**, pas dans l'ordre d'envoi : `-arm64` passe avant `-armv7`, elles reçoivent donc l'APK
+64 bits. Tout nouveau nom d'APK doit conserver cet ordre.
 
 ## Clé de signature
 

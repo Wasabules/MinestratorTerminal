@@ -70,7 +70,7 @@ npx tauri android build --apk --debug   # APK debug local
 ## Release APK (CI) — signature
 
 Le workflow [`release.yml`](../.github/workflows/release.yml) construit un **APK signé par
-architecture** (`--split-per-abi` : `_android.apk` pour arm64, `_android-armv7.apk` pour les
+architecture** (`--split-per-abi` : `_android-arm64.apk` pour arm64, `_android-armv7.apk` pour les
 téléphones 32 bits ; pas d'x86, réservé aux émulateurs) et les attache à la release GitHub (job
 `android`). La lib Rust y est compressée (`useLegacyPackaging`) et sans symboles (profil
 `release` du crate mobile) : l'APK universel non compressé de la 0.8.0 pesait 137 Mo. Il faut

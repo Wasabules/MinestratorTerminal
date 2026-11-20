@@ -13,7 +13,7 @@ unique des notes de version. Format inspiré de [Keep a Changelog](https://keepa
 ### Téléchargement
 
 - **L'application Android pèse désormais une douzaine de mégaoctets au lieu de 137.** Elle est
-  proposée en deux fichiers : `_android.apk` pour presque tous les téléphones, et
+  proposée en deux fichiers : `_android-arm64.apk` pour presque tous les téléphones, et
   `_android-armv7.apk` pour les anciens téléphones 32 bits. La mise à jour depuis l'application
   choisit d'elle-même le bon fichier. Seule exception : un ancien téléphone 32 bits encore en
   0.8.0 doit installer une fois à la main le fichier `_android-armv7.apk`.

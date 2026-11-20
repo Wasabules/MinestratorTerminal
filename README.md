@@ -145,7 +145,7 @@ Télécharge le dernier installeur depuis la page **[Releases](../../releases/la
 | Windows | `.exe` (NSIS) ou `.msi`, ou `_x64-portable.zip` (portable : à décompresser, sans installation) |
 | macOS | `.dmg` (universel Intel + Apple Silicon) |
 | Linux | `.AppImage`, `.deb` ou `.rpm` |
-| Android | `_android.apk` (presque tous les téléphones, 64 bits) ou `_android-armv7.apk` (anciens téléphones 32 bits) |
+| Android | `_android-arm64.apk` (presque tous les téléphones, 64 bits) ou `_android-armv7.apk` (anciens téléphones 32 bits) |
 
 Au premier démarrage, saisis ta **clé API MineStrator** (Panel → Compte → Clés API) — elle est validée puis stockée dans le trousseau de l'OS.
 
