@@ -77,6 +77,12 @@ pub(crate) fn normalize_platform(p: &str) -> String {
         .chars()
         .filter(|c| !matches!(c, ' ' | '_' | '-'))
         .collect();
+    // L'hébergeur nomme ses proxys `proxyvelocity`, `proxybungeecord`… (relevé réel du
+    // 2026-11-20 sur un Velocity installé par change_version).
+    let l = match l.strip_prefix("proxy") {
+        Some(rest @ ("velocity" | "bungee" | "bungeecord" | "waterfall")) => rest.to_string(),
+        _ => l,
+    };
     match l.as_str() {
         "bungee" | "bungeecord" => "bungeecord",
         "neoforged" => "neoforge",

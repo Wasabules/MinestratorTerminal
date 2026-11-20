@@ -19,6 +19,17 @@ use tokio::sync::broadcast::error::RecvError;
 pub fn run() {
     init_tracing();
 
+    // Runtime de Tauri à pile élargie : les assistants de la vue Réseau et « Appliquer » du
+    // Copilote passent par les outils composites (préréglages → installations…), dont les futurs
+    // imbriqués débordaient la pile par défaut de tokio en debug (voir
+    // `minestrator_core::mcp::THREAD_STACK_BYTES`). Il vit jusqu'à la fin de `run`, donc de l'app.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(minestrator_core::mcp::THREAD_STACK_BYTES)
+        .build()
+        .expect("runtime tokio");
+    tauri::async_runtime::set(runtime.handle().clone());
+
     let core = Arc::new(Core::new());
     let events = core.subscribe();
     let supervisor = core.supervisor();
@@ -402,7 +413,13 @@ pub fn run_mcp() {
         )
         .init();
 
-    let runtime = tokio::runtime::Runtime::new().expect("runtime tokio");
+    // Pile élargie : les outils composites imbriquent des futurs volumineux (voir
+    // `minestrator_core::mcp::THREAD_STACK_BYTES`).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(minestrator_core::mcp::THREAD_STACK_BYTES)
+        .build()
+        .expect("runtime tokio");
     runtime.block_on(async {
         let core = Core::new();
         tracing::info!("mode MCP (stdio) prêt");

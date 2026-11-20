@@ -847,3 +847,15 @@ fn the_new_tools_are_classified_everywhere() {
         .iter()
         .any(|r| r == "confirm_name"));
 }
+
+/// L'hébergeur nomme un Velocity installé par change_version `proxyvelocity` (relevé réel du
+/// 2026-11-20) : sans cette normalisation, l'attente de fin d'installation d'apply_network ne
+/// concluait jamais et set_server_platform proposait de réinstaller un proxy déjà conforme.
+#[test]
+fn host_proxy_names_are_normalized() {
+    assert_eq!(normalize_platform("proxyvelocity"), "velocity");
+    assert_eq!(normalize_platform("ProxyBungeeCord"), "bungeecord");
+    assert_eq!(normalize_platform("proxy_waterfall"), "waterfall");
+    assert_eq!(normalize_platform("proxy"), "proxy");
+    assert_eq!(normalize_platform("paper"), "paper");
+}

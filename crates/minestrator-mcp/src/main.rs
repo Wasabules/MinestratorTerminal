@@ -7,8 +7,7 @@
 
 use minestrator_core::{mcp, Core};
 
-#[tokio::main]
-async fn main() {
+fn main() {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
@@ -16,7 +15,16 @@ async fn main() {
         )
         .init();
 
-    let core = Core::new();
-    tracing::info!("minestrator-mcp prêt (stdio)");
-    mcp::serve_stdio(std::sync::Arc::new(core)).await;
+    // Pile élargie : les outils composites imbriquent des futurs volumineux (voir
+    // `mcp::THREAD_STACK_BYTES`).
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(mcp::THREAD_STACK_BYTES)
+        .build()
+        .expect("runtime tokio");
+    runtime.block_on(async {
+        let core = Core::new();
+        tracing::info!("minestrator-mcp prêt (stdio)");
+        mcp::serve_stdio(std::sync::Arc::new(core)).await;
+    });
 }

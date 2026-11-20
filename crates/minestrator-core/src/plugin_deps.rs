@@ -126,7 +126,14 @@ const PAPER_FORKS: &[&str] = &[
 pub(crate) fn platforms_from_source(source: &str, mc: Option<&str>) -> Option<Accepted> {
     use Platform::*;
     let s = source.to_ascii_lowercase();
-    let words: BTreeSet<&str> = s.split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty()).collect();
+    // `proxyvelocity`, `proxybungeecord`… (noms de l'hébergeur pour ses proxys) : le mot compte
+    // aussi sans le préfixe.
+    let words: BTreeSet<&str> = s
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| !w.is_empty())
+        .flat_map(|w| [Some(w), w.strip_prefix("proxy").filter(|r| !r.is_empty())])
+        .flatten()
+        .collect();
     let has = |list: &[&str]| list.iter().any(|w| words.contains(w));
     let mc_nums = mc.and_then(version_nums);
     let below = |v: &[u64]| mc_nums.as_ref().is_some_and(|m| crate::updates::compare_numbers(m, v) == Ordering::Less);
@@ -881,6 +888,10 @@ mod tests {
         assert!(platforms_from_source("forge", Some("1.12.2")).unwrap().platforms.contains(&Platform::LegacyForge));
         assert!(platforms_from_source("folia", None).unwrap().folia);
         assert!(platforms_from_source("vanilla", None).unwrap().vanilla);
+        // Noms de l'hébergeur pour ses proxys (relevé réel : `proxyvelocity`).
+        assert!(platforms_from_source("proxyvelocity", None).unwrap().platforms.contains(&Platform::Velocity));
+        assert!(platforms_from_source("proxybungeecord", None).unwrap().platforms.contains(&Platform::Bungee));
+        assert!(platforms_from_source("proxy", None).is_none());
         assert!(platforms_from_source("explicit_jar", Some("26.1.2")).is_none());
 
         // Relevé réel du 2026-11-18 : `explicit_jar` sur un serveur Paper 26.1.2 → déduit du contenu.

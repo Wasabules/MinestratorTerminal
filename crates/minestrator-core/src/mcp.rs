@@ -55,6 +55,13 @@ impl Default for McpConfig {
 }
 
 /// Sert le protocole MCP sur **stdio** (transport concurrent de `mcp_transport.rs` : une tâche
+/// Pile des fils du runtime qui sert le MCP (binaire `minestrator-mcp`, mode `--mcp` de l'app).
+/// Les outils composites imbriquent des futurs volumineux (`apply_network` → `apply_manifest` →
+/// `install_mod`…) : la pile par défaut de tokio (2 Mio) débordait en debug, ce qui tuait le
+/// processus sans réponse (essai réel du 2026-11-20). Les deux points d'entrée construisent leur
+/// runtime avec cette taille.
+pub const THREAD_STACK_BYTES: usize = 16 * 1024 * 1024;
+
 /// par requête, annulation, progression, élicitation) ; chaque requête est traitée par
 /// [`handle_message`]. **stdout = protocole ; les logs vont sur stderr.** Partagé par le binaire
 /// `minestrator-mcp` et le mode `--mcp` de l'app, qui lisent tous deux l'argument `--toolsets`.
