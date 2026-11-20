@@ -134,6 +134,9 @@ pub enum ChangeOrigin {
     Mcp,
     /// Copilote (dans l'app, ou ses agents CLI).
     Copilot,
+    /// L'humain, depuis une vue de l'app (vue Réseau : liaison, préréglages) : ses écritures
+    /// passent par la garde pour rester annulables, sans portée d'agent ([`app_scope`]).
+    App,
 }
 
 impl ChangeOrigin {
@@ -141,13 +144,14 @@ impl ChangeOrigin {
         match self {
             ChangeOrigin::Mcp => "mcp",
             ChangeOrigin::Copilot => "copilot",
+            ChangeOrigin::App => "app",
         }
     }
     fn parse(s: &str) -> Self {
-        if s == "copilot" {
-            ChangeOrigin::Copilot
-        } else {
-            ChangeOrigin::Mcp
+        match s {
+            "copilot" => ChangeOrigin::Copilot,
+            "app" => ChangeOrigin::App,
+            _ => ChangeOrigin::Mcp,
         }
     }
 }
@@ -359,6 +363,20 @@ fn write_identity(args: &Value) -> (String, ChangeOrigin, Option<String>) {
     }
     let server = args.get("server_id").and_then(Value::as_i64);
     (copilot_session_key(server, &today()), ChangeOrigin::Copilot, None)
+}
+
+/// Exécute des écritures décidées par l'humain dans l'app (`client` : la vue, ex. « vue Réseau ») :
+/// chaque sous-écriture passée par [`guarded_write`] devient une étape annulable d'un changeset
+/// propre, d'origine [`ChangeOrigin::App`] (Réglages → MCP, « Modifications des agents »). Ni
+/// journal d'appel d'agent, ni mode constructeur : la portée des écritures ne vise que les agents.
+pub(crate) async fn app_scope<F: std::future::Future>(tag: &str, client: &str, fut: F) -> F::Output {
+    let ctx = CallCtx {
+        session: format!("app:{}:{}", clean_id(tag), now_secs()),
+        client: Some(client.to_string()),
+        origin: ChangeOrigin::App,
+        step: Mutex::new(None),
+    };
+    CALL.scope(ctx, fut).await
 }
 
 /// Session (changeset) de l'appel en cours, s'il y en a un — pour un outil qui enregistre
@@ -1164,6 +1182,7 @@ pub(crate) fn changesets_tool(core: &Core, args: &Value) -> std::result::Result<
         let origin = match cs.origin {
             ChangeOrigin::Mcp => "client MCP",
             ChangeOrigin::Copilot => "Copilote",
+            ChangeOrigin::App => "humain, depuis l'app",
         };
         if !out.is_empty() {
             out.push_str("\n\n");
@@ -1415,6 +1434,22 @@ mod tests {
             .scope(ctx(ChangeOrigin::Mcp), async { tokio::spawn(async { copilot_call() }).await.unwrap() })
             .await;
         assert!(detached);
+    }
+
+    #[tokio::test]
+    async fn app_writes_get_their_own_changeset_and_are_not_the_copilot() {
+        // Écritures de l'humain depuis l'app (vue Réseau) : changeset d'origine « app ».
+        let (session, origin, client, copilot) = app_scope("réseau/1", "vue Réseau", async {
+            let (s, o, c) = write_identity(&json!({ "server_id": 7 }));
+            (s, o, c, copilot_call())
+        })
+        .await;
+        assert!(session.starts_with("app:rseau1:"), "{session}");
+        assert_eq!((origin, client.as_deref()), (ChangeOrigin::App, Some("vue Réseau")));
+        assert!(!copilot, "l'humain n'est pas le Copilote");
+        for o in [ChangeOrigin::Mcp, ChangeOrigin::Copilot, ChangeOrigin::App] {
+            assert_eq!(ChangeOrigin::parse(o.as_str()), o);
+        }
     }
 
     #[test]

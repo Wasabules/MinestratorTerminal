@@ -1755,11 +1755,35 @@ pub(crate) async fn apply_steps(
     })
 }
 
-/// Outil MCP `link_proxy`.
-pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String, String> {
-    let a = parse_args(args)?;
-    crate::mcp_ctx::progress(0.0, None, "lecture du proxy et des serveurs de jeu").await;
-    let inputs = Box::pin(read_inputs(core, &a)).await?;
+/// Masque des diffs et des résumés : anonymisation IA pour un agent (`ai`), sinon seulement les
+/// valeurs des secrets des agents (vue Réseau de l'app : l'humain voit ses propres adresses). Les
+/// secrets des fichiers sont de toute façon masqués par `config_edit`.
+pub(crate) fn diff_redactor(core: &Core, ai: bool) -> impl Fn(&str) -> String + '_ {
+    core.refresh_secret_masks();
+    move |s: &str| {
+        if ai {
+            core.redact_ai(s)
+        } else {
+            crate::redact::mask_known_secrets(s).into_owned()
+        }
+    }
+}
+
+/// Plan calculé après lecture du proxy et des serveurs de jeu, prêt à rendre ou à appliquer
+/// (outil `link_proxy`, vue Réseau de l'app).
+pub(crate) struct Prepared {
+    pub proxy: ProxyState,
+    pub plan: Plan,
+    /// Secret à écrire (réutilisé ou généré) : **jamais rendu**.
+    pub secret: Option<String>,
+    /// Secrets lus ou générés : effacés de toute sortie.
+    pub secrets: Vec<String>,
+}
+
+/// Lit le proxy et les serveurs de jeu, génère un secret s'il en faut un, puis calcule le plan.
+/// `ai` : diffs anonymisés pour un agent ([`diff_redactor`]).
+pub(crate) async fn prepare(core: &Core, a: &LinkArgs, ai: bool) -> Result<Prepared, String> {
+    let inputs = Box::pin(read_inputs(core, a)).await?;
     let needs_secret = inputs.proxy.conf.kind == ProxyKind::Velocity
         && a.mode != Some(Mode::Legacy)
         && inputs.proxy.secret.is_none();
@@ -1770,7 +1794,7 @@ pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String,
     };
     let secrets = secrets_of(&inputs, generated.as_deref());
     let plan = {
-        let redact = |s: &str| core.redact_ai(s);
+        let redact = diff_redactor(core, ai);
         build_plan(
             &ProxyInput {
                 state: &inputs.proxy,
@@ -1778,7 +1802,7 @@ pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String,
                 account: &inputs.account,
             },
             &inputs.backends,
-            &a,
+            a,
             generated.as_deref(),
             &redact,
         )
@@ -1789,6 +1813,24 @@ pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String,
         SecretPlan::Reused(_) => inputs.proxy.secret.clone(),
         SecretPlan::Generated => generated.clone(),
     };
+    Ok(Prepared {
+        proxy: inputs.proxy,
+        plan,
+        secret,
+        secrets,
+    })
+}
+
+/// Outil MCP `link_proxy`.
+pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String, String> {
+    let a = parse_args(args)?;
+    crate::mcp_ctx::progress(0.0, None, "lecture du proxy et des serveurs de jeu").await;
+    let Prepared {
+        proxy,
+        plan,
+        secret,
+        secrets,
+    } = prepare(core, &a, true).await?;
     let finish = |mut v: Value, status: &str, next: &str| {
         v["status"] = json!(status);
         v["next"] = json!(next);
@@ -1811,21 +1853,21 @@ pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String,
             "Montre ce plan à l'utilisateur ; après son accord, relance avec dry_run=false (snapshot de chaque serveur modifié d'abord, sauf snapshot=false)."
         };
         return Ok(finish(
-            render_plan(&inputs.proxy, &plan, true, &outcomes),
+            render_plan(&proxy, &plan, true, &outcomes),
             "simulation : rien n'a été écrit",
             next,
         ));
     }
     if refused {
         return Err(finish(
-            render_plan(&inputs.proxy, &plan, false, &outcomes),
+            render_plan(&proxy, &plan, false, &outcomes),
             "refusé : rien n'a été écrit",
             "Corrige les étapes refused (fichier invalide : edit_file ; chemin du secret), puis relance.",
         ));
     }
     if todo.is_empty() {
         return Ok(finish(
-            render_plan(&inputs.proxy, &plan, false, &outcomes),
+            render_plan(&proxy, &plan, false, &outcomes),
             "déjà conforme : rien à écrire",
             "Les étapes manual restent à faire à la main ; vérifie avec network_topology.",
         ));
@@ -1834,7 +1876,7 @@ pub(crate) async fn link_proxy_tool(core: &Core, args: &Value) -> Result<String,
     // Écritures, proxy d'abord : un secret généré est posé sur le proxy avant les serveurs de jeu,
     // si bien qu'une relance après une coupure réutilise le même.
     let r = apply_steps(core, &todo, secret.as_deref(), a.snapshot, "link_proxy").await?;
-    let mut v = render_plan(&inputs.proxy, &plan, false, &r.outcomes);
+    let mut v = render_plan(&proxy, &plan, false, &r.outcomes);
     v["applied"] = json!(r.applied);
     if !r.snapshots.is_empty() {
         v["snapshots"] = json!(r.snapshots);

@@ -28,6 +28,8 @@ mod ping;
 mod preset;
 #[cfg(test)]
 mod tests;
+/// Façade typée de la vue Réseau de l'app (`Core::network_*`).
+pub(crate) mod view;
 
 pub(crate) use install::{install_mod_tool, proxy_versions};
 pub(crate) use link::link_proxy_tool;
@@ -1921,13 +1923,40 @@ pub(crate) fn orphan_note(label: &str, state: Option<&BackendState>) -> String {
     }
 }
 
-/// Topologie du compte (outil `network_topology`) : sortie JSON et secrets lus (à effacer).
-/// `ping` : ping Java du proxy et de chaque serveur du compte reconnu.
-async fn topology(
+/// Topologie lue, avant rendu : partagée par l'outil `network_topology` ([`render_topology`]) et
+/// la vue Réseau de l'app ([`view`]). Les secrets lus restent internes : à effacer des sorties.
+pub(crate) struct Collected {
+    /// Serveurs Minecraft Java du compte.
+    pub servers: Vec<McServer>,
+    /// Proxys lus (après le filtre `focus`), triés par nom.
+    pub proxies: Vec<ProxyState>,
+    /// Entrées de chaque proxy, même ordre que `proxies`, rapprochées et avec leurs réglages.
+    pub links: Vec<Vec<Link>>,
+    /// Réglages lus des serveurs de jeu reliés (et du serveur visé que rien ne relie).
+    pub states: HashMap<i64, Result<BackendState, String>>,
+    /// Pings Java (option `ping`), par serveur.
+    pub pings: HashMap<i64, Value>,
+    /// Aucun proxy trouvé (avant le filtre `focus`).
+    pub none_found: bool,
+    /// Serveurs Minecraft Java lisibles examinés.
+    pub readable: usize,
+    pub not_read: Vec<String>,
+    pub notes: Vec<String>,
+    /// Secrets et jetons lus : à effacer de toute sortie.
+    pub secrets: Vec<String>,
+    /// Serveur visé (`focus`) qu'aucun proxy lisible ne référence.
+    pub focus_alone: Option<i64>,
+}
+
+/// Lit la topologie du compte. `focus` : seulement les réseaux qui contiennent ce serveur ;
+/// `ping` : ping Java du proxy et de chaque serveur du compte reconnu ; `only` : proxys cherchés
+/// parmi ces serveurs seulement (une MyBox), les entrées restant rapprochées de tout le compte.
+pub(crate) async fn collect(
     core: &Core,
     focus: Option<i64>,
     ping: bool,
-) -> Result<(Value, Vec<String>), String> {
+    only: Option<&BTreeSet<i64>>,
+) -> Result<Collected, String> {
     crate::mcp_ctx::progress(0.0, None, "repérage des proxys").await;
     let servers = mc_servers(core).await?;
     if let Some(f) = focus {
@@ -1937,9 +1966,10 @@ async fn topology(
             ));
         }
     }
-    let mut not_read: Vec<String> = servers
+    let in_scope = |s: &McServer| only.is_none_or(|o| o.contains(&s.id));
+    let not_read: Vec<String> = servers
         .iter()
-        .filter(|s| !s.readable())
+        .filter(|s| !s.readable() && in_scope(s))
         .map(|s| {
             format!(
                 "{} : {}, fichiers inaccessibles",
@@ -1948,13 +1978,28 @@ async fn topology(
             )
         })
         .collect();
-    let mut notes: Vec<String> = Vec::new();
+    let mut c = Collected {
+        servers: Vec::new(),
+        proxies: Vec::new(),
+        links: Vec::new(),
+        states: HashMap::new(),
+        pings: HashMap::new(),
+        none_found: false,
+        readable: servers
+            .iter()
+            .filter(|s| s.readable() && in_scope(s))
+            .count(),
+        not_read,
+        notes: Vec::new(),
+        secrets: Vec::new(),
+        focus_alone: None,
+    };
     let mut candidates: Vec<&McServer> = servers
         .iter()
-        .filter(|s| s.readable() && s.ty.is_none_or(ServerType::is_proxy))
+        .filter(|s| s.readable() && s.ty.is_none_or(ServerType::is_proxy) && in_scope(s))
         .collect();
     if candidates.len() > MAX_PROXY_PROBES {
-        notes.push(format!(
+        c.notes.push(format!(
             "{} serveurs de plateforme inconnue : seuls les {MAX_PROXY_PROBES} premiers ont été examinés comme proxys possibles",
             candidates.len()
         ));
@@ -1973,37 +2018,31 @@ async fn topology(
         match r {
             Ok(Some((p, _))) => proxies.push(p),
             Ok(None) => {}
-            Err(e) => not_read.push(format!("{} : proxy illisible ({e})", s.label())),
+            Err(e) => c
+                .not_read
+                .push(format!("{} : proxy illisible ({e})", s.label())),
         }
     }
     proxies.sort_by_cached_key(|p| (p.name.to_lowercase(), p.server_id));
-    let mut secrets: Vec<String> = proxies.iter().flat_map(ProxyState::secrets).collect();
+    c.secrets = proxies.iter().flat_map(ProxyState::secrets).collect();
     if crate::mcp_ctx::cancelled() {
         return Err("annulé".into());
     }
-    let readable = servers.iter().filter(|s| s.readable()).count();
     if proxies.is_empty() {
-        let mut out = json!({
-            "proxies": [],
-            "note": format!("Aucun proxy Velocity ou BungeeCord trouvé parmi {readable} serveur(s) Minecraft Java lisible(s)."),
-            "next": "Pour monter un réseau : un serveur Velocity (proxy) et des serveurs Paper, puis link_proxy (dry_run d'abord).",
-        });
+        c.none_found = true;
         // Serveur visé : ses réglages disent s'il attend un proxy (externe, suspendu…).
         if let Some(s) = focus.and_then(|f| servers.iter().find(|s| s.id == f && s.readable())) {
             let state = read_backend(core, s.id, s.ty, s.version.clone())
                 .await
-                .ok()
                 .map(|(b, _)| b);
-            if let Some(b) = &state {
-                secrets.extend(b.secrets());
-                out["server"] = backend_brief(s, b);
+            if let Ok(b) = &state {
+                c.secrets.extend(b.secrets());
             }
-            out["note"] = json!(orphan_note(&s.label(), state.as_ref()));
+            c.states.insert(s.id, state);
+            c.focus_alone = Some(s.id);
         }
-        if !not_read.is_empty() {
-            out["not_read"] = json!(not_read);
-        }
-        return Ok((out, secrets));
+        c.servers = servers;
+        return Ok(c);
     }
 
     crate::mcp_ctx::progress(1.0, Some(3.0), "rapprochement des adresses").await;
@@ -2060,7 +2099,7 @@ async fn topology(
         .into_iter()
         .collect();
     for st in states.values().flatten() {
-        secrets.extend(st.secrets());
+        c.secrets.extend(st.secrets());
     }
     for l in links.iter_mut().flatten() {
         if let Some(m) = l.matched {
@@ -2077,17 +2116,6 @@ async fn topology(
             }
         }
     }
-
-    let mut rendered = Vec::new();
-    let mut all: Vec<(Severity, Value)> = Vec::new();
-    let (mut entries, mut recognized) = (0usize, 0usize);
-    for (p, ls) in proxies.iter().zip(&links) {
-        let problems = evaluate(p, ls);
-        entries += ls.len();
-        recognized += ls.iter().filter(|l| l.matched.is_some()).count();
-        all.extend(problems.iter().map(|x| (x.severity, render_problem(x, p))));
-        rendered.push(render_proxy(p, ls, &problems));
-    }
     if ping {
         crate::mcp_ctx::progress(3.0, Some(4.0), "ping des serveurs").await;
         let mut ids: BTreeSet<i64> = proxies.iter().map(|p| p.server_id).collect();
@@ -2103,8 +2131,55 @@ async fn topology(
             .filter(|s| s.readable())
             .filter_map(|s| s.endpoint.clone())
             .collect();
-        let pings = ping::ping_many(eps).await;
-        for (v, p) in rendered.iter_mut().zip(&proxies) {
+        c.pings = ping::ping_many(eps).await;
+    }
+    c.servers = servers;
+    c.proxies = proxies;
+    c.links = links;
+    c.states = states;
+    c.focus_alone = focus_alone;
+    Ok(c)
+}
+
+/// Sortie JSON de l'outil `network_topology` (secrets non encore effacés).
+fn render_topology(c: &Collected) -> Value {
+    let servers = &c.servers;
+    if c.none_found {
+        let mut out = json!({
+            "proxies": [],
+            "note": format!("Aucun proxy Velocity ou BungeeCord trouvé parmi {} serveur(s) Minecraft Java lisible(s).", c.readable),
+            "next": "Pour monter un réseau : un serveur Velocity (proxy) et des serveurs Paper, puis link_proxy (dry_run d'abord).",
+        });
+        // Serveur visé : ses réglages disent s'il attend un proxy (externe, suspendu…).
+        if let Some(s) = c
+            .focus_alone
+            .and_then(|f| servers.iter().find(|s| s.id == f))
+        {
+            let state = c.states.get(&s.id).and_then(|r| r.as_ref().ok());
+            if let Some(b) = state {
+                out["server"] = backend_brief(s, b);
+            }
+            out["note"] = json!(orphan_note(&s.label(), state));
+        }
+        if !c.not_read.is_empty() {
+            out["not_read"] = json!(c.not_read);
+        }
+        return out;
+    }
+
+    let mut rendered = Vec::new();
+    let mut all: Vec<(Severity, Value)> = Vec::new();
+    let (mut entries, mut recognized) = (0usize, 0usize);
+    for (p, ls) in c.proxies.iter().zip(&c.links) {
+        let problems = evaluate(p, ls);
+        entries += ls.len();
+        recognized += ls.iter().filter(|l| l.matched.is_some()).count();
+        all.extend(problems.iter().map(|x| (x.severity, render_problem(x, p))));
+        rendered.push(render_proxy(p, ls, &problems));
+    }
+    if !c.pings.is_empty() {
+        let pings = &c.pings;
+        for (v, p) in rendered.iter_mut().zip(&c.proxies) {
             if let Some(x) = pings.get(&p.server_id) {
                 v["ping"] = x.clone();
             }
@@ -2124,7 +2199,7 @@ async fn topology(
     let count = |s: Severity| all.iter().filter(|(x, _)| *x == s).count();
     let summary = format!(
         "{} proxy(s), {entries} serveur(s) déclaré(s) dont {recognized} reconnu(s) sur le compte ; problèmes : {} critique(s), {} important(s), {} info(s).",
-        proxies.len(),
+        c.proxies.len(),
         count(Severity::Critical),
         count(Severity::Important),
         count(Severity::Info)
@@ -2136,8 +2211,8 @@ async fn topology(
         "secrets": "secret de transfert et jetons comparés en interne (identique, différent, absent), jamais affichés",
         "next": "Corriger : link_proxy (dry_run d'abord) ; vérifier ensuite par network_topology. Les réglages ne prennent effet qu'au redémarrage des serveurs de jeu et du proxy.",
     });
-    if let Some(f) = focus_alone {
-        let state = states.get(&f).and_then(|r| r.as_ref().ok());
+    if let Some(f) = c.focus_alone {
+        let state = c.states.get(&f).and_then(|r| r.as_ref().ok());
         if let (Some(s), Some(b)) = (servers.iter().find(|s| s.id == f), state) {
             out["server"] = backend_brief(s, b);
         }
@@ -2148,13 +2223,25 @@ async fn topology(
             .unwrap_or_else(|| f.to_string());
         out["note"] = json!(orphan_note(&label, state));
     }
-    if !not_read.is_empty() {
-        out["not_read"] = json!(not_read);
+    if !c.not_read.is_empty() {
+        out["not_read"] = json!(c.not_read);
     }
-    if !notes.is_empty() {
-        out["notes"] = json!(notes);
+    if !c.notes.is_empty() {
+        out["notes"] = json!(c.notes);
     }
-    Ok((out, secrets))
+    out
+}
+
+/// Topologie du compte (outil `network_topology`) : sortie JSON et secrets lus (à effacer).
+/// `ping` : ping Java du proxy et de chaque serveur du compte reconnu.
+async fn topology(
+    core: &Core,
+    focus: Option<i64>,
+    ping: bool,
+) -> Result<(Value, Vec<String>), String> {
+    let c = collect(core, focus, ping, None).await?;
+    let out = render_topology(&c);
+    Ok((out, c.secrets))
 }
 
 /// Outil MCP `network_topology`.
