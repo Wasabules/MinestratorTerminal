@@ -24,6 +24,10 @@ Client **desktop et Android** pour piloter ses serveurs de jeu (**Minecraft, Sat
     <td width="50%"><img src="docs/screenshots/desktop-overview.png" alt="Tableau de bord d'un serveur" /><br/><sub>Tableau de bord d'un serveur</sub></td>
   </tr>
   <tr>
+    <td width="50%"><img src="docs/screenshots/desktop-network.png" alt="Vue Réseau : un proxy Velocity relié à deux serveurs" /><br/><sub>Réseau : proxy Velocity relié, ping et transfert vérifiés</sub></td>
+    <td width="50%"><img src="docs/screenshots/desktop-network-problems.png" alt="Vue Réseau : problèmes détectés sur une configuration par défaut" /><br/><sub>Problèmes détectés, avec leur correction</sub></td>
+  </tr>
+  <tr>
     <td width="50%"><img src="docs/screenshots/desktop-console.png" alt="Console temps réel" /><br/><sub>Console temps réel, filtres par niveau</sub></td>
     <td width="50%"><img src="docs/screenshots/desktop-sftp.png" alt="Éditeur de fichiers intégré" /><br/><sub>Fichiers SFTP et éditeur intégré</sub></td>
   </tr>
