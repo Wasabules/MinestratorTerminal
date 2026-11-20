@@ -50,6 +50,12 @@ export interface MyBoxesTab {
   kind: 'myboxes';
 }
 
+/** Réseaux proxy (Velocity, BungeeCord) : schéma, ping, liaison, préréglages. */
+export interface NetworkTab {
+  id: string;
+  kind: 'network';
+}
+
 export interface ServerTab {
   id: string;
   kind: 'server';
@@ -58,7 +64,14 @@ export interface ServerTab {
   view: ServerView;
 }
 
-export type Tab = HomeTab | SettingsTab | CopilotTab | NotificationsTab | MyBoxesTab | ServerTab;
+export type Tab =
+  | HomeTab
+  | SettingsTab
+  | CopilotTab
+  | NotificationsTab
+  | MyBoxesTab
+  | NetworkTab
+  | ServerTab;
 
 /** Métadonnées d'affichage par vue (ordre = ordre des actions dans l'UI). `icon` = nom dans Icon.svelte. */
 export const VIEWS: { id: ServerView; icon: string; ready: boolean }[] = [
@@ -135,6 +148,18 @@ class TabManager {
       return;
     }
     const tab: MyBoxesTab = { id: uid(), kind: 'myboxes' };
+    this.tabs.push(tab);
+    this.activeId = tab.id;
+  }
+
+  /** Ouvre (ou focus) l'onglet Réseau — unique. */
+  openNetwork(): void {
+    const existing = this.tabs.find((t) => t.kind === 'network');
+    if (existing) {
+      this.activeId = existing.id;
+      return;
+    }
+    const tab: NetworkTab = { id: uid(), kind: 'network' };
     this.tabs.push(tab);
     this.activeId = tab.id;
   }

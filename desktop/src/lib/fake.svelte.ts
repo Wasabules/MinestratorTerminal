@@ -112,6 +112,49 @@ export function fakeAddress(v: string): string {
   return port ? `${host}:${port}` : host;
 }
 
+/** Nom de domaine (hôte forcé d'un proxy, nom DNS) : sous `example.net`, numéroté pour rester distinct. */
+export function fakeDomain(v: string): string {
+  return `${pick(['play', 'mc', 'jeu', 'hub'], v)}${(hash(v) % 9) + 1}.example.net`;
+}
+
+/**
+ * Adresse `hôte:port` d'un proxy ou d'un serveur : IPv4 → plage de documentation, nom → domaine
+ * `example.net`, port conservé (il n'identifie rien et sert à lire le schéma).
+ */
+export function fakeHostPort(v: string): string {
+  const m = v.trim().match(/^(.*?)(?::(\d+))?$/);
+  const host = m?.[1] ?? v;
+  const port = m?.[2];
+  let fake: string;
+  if (isLoopback(host)) fake = host;
+  else if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host)) fake = fakeIp(host);
+  else fake = fakeDomain(host);
+  return port ? `${fake}:${port}` : fake;
+}
+
+/** Adresse locale (boucle, non spécifiée) : n'identifie aucune machine, gardée telle quelle. */
+function isLoopback(host: string): boolean {
+  return /^(localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0|\[?::1?\]?)$/i.test(host);
+}
+
+const ENTRIES = ['lobby', 'hub', 'survie', 'creatif', 'skyblock', 'minijeux', 'pvp', 'aventure'] as const;
+
+/**
+ * Nom d'entrée d'un proxy (souvent tiré du nom du serveur) : celui du serveur de démo visé
+ * (`server`, en minuscules et tirets, comme le cœur), sinon un nom générique.
+ */
+export function fakeEntry(v: string, server?: string): string {
+  if (!server) return pick(ENTRIES, v);
+  return (
+    fakeServer(server)
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '') || pick(ENTRIES, v)
+  );
+}
+
 export function fakeMail(v: string): string {
   return `${pick(PLAYERS, v).toLowerCase()}@example.net`;
 }
@@ -135,7 +178,7 @@ export function fakeRef(v: string): string {
  */
 export function fakeText(text: string, players: string[] = []): string {
   let out = text
-    .replace(/\b(\d{1,3}\.){3}\d{1,3}\b/g, (ip) => fakeIp(ip))
+    .replace(/\b(\d{1,3}\.){3}\d{1,3}\b/g, (ip) => (isLoopback(ip) ? ip : fakeIp(ip)))
     .replace(/\b[\w.+-]+@[\w-]+\.[\w.]+\b/g, (mail) => fakeMail(mail));
   for (const p of players) {
     if (p.length < 3) continue; // trop court : remplacerait des fragments de mots
