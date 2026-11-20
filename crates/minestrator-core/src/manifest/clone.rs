@@ -175,8 +175,9 @@ fn install_state(status: Option<&str>, state: &str) -> Result<Option<String>, St
 }
 
 impl Core {
-    /// Attend la fin de l'installation d'un serveur neuf ; renvoie son état (`offline`…).
-    async fn wait_installed(&self, id: i64) -> Result<(String, u64), String> {
+    /// Attend la fin de l'installation d'un serveur neuf ; renvoie son état (`offline`…). Partagé
+    /// avec `apply_network` (`blueprint.rs`).
+    pub(crate) async fn wait_installed(&self, id: i64) -> Result<(String, u64), String> {
         let start = Instant::now();
         let mut last_err = String::new();
         loop {
@@ -215,8 +216,9 @@ impl Core {
         }
     }
 
-    /// Arrête le serveur s'il tourne (l'hébergeur peut démarrer un serveur neuf).
-    async fn ensure_stopped(&self, id: i64, state: &str) -> Result<(), String> {
+    /// Arrête le serveur s'il tourne (l'hébergeur peut démarrer un serveur neuf). Partagé avec
+    /// `apply_network` (`blueprint.rs`).
+    pub(crate) async fn ensure_stopped(&self, id: i64, state: &str) -> Result<(), String> {
         if !matches!(state, "online" | "starting" | "running") {
             return Ok(());
         }

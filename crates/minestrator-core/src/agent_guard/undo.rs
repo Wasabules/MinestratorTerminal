@@ -313,6 +313,10 @@ pub(crate) fn plan_for(name: &str, args: &Value) -> Plan {
         // Préréglage de réseau : installations (install_mod), configs (set_config) et clé de
         // Floodgate (copy_between_servers) passent par `guarded_write`, une étape chacune.
         "network_preset" => Plan::Skip,
+        // Réseau entier (blueprint.rs) : outil composite ; chaque sous-écriture (création, plateforme,
+        // manifeste, synchronisation, monde, liaison, préréglage, alimentation, marqueur) passe par
+        // `mcp::dispatch` et y est une étape à part.
+        "apply_network" => Plan::Skip,
         _ => Plan::Fixed(NO_CAPTURE),
     }
 }

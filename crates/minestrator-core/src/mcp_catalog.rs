@@ -305,6 +305,11 @@ pub(crate) const TOOL_GROUPS: &[(&str, &str, &str)] = &[
     // config : secrets des agents (agent_secrets.rs)
     ("list_secrets", "config", "Secrets des agents"),
     ("generate_secret", "config", "Générer un secret des agents"),
+    // build : monter un réseau entier depuis un fichier (blueprint.rs)
+    ("plan_network", "build", "Planifier un réseau entier (blueprint)"),
+    ("apply_network", "build", "Monter un réseau entier (blueprint)"),
+    ("export_network", "build", "Exporter le blueprint d'un réseau"),
+    ("network_template", "build", "Modèles de réseau"),
 ];
 
 /// Outils modifiants **non destructifs** (`destructiveHint: false`) : ils ajoutent sans rien
@@ -352,6 +357,8 @@ pub(crate) const IDEMPOTENT_TOOLS: &[&str] = &[
     "set_server_platform",
     // Fixe des valeurs finales ; un plugin présent n'est pas réinstallé, une clé identique pas recopiée.
     "network_preset",
+    // Relancé avec le même blueprint : serveurs rapprochés par leur nom, ce qui est conforme sauté.
+    "apply_network",
 ];
 
 /// Outils qui sortent du compte MineStrator (`openWorldHint: true`) : marketplaces, ficsit.app,
@@ -377,6 +384,9 @@ pub(crate) const OPEN_WORLD_TOOLS: &[&str] = &[
     "set_server_platform",
     // LuckPerms (Modrinth), Geyser et Floodgate (GeyserMC) installés au besoin.
     "network_preset",
+    // Blueprint : contenu résolu (plan) puis installé depuis les marketplaces, JAR officiels.
+    "plan_network",
+    "apply_network",
 ];
 
 /// Outils locaux dont la confirmation (`confirm_name`) est demandée à l'humain quand le client
@@ -398,6 +408,7 @@ Enchaînements recommandés :
 - Après chaque action, vérifie son effet au lieu de le supposer : wait_for (message attendu dans la console), tail_console, run_command (commande et sa sortie), server_status.
 - Configuration : get_config puis set_config avec dry_run pour prévisualiser ; plan_manifest avant apply_manifest.
 - Réseau Velocity ou BungeeCord : network_topology, puis link_proxy (dry_run d'abord) ; ne manipule jamais le secret de transfert toi-même.
+- Réseau entier (proxy et serveurs, plugins, configs, mondes) : network_template ou export_network, puis plan_network, puis apply_network (dry_run d'abord, accord de l'utilisateur).
 - Fichier qui contient des secrets : edit_file (remplacement ciblé) plutôt que read_file + write_file, car les secrets lus sont masqués en [SECRET].
 - Token, clé d'API, mot de passe à écrire : jamais en clair ; list_secrets puis {{secret:NOM}} à la place de la valeur (set_config, write_file, edit_file, manifeste).
 - Action destructive (suppression de serveur…) : seulement à la demande explicite de l'utilisateur ; la confirmation peut lui être demandée directement par ton client.

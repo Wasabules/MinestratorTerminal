@@ -35,6 +35,8 @@ pub(crate) use install::{install_mod_tool, proxy_versions};
 pub(crate) use link::link_proxy_tool;
 pub(crate) use ping::ping_server_tool;
 pub(crate) use preset::network_preset_tool;
+// Monter un réseau entier (blueprint.rs) : noms d'entrées et domaines validés comme link_proxy.
+pub(crate) use link::{valid_host, valid_name};
 
 use crate::config_edit::Format;
 use crate::findings::Severity;

@@ -31,6 +31,8 @@ mod store;
 pub(crate) mod undo;
 
 pub use scope::{WriteScope, MCP_ALLOWED_SERVERS_ENV, MCP_WRITE_SCOPE_ENV};
+// Monter un réseau entier (blueprint.rs) : identifiant d'un serveur créé par une sous-étape.
+pub(crate) use scope::created_server_id;
 
 use crate::error::{Error, Result};
 use crate::mcp::McpConfig;
