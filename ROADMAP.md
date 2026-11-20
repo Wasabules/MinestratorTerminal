@@ -1,7 +1,7 @@
 # Feuille de route — Minestrator Terminal
 
 > Client **desktop** (Windows, macOS, Linux) et **Android** pour l'API MineStrator. Dernière version
-> publiée : **v0.6.1** · public · GPL-3.0. Les fonctionnalités marquées *(main)* sont fusionnées et
+> publiée : **v0.8.0** · public · GPL-3.0. Les fonctionnalités marquées *(main)* sont fusionnées et
 > testées en CI, et partiront avec la prochaine version.
 >
 > Le principe reste le même : ne pas refaire le panel web, mais exploiter ce qu'une app
@@ -17,12 +17,12 @@
   session déconnectée ; l'app s'efface quand il surveille le même compte.
 - **Historique CPU/RAM/disque** — séries temporelles locales (SQLite) et graphiques.
 - **Alertes natives** — crash, seuils, échéance et suppression des MyBox (sauf renouvellement auto).
-- **Redémarrage automatique après crash** *(main)* — par serveur, délais croissants, plafond
+- **Redémarrage automatique après crash** — par serveur, délais croissants, plafond
   horaire, dernières lignes de console jointes à l'alerte.
-- **Automatisations planifiées** *(main)* — redémarrage avec annonces aux joueurs, snapshot,
+- **Automatisations planifiées** — redémarrage avec annonces aux joueurs, snapshot,
   commandes ; exécutées par l'app ou le service, distinctes des tâches du panel web.
-- **Alertes Discord et webhooks** *(main)* — par événement, anonymisées, regroupées.
-- **Suivi de disponibilité** *(main)* — 24 h / 7 j / 30 j et journal des coupures, sans compter
+- **Alertes Discord et webhooks** — par événement, anonymisées, regroupées.
+- **Suivi de disponibilité** — 24 h / 7 j / 30 j et journal des coupures, sans compter
   les périodes non surveillées.
 
 ### Serveurs
@@ -38,19 +38,19 @@
 - **Marketplaces** — Modrinth / CurseForge / Spigot, mods Satisfactory (ficsit), Factorio,
   Thunderstore, uMod.
 - **Adaptation par jeu** — vues, outils et commandes selon le jeu détecté.
-- **Vue Réseau** *(main)* — réseaux proxy Velocity / BungeeCord d'une MyBox en schéma (proxy →
+- **Vue Réseau** — réseaux proxy Velocity / BungeeCord d'une MyBox en schéma (proxy →
   serveurs, état, ping, réglages et problèmes en badges), « Pinger tout », assistant « Relier des
   serveurs » (repli, routage par domaine, nettoyage) et préréglages LuckPerms / Geyser : plan
-  simulé avec diffs, application après confirmation, annulable. Écritures réelles encore à
-  valider sur un réseau de test.
+  simulé avec diffs, application après confirmation, annulable. Liaison et préréglages validés
+  sur un réseau réel (par le serveur MCP, qui partage la même logique).
 
 ### Comptes et sécurité
 
-- **Plusieurs comptes MineStrator** et changement de compte *(main)*.
+- **Plusieurs comptes MineStrator** et changement de compte.
 - **Secrets en stockage sécurisé** — trousseau de l'OS, Keystore Android, fichier chiffré DPAPI
   pour le service Windows ; aucun identifiant en clair.
 - **Mot de passe SFTP** obtenu automatiquement (`/server/{id}/sftp`), saisie manuelle en secours.
-- **Vérification de l'identité du serveur SFTP** *(main)* — empreinte mémorisée, connexion bloquée
+- **Vérification de l'identité du serveur SFTP** — empreinte mémorisée, connexion bloquée
   avant l'envoi du mot de passe si elle change.
 - **Confidentialité** — anonymisation avant tout envoi à une IA, un paste ou un webhook ;
   journaux anonymisés ; mode « données de démo » pour les captures.
@@ -60,28 +60,32 @@
 - **Copilote multi-fournisseur** — Anthropic, tout endpoint OpenAI-compatible, agents CLI locaux
   (Claude Code, OpenCode, Gemini CLI) privés de shell et de disque.
 - **Serveur MCP intégré** (deny-by-default) et **MCP officiel MineStrator**.
+- **Agents IA constructeurs** — un agent pilote et vérifie (console suivie, attente du démarrage,
+  déploiement vérifié), modifie les configs sans les casser, reproduit un serveur par manifeste et
+  monte un réseau entier depuis un seul fichier ; journal, annulation par session, mode
+  constructeur et secrets par référence.
 - **Analyse de performance** (rapports Spark) et docteur de démarrage.
 
 ### Confort
 
-- **Palette de commandes Ctrl+K / ⌘K** *(main)* — serveurs, vues, actions, commandes console,
+- **Palette de commandes Ctrl+K / ⌘K** — serveurs, vues, actions, commandes console,
   réglages, comptes.
 - Onglets persistants, fenêtres détachées, français / anglais, thèmes clair / sombre.
 - **Mises à jour automatiques signées** (desktop et APK Android).
 
 ### Application Android
 
-- Aperçu (jauges, historique 1 h / 6 h / 24 h *(main)*, alertes récentes *(main)*), console,
+- Aperçu (jauges, historique 1 h / 6 h / 24 h, alertes récentes), console,
   joueurs, fichiers, sauvegardes, notifications de l'hébergeur.
-- **Paramètres du serveur, centre d'alertes, mods et plugins** *(main)*.
-- Comptes *(main)*, surveillance en arrière-plan, transferts avec notification.
+- **Paramètres du serveur, centre d'alertes, mods et plugins**.
+- Comptes, surveillance en arrière-plan, transferts avec notification.
 
 ### Outillage
 
 - CI sur les 3 OS, audit de sécurité hebdomadaire, types TypeScript générés depuis Rust.
-- **Surveillance quotidienne de l'API MineStrator** *(main)* — contrat des réponses et structure de
+- **Surveillance quotidienne de l'API MineStrator** — contrat des réponses et structure de
   la documentation OpenAPI ; un écart ouvre une issue.
-- **Contrôle des traductions** fr/en en CI *(main)*.
+- **Contrôle des traductions** fr/en en CI.
 
 ## 🔧 À finir
 
