@@ -23,3 +23,9 @@ license = "GPL-3.0-or-later"
 # Contrepartie assumée : les backtraces Rust en debug perdent leurs noms de fonctions.
 [profile.dev]
 strip = "debuginfo"
+
+# APK de release : la lib Rust de l'app mobile perd aussi sa table des symboles (plusieurs Mio
+# par architecture, inutiles sur un téléphone). Le desktop garde les siens pour des backtraces
+# lisibles dans les journaux.
+[profile.release.package.minestrator-terminal-mobile]
+strip = true

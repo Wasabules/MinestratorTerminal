@@ -56,6 +56,13 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            // Lib Rust compressée dans l'APK. Par défaut, Android la range non compressée (pour
+            // la charger sans l'extraire) : l'APK téléchargé pesait alors le poids brut de la lib
+            // de chaque architecture (137 Mo en 0.8.0). Compressée, elle est extraite une fois à
+            // l'installation : téléchargement bien plus léger, installation à peine plus longue.
+            packaging {
+                jniLibs.useLegacyPackaging = true
+            }
             // Signe la release uniquement si le keystore est présent (CI). Sinon, non signée
             // (les tests locaux passent par `--debug`).
             if (keystorePropertiesFile.exists()) {

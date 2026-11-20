@@ -71,11 +71,7 @@ pub async fn check_update() -> Result<Option<UpdateInfo>, String> {
         .await
         .map_err(|e| e.to_string())?;
 
-    let Some(apk) = rel
-        .assets
-        .iter()
-        .find(|a| a.name.to_lowercase().ends_with(".apk"))
-    else {
+    let Some(apk) = pick_apk(&rel.assets, std::env::consts::ARCH) else {
         return Ok(None);
     };
 
@@ -88,6 +84,34 @@ pub async fn check_update() -> Result<Option<UpdateInfo>, String> {
     } else {
         Ok(None)
     }
+}
+
+/// Suffixes d'architecture des APK publiés. Depuis la 0.8.1, la release porte un APK par
+/// architecture : `…_android.apk` (arm64, presque tous les téléphones) et `…_android-armv7.apk`
+/// (anciens téléphones 32 bits). Le nom sans suffixe reste celui de l'arm64 : les versions
+/// antérieures, qui prennent le premier `.apk` venu, continuent ainsi de trouver le bon.
+const ABI_SUFFIXES: &[&str] = &["-armv7", "-x86_64", "-x86"];
+
+/// APK de la release qui convient à l'architecture du téléphone (`std::env::consts::ARCH`).
+/// Aucun → pas de mise à jour proposée plutôt qu'un APK que le téléphone refuserait.
+fn pick_apk<'a>(assets: &'a [GhAsset], arch: &str) -> Option<&'a GhAsset> {
+    let wanted = match arch {
+        "arm" => Some("-armv7"),
+        "x86_64" => Some("-x86_64"),
+        "x86" => Some("-x86"),
+        // aarch64 : l'APK sans suffixe d'architecture (arm64, ou universel avant la 0.8.1).
+        _ => None,
+    };
+    assets.iter().find(|a| {
+        let name = a.name.to_lowercase();
+        let Some(stem) = name.strip_suffix(".apk") else {
+            return false;
+        };
+        match wanted {
+            Some(suffix) => stem.ends_with(suffix),
+            None => !ABI_SUFFIXES.iter().any(|s| stem.ends_with(s)),
+        }
+    })
 }
 
 /// Télécharge l'APK dans le cache de l'app (exposé par le FileProvider) et renvoie son chemin.
@@ -111,4 +135,40 @@ pub async fn download_update(app: tauri::AppHandle, url: String) -> Result<Strin
 
     std::fs::write(&path, &bytes).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asset(name: &str) -> GhAsset {
+        GhAsset { name: name.into(), browser_download_url: format!("https://x/{name}") }
+    }
+
+    fn release() -> Vec<GhAsset> {
+        vec![
+            asset("latest.json"),
+            asset("Minestrator-Terminal_v0.8.1_android.apk"),
+            asset("Minestrator-Terminal_v0.8.1_android-armv7.apk"),
+            asset("Minestrator.Terminal_0.8.1_x64-setup.exe"),
+        ]
+    }
+
+    #[test]
+    fn each_architecture_gets_its_own_apk() {
+        let assets = release();
+        let name = |arch| pick_apk(&assets, arch).map(|a| a.name.as_str());
+        assert_eq!(name("aarch64"), Some("Minestrator-Terminal_v0.8.1_android.apk"));
+        assert_eq!(name("arm"), Some("Minestrator-Terminal_v0.8.1_android-armv7.apk"));
+        // Aucun APK x86 publié : pas de mise à jour proposée plutôt qu'un APK refusé.
+        assert_eq!(name("x86_64"), None);
+        assert_eq!(name("x86"), None);
+    }
+
+    #[test]
+    fn a_universal_apk_of_an_older_release_still_serves_arm64_only() {
+        let assets = vec![asset("Minestrator-Terminal_v0.8.0_android.apk")];
+        assert!(pick_apk(&assets, "aarch64").is_some());
+        assert!(pick_apk(&assets, "arm").is_none());
+    }
 }
