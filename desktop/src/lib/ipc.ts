@@ -428,6 +428,8 @@ export const api = {
 
   /** Profil du compte actif (à partir de la clé enregistrée). */
   getUser: () => demo(invoke<UserProfile>('get_user'), fakeProfile),
+  /** Lancée depuis l'archive portable Windows (pas d'installeur pour les mises à jour). */
+  isPortable: () => invoke<boolean>('is_portable'),
 
   // --- Comptes (plusieurs comptes MineStrator, changement de compte) ---
   /** Comptes enregistrés sur l'appareil, dans l'ordre d'ajout (`active` marque le compte actif). */

@@ -1587,6 +1587,8 @@ export const en: Dict = {
     install: 'Update',
     later: 'Later',
     installing: 'Installing…',
+    download: 'Download',
+    portableHint: 'Portable version: download the new archive and replace the executable.',
   },
   sftp: {
     upload: 'Upload',
@@ -1817,7 +1819,7 @@ export const en: Dict = {
     setupFailed: 'Background supervision not enabled: use “Enable” in Settings → Background service.',
     unsupported: 'The background service is not available on this system.',
     noBinary:
-      'This installation does not ship the service (build without service, or development mode). The app supervises while it runs.',
+      'This installation does not ship the service (portable version, build without service, or development mode). The app supervises while it runs; use the installer to get the service.',
     notificationsTitle: 'Notifications',
     notificationsBody:
       'The service records alerts; the app (system tray) displays them. Alerts raised while the app was closed show up in the alert center next time it opens. A system service cannot display notifications itself (Windows: session 0).',

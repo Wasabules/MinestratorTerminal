@@ -291,6 +291,7 @@ pub fn run() {
             commands::save_webhook,
             commands::delete_webhook,
             commands::test_webhook,
+            commands::is_portable,
         ])
         .run(tauri::generate_context!())
         .expect("erreur au lancement de l'application Tauri");

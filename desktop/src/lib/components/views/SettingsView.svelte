@@ -10,6 +10,7 @@
     applyUpdate,
     isAutoUpdateEnabled,
     setAutoUpdateEnabled,
+    isPortable,
   } from '#lib/updater.ts';
   import { isCompactTabs, setCompactTabs } from '#lib/tabs/mode.svelte.ts';
   import { closeBehavior, setCloseBehavior, type CloseBehavior } from '#lib/close.svelte.ts';
@@ -91,6 +92,8 @@
   let updMsg = $state('');
   let updOk = $state(false);
   let pendingUpdate = $state<Update | null>(null);
+  /** Version portable : une mise à jour se télécharge, elle ne s'installe pas. */
+  let portable = $state(false);
 
   // Catalogue d'outils IA (miroir de READ_TOOLS/WRITE_TOOLS) pour la case « permissions ».
   // Le libellé vient de l'i18n (clé `settings.tool_<name>`) ; ici on ne garde que name + write.
@@ -189,6 +192,7 @@
   ];
 
   onMount(async () => {
+    void isPortable().then((p) => (portable = p));
     try {
       config = await api.getSupervisorConfig();
     } catch {
@@ -288,7 +292,9 @@
     if (!pendingUpdate) return;
     updInstalling = true;
     try {
-      await applyUpdate(pendingUpdate); // télécharge + installe + relance (ne revient pas si succès)
+      // Installée : télécharge, installe et relance (ne revient pas si succès). Portable : ouvre
+      // la page de téléchargement et revient.
+      if (!(await applyUpdate(pendingUpdate))) updInstalling = false;
     } catch (e) {
       updInstalling = false;
       flashError(e);
@@ -662,7 +668,7 @@
           {#if updMsg}<span class="upd-msg" class:ok={updOk}>{updMsg}</span>{/if}
           {#if pendingUpdate}
             <button class="btn" onclick={installUpdate} disabled={updInstalling}>
-              {updInstalling ? t('update.installing') : t('update.install')}
+              {updInstalling ? t('update.installing') : t(portable ? 'update.download' : 'update.install')}
             </button>
           {/if}
           <button class="btn btn--ghost" onclick={checkUpdates} disabled={updChecking}>

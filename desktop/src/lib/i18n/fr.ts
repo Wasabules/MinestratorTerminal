@@ -1598,6 +1598,8 @@ export const fr = {
     install: 'Mettre à jour',
     later: 'Plus tard',
     installing: 'Installation…',
+    download: 'Télécharger',
+    portableHint: 'Version portable : télécharge la nouvelle archive et remplace l’exécutable.',
   },
   sftp: {
     upload: 'Téléverser',
@@ -1830,7 +1832,7 @@ export const fr = {
     setupFailed: 'Supervision en arrière-plan non activée : « Activer » dans Réglages → Service d’arrière-plan.',
     unsupported: 'Le service d’arrière-plan n’est pas disponible sur ce système.',
     noBinary:
-      'Cette installation n’inclut pas le service (build sans service ou mode développement). L’application supervise tant qu’elle tourne.',
+      'Cette installation n’inclut pas le service (version portable, build sans service ou mode développement). L’application supervise tant qu’elle tourne ; pour le service, utilise l’installeur.',
     notificationsTitle: 'Notifications',
     notificationsBody:
       'Le service enregistre les alertes ; c’est l’application (zone de notification) qui les affiche. Celles survenues application fermée apparaissent dans le centre d’alertes à la prochaine ouverture. Un service système ne peut pas afficher de notification lui-même (Windows : session 0).',

@@ -92,10 +92,10 @@ jobs:
             echo "---"
             echo ""
             echo "**Installeurs** (en pièces jointes) :"
-            echo "- Windows : \`.exe\` (pour votre compte, sans droits administrateur ; propose le service de supervision en arrière-plan) ou \`.msi\` (pour tous les utilisateurs, droits administrateur)"
+            echo "- Windows : \`.exe\` (pour votre compte, sans droits administrateur ; propose le service de supervision en arrière-plan), \`.msi\` (pour tous les utilisateurs, droits administrateur) ou \`_x64-portable.zip\` (version portable : à décompresser et lancer, sans installation)"
             echo "- macOS : \`.dmg\` (universel Intel + Apple Silicon)"
             echo "- Linux : \`.AppImage\`, \`.deb\` ou \`.rpm\`"
-            echo "- Android : \`.apk\` signé, à installer manuellement"
+            echo "- Android : \`_android.apk\` (presque tous les téléphones, 64 bits) ou \`_android-armv7.apk\` (anciens téléphones 32 bits), signés, à installer manuellement"
             echo ""
             echo "La mise à jour automatique proposera cette version aux applications déjà installées."
             echo ""
@@ -124,6 +124,40 @@ jobs:
           # `scripts/build-daemon-sidecar.mjs` pour la cible) et les scripts d'installeurs.
           # Voir docs/SERVICE.md.
           args: ${{ matrix.args }} --config src-tauri/tauri.service.conf.json
+
+      # Version portable Windows : l'exécutable seul (le front y est embarqué ; WebView2 est déjà
+      # présent sur Windows 10 et 11), sans installeur ni service d'arrière-plan. `portable.txt`
+      # le signale à l'app, qui renvoie alors vers la page de téléchargement au lieu de lancer
+      # l'installeur d'une mise à jour.
+      - name: Version portable Windows (.zip)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $ver = $tag.TrimStart('v')
+          $exe = "target/release/minestrator-terminal.exe"
+          if (-not (Test-Path $exe)) { throw "Exécutable introuvable : $exe" }
+          $dir = "portable/Minestrator Terminal"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item $exe "$dir/Minestrator Terminal.exe"
+          @(
+            "Minestrator Terminal $tag - version portable",
+            "",
+            "Lancez « Minestrator Terminal.exe » : aucune installation ni droit administrateur.",
+            "Ce fichier active le mode portable : gardez-le à côté de l'exécutable.",
+            "",
+            "- Réglages et historique restent dans votre profil Windows (%APPDATA%), la clé API dans",
+            "  le Gestionnaire d'identification de Windows, comme pour la version installée.",
+            "- Mises à jour : l'application signale les nouvelles versions et ouvre la page de",
+            "  téléchargement ; remplacez ce dossier par la nouvelle archive.",
+            "- Le service de supervision en arrière-plan n'est disponible qu'avec l'installeur."
+          ) | Set-Content -Path "$dir/portable.txt" -Encoding utf8
+          $zip = "Minestrator.Terminal_${ver}_x64-portable.zip"
+          Compress-Archive -Path $dir -DestinationPath $zip -Force
+          gh release upload $tag $zip --clobber
+          Write-Host "Archive portable attachée : $zip ($((Get-Item $zip).Length) octets)"
 
   # --- App mobile Android : APK signé, attaché à la même release ---
   # L'APK est produit même si un build desktop échoue (ex. course sur latest.json de
@@ -160,7 +194,8 @@ jobs:
       - name: Install Rust (stable) + cibles Android
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          # x86 et x86_64 ne servent qu'aux émulateurs : pas d'APK publié pour eux.
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -191,7 +226,8 @@ jobs:
         working-directory: ./mobile
         env:
           NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
-        run: npx tauri android build --apk
+        # Un APK par architecture plutôt qu'un APK universel : chacun ne porte que sa lib Rust.
+        run: npx tauri android build --apk --split-per-abi --target aarch64 --target armv7
 
       - name: Attacher l'APK à la release
         env:
@@ -210,10 +246,18 @@ jobs:
           fi
           echo "APK produits :"
           find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -printf '  %s\t%p\n' || true
-          # APK signé (release) — `*-release.apk` exclut le `*-release-unsigned.apk`.
-          APK=$(find mobile/src-tauri/gen/android/app/build/outputs/apk -name '*-release.apk' ! -name '*unsigned*' | head -1)
-          if [ -z "$APK" ]; then echo "APK release signé introuvable" >&2; exit 1; fi
-          OUT="Minestrator-Terminal_${GITHUB_REF_NAME}_android.apk"
-          cp "$APK" "$OUT"
-          gh release upload "$GITHUB_REF_NAME" "$OUT" --clobber
-          echo "APK attaché : $OUT ($(stat -c%s "$OUT") octets) depuis $APK"
+          # APK signé (release) d'une architecture — `*-release.apk` exclut le `*-release-unsigned.apk`.
+          apk_for() {
+            find mobile/src-tauri/gen/android/app/build/outputs/apk/"$1" -name '*-release.apk' ! -name '*unsigned*' | head -1
+          }
+          # L'arm64 garde le nom sans suffixe et part en premier : les versions ≤ 0.8.0 de l'app
+          # prennent le premier `.apk` de la release pour se mettre à jour.
+          for pair in "arm64:android" "arm:android-armv7"; do
+            ABI="${pair%%:*}"; SUFFIX="${pair#*:}"
+            APK=$(apk_for "$ABI")
+            if [ -z "$APK" ]; then echo "APK release signé introuvable pour $ABI" >&2; exit 1; fi
+            OUT="Minestrator-Terminal_${GITHUB_REF_NAME}_${SUFFIX}.apk"
+            cp "$APK" "$OUT"
+            gh release upload "$GITHUB_REF_NAME" "$OUT" --clobber
+            echo "APK attaché : $OUT ($(stat -c%s "$OUT") octets) depuis $APK"
+          done

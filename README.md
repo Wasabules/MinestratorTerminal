@@ -142,14 +142,14 @@ Télécharge le dernier installeur depuis la page **[Releases](../../releases/la
 
 | OS | Fichier |
 |---|---|
-| Windows | `.msi` ou `.exe` (NSIS) |
+| Windows | `.exe` (NSIS) ou `.msi`, ou `_x64-portable.zip` (portable : à décompresser, sans installation) |
 | macOS | `.dmg` (universel Intel + Apple Silicon) |
 | Linux | `.AppImage`, `.deb` ou `.rpm` |
-| Android | `.apk` (signé) |
+| Android | `_android.apk` (presque tous les téléphones, 64 bits) ou `_android-armv7.apk` (anciens téléphones 32 bits) |
 
 Au premier démarrage, saisis ta **clé API MineStrator** (Panel → Compte → Clés API) — elle est validée puis stockée dans le trousseau de l'OS.
 
-Une fois installée, l'app **se met à jour toute seule** : elle propose les nouvelles versions au démarrage (désactivable dans les Réglages). Sur Android, la nouvelle version de l'APK se télécharge et s'installe depuis l'application.
+Une fois installée, l'app **se met à jour toute seule** : elle propose les nouvelles versions au démarrage (désactivable dans les Réglages). Sur Android, l'APK qui correspond au téléphone se télécharge et s'installe depuis l'application. La version portable signale les nouvelles versions et ouvre la page de téléchargement ; le service d'arrière-plan n'est disponible qu'avec l'installeur.
 
 > Les binaires ne sont **pas signés au niveau OS** : Windows SmartScreen / macOS Gatekeeper peuvent afficher un avertissement au premier lancement. Les **artefacts de mise à jour**, eux, sont signés et vérifiés (voir [`docs/AUTO-UPDATE.md`](./docs/AUTO-UPDATE.md)).
 

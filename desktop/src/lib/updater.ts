@@ -7,6 +7,8 @@
 
 import { check, type Update } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import { api } from '#lib/ipc.ts';
 
 const AUTO_KEY = 'mnstr-autoupdate';
 
@@ -41,8 +43,30 @@ export async function checkForUpdate(): Promise<Update | null> {
   }
 }
 
-/** Télécharge et installe la mise à jour, puis relance l'application. */
-export async function applyUpdate(update: Update): Promise<void> {
+/** Page des téléchargements de la dernière version. */
+const RELEASES_URL = 'https://github.com/Wasabules/MinestratorTerminal/releases/latest';
+
+let portable: Promise<boolean> | null = null;
+
+/**
+ * Version portable (archive Windows, sans installeur) ? Une mise à jour ne s'y installe pas :
+ * l'installeur la transformerait en version installée, à côté de l'exécutable portable.
+ */
+export function isPortable(): Promise<boolean> {
+  portable ??= api.isPortable().catch(() => false);
+  return portable;
+}
+
+/**
+ * Installe la mise à jour puis relance l'application. En version portable, ouvre la page de
+ * téléchargement à la place et rend la main (`false`) : rien n'est installé.
+ */
+export async function applyUpdate(update: Update): Promise<boolean> {
+  if (await isPortable()) {
+    await openUrl(RELEASES_URL);
+    return false;
+  }
   await update.downloadAndInstall();
   await relaunch();
+  return true;
 }

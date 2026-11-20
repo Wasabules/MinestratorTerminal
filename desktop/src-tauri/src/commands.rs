@@ -1516,3 +1516,18 @@ pub async fn panel_tasks_reorder(
 ) -> Result<(), Error> {
     core.reorder_panel_tasks(server_id, schedule_id, task_ids).await
 }
+
+// --- Version portable -------------------------------------------------------
+
+/// Fichier posé à côté de l'exécutable dans l'archive portable Windows (`release.yml`).
+pub const PORTABLE_MARKER: &str = "portable.txt";
+
+/// L'app tourne-t-elle depuis l'archive portable (aucun installeur) ? Elle ne doit alors pas
+/// lancer l'installeur d'une mise à jour : l'UI renvoie vers la page de téléchargement.
+#[tauri::command]
+pub fn is_portable() -> bool {
+    std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(PORTABLE_MARKER).is_file()))
+        .unwrap_or(false)
+}
