@@ -79,6 +79,7 @@ export const fr = {
     slotsDetail: '{active} / {max} actifs · {paused} / {maxPaused} en pause',
     flexcore:
       'FlexCore : {n} cœur(s) de rafale partagé(s), ajouté(s) à la limite de chaque serveur (non allouables).',
+    createBlocked: 'Création de serveur impossible : {reasons}.',
     blockers: {
       expired: 'MyBox expirée',
       suspended: 'MyBox suspendue',

@@ -405,7 +405,9 @@
   }
   .row {
     display: grid;
-    grid-template-columns: 30px minmax(0, 1fr) 90px 110px 64px;
+    /* Colonnes chiffrées assez larges pour leur en-tête en capitales (« DERNIÈRE VENUE ») : à
+       90/110 px, les deux en-têtes débordaient l'un sur l'autre. */
+    grid-template-columns: 30px minmax(0, 1fr) 120px 140px 64px;
     align-items: center;
     gap: 12px;
     padding: 8px 12px;

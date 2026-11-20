@@ -79,6 +79,7 @@ export const en: Dict = {
     diskUsed: '{used} / {total} GB used (shared)',
     slotsDetail: '{active} / {max} active · {paused} / {maxPaused} paused',
     flexcore: 'FlexCore: {n} shared burst core(s), added to every server’s limit (not allocatable).',
+    createBlocked: 'Cannot create a server: {reasons}.',
     blockers: {
       expired: 'MyBox expired',
       suspended: 'MyBox suspended',

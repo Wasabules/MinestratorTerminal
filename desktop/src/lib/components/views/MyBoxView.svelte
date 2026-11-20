@@ -208,7 +208,9 @@
           {#if cap.flexcore > 0}<p class="dim small">{t('mybox.flexcore', { n: cap.flexcore })}</p>{/if}
         {/if}
         {#if cap.blockers.length > 0 && !cap.expired && !cap.suspended}
-          <p class="dim small">{cap.blockers.map((b) => t(`mybox.blockers.${b}`)).join(' · ')}</p>
+          <p class="dim small">
+            {t('mybox.createBlocked', { reasons: cap.blockers.map((b) => t(`mybox.blockers.${b}`)).join(', ') })}
+          </p>
         {/if}
 
         {#if cap.servers.length === 0}
@@ -390,6 +392,11 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  /* L'espacement vient du `gap` : les marges des paragraphes s'y ajoutaient (pas de fusion des
+     marges en flex) et isolaient les lignes d'aide sous les jauges. */
+  .box > p {
+    margin: 0;
   }
   .box-head {
     display: flex;
