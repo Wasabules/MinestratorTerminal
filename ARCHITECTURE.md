@@ -325,7 +325,10 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
 - **`config_edit`** — lecture et **édition structurée** des configs (YAML via `saphyr-parser`, TOML
   via `toml_edit`, JSON/JSONC, `.properties`) : seule la plage de la valeur est réécrite, le
   résultat est relu et comparé à l'arbre attendu avant écriture ; secrets masqués et valeurs
-  masquées refusées. Outils `get_config` / `set_config`.
+  masquées refusées. Outils `get_config` / `set_config`. Retrait de clés (`config_edit/remove.rs`,
+  `set_config` avec `remove`) : chaque éditeur de format retire la clé (lignes en YAML, entrée de
+  table en TOML, membre et virgule en JSON, lignes logiques en `.properties`), puis le fichier relu
+  doit être l'ancien privé des seules clés retirées.
 - **`manifest`** — **manifeste déclaratif** d'un serveur (v1) : export, plan (écart avec le serveur
   réel, étapes à identifiant stable, `manual` / `unsupported` expliqués), application idempotente
   après snapshot, et `clone_server` (`manifest/clone.rs` : création, copie, manifeste de la source).
@@ -344,7 +347,17 @@ Contenu, monde et audit (outils MCP en lecture `check_plugin_deps`, `world_info`
   leurs entrées avec les serveurs du compte (`GET /server/{id}` : ip, port, DNS, ports secondaires),
   cohérence des serveurs de jeu (`network_topology`) ; liaison (`network/link.rs`, `link_proxy`) :
   plan pur avec diffs masqués, secret de transfert réutilisé ou généré (CSPRNG) et jamais rendu,
-  écritures par `agent_guard::guarded_write`.
+  routage par domaine (`forced_hosts`) et nettoyage des entrées qui ne mènent à rien (`prune`),
+  écritures par `agent_guard::guarded_write` (boucle partagée `link::apply_steps` : snapshots
+  attendues, une étape annulable par écriture). `network/install.rs` : plateforme du serveur
+  vérifiée par `install_mod` (build de proxy sur un proxy, le catalogue MineStrator n'offrant que
+  les builds Bukkit/Paper), API publique de Modrinth pour les builds de proxy, source `geysermc`
+  (Geyser, Floodgate), téléchargements vérifiés par empreinte et déposés par SFTP.
+  `network/preset.rs` (`network_preset`) : préréglages `luckperms` (une base pour tout le réseau,
+  par `db_connect`) et `geyser` (clé de Floodgate copiée de serveur à serveur sans être lue, port
+  Bedrock du proxy). `network/ping.rs` (`ping_server`, option `ping` de `network_topology`) :
+  Server List Ping Java (repli legacy 0xFE) et ping RakNet Bedrock, vers l'adresse d'un serveur du
+  compte seulement.
 
 ### 3.5 Sécurité & confidentialité
 - **`accounts`** — plusieurs comptes MineStrator sur un appareil et changement de compte (app

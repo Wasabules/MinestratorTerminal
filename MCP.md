@@ -233,8 +233,8 @@ ni dans son catalogue, ni dans sa liste blanche d'agent CLI, ni via « Appliquer
 | `list_installed_mods` | | `server_id`, `query?` | Mods installés (nom + version, compact ; `query` filtre par sous-chaîne). |
 | `list_installed_plugins` | | `server_id`, `query?` | Plugins installés (nom + version, compact ; `query` filtre par sous-chaîne). |
 | `market_search` | | `kind?`, `source?`, `query?`, `loader?`, `game_version?`, `page?` | Recherche Modrinth / CurseForge / SpigotMC (id/slug, nom, downloads, loaders, versions de jeu). |
-| `list_mod_versions` | | `source?`, `slug`, `loader?`, `game_version?` | Versions d'un projet → les `version_id` requis pour installer. |
-| `install_mod` | ✎ | `server_id`, `source?`, `kind?`, `slug`, `version_id`, `loader?` | Installe un mod/plugin. **Modrinth** = mods **et** plugins (`{slug, version_id}`) ; **Spigot** = plugins (`slug` = id numérique, `version_id` = id de version). Refuse le premium/external (403). |
+| `list_mod_versions` | | `source?`, `slug`, `loader?`, `game_version?` | Versions d'un projet → les `version_id` requis pour installer. `loader` = `velocity`, `bungeecord` ou `waterfall` : builds de **proxy** lues dans l'API publique de Modrinth (le catalogue MineStrator n'a que les builds Bukkit/Paper). |
+| `install_mod` | ✎ | `server_id`, `source?`, `kind?`, `slug`, `version_id`, `loader?` | Installe un mod/plugin. **Modrinth** = mods **et** plugins (`{slug, version_id}`) ; **Spigot** = plugins (`slug` = id numérique, `version_id` = id de version). Refuse le premium/external (403). **Plateforme vérifiée** (Modrinth) : sur un proxy, seule une build `velocity` / `bungeecord` est acceptée, une build de proxy est refusée sur un serveur de jeu (builds compatibles proposées) ; une build de proxy refusée par l'hébergeur est déposée depuis le CDN de Modrinth (sha512 vérifié). **`geysermc`** : Geyser ou Floodgate (`slug`, `version_id` = `latest` ou n° de build), build de la plateforme du serveur (API officielle de GeyserMC, sha256 vérifié). |
 | `check_updates` | | `server_id`, `kind?`, `force?` | **Mises à jour** des mods, plugins et datapacks installés : version installée → nouvelle, d'après la vérification de l'hébergeur (`POST /server/{id}/{type}/updates`, non documenté, pure comparaison) tenant compte de la version de Minecraft et du loader. Passe par un **garde-fou** : les propositions qui visent une autre plateforme (variante Velocity d'un plugin Paper…) ou une version identique/plus ancienne sont **écartées** et listées à part. Donne la **clé** de chaque élément. Résultat gardé 15 min (`force` revérifie). |
 | `update_mods` | ✎ | `server_id`, `kind?`, `keys?` | Applique des mises à jour : revérifie, installe la version retenue (mêmes endpoints que le panel) puis supprime l'ancien fichier si son nom change. `keys` = clés de `check_updates` ; vide = toutes celles des éléments **actifs** (filtrées par `kind`). Jamais une proposition écartée. Bilan par élément (mis à jour, ancien fichier conservé, échec, non appliqué) ; **effet au prochain redémarrage**. |
 
@@ -413,11 +413,21 @@ réel, `apply_manifest` exécute l'écart, `clone_server` crée une copie de tes
 | Outil | | Entrées | Renvoie |
 |---|---|---|---|
 | `get_config` | | `server_id`, `path`, `key?` | Avec `key` : valeur **typée** (`found`, `type`, `value` ; section trop longue → son arborescence). Clé absente : `deepest_existing` et `available_keys` (clés du niveau le plus proche). Sans `key` : arborescence aplatie (`keys[{key, type, value}]`, 300 valeurs au plus, listes de scalaires d'un bloc), `secrets_masked`. |
-| `set_config` | ✎ | `server_id`, `path`, `changes[{key, value}]`, `create_missing?`, `keep_type?`, `dry_run?` | Modifications vérifiées puis écrites (SFTP) : par clé `modifiée`, `créée` ou `inchangée` avec ancienne et nouvelle valeur (masquées si secrètes) et note de type ; diff unifié masqué ; `written` ; rien n'est écrit si tout est déjà conforme ou en `dry_run`. 100 modifications au plus par appel. `create_missing=false` : une clé absente fait tout refuser. |
+| `set_config` | ✎ | `server_id`, `path`, `changes[{key, value}]`, `remove?`, `create_missing?`, `keep_type?`, `dry_run?` | Modifications vérifiées puis écrites (SFTP) : par clé `modifiée`, `créée`, `inchangée`, `retirée` ou `absente` avec ancienne et nouvelle valeur (masquées si secrètes) et note de type ; diff unifié masqué ; `written` ; rien n'est écrit si tout est déjà conforme ou en `dry_run`. 100 modifications et retraits au plus par appel. `create_missing=false` : une clé absente fait tout refuser. `remove` : clés à retirer (retrait seul : `changes` = `[]`), voir plus bas. |
 | `export_manifest` | | `server_id`, `include_configs?[chemin \| {path, keys}]`, `include_players?` | `{ manifest, notes }` : manifeste v1 du serveur — jeu (`game`, `egg_id`), `game_version` et `loader` (détectés par l'hébergeur), `java_version` (image d'exécution), `properties` (secrets en `[SECRET]` ; `server-port`, `server-ip`, `query.port`, `rcon.port`, propres à l'allocation du serveur, omis), `startup`, `content` (fichier, version, source et projet quand l'hébergeur les identifie, sinon `source: null`), `players` (alias si l'anonymisation IA est active), `schedules`, `configs` demandées (toutes les valeurs, 300 au plus, ou les clés données). Notes : contenu non identifié, secrets masqués, ce qui n'est pas exporté (mondes, fichiers). |
 | `plan_manifest` | | `server_id`, `manifest` | **Ne modifie rien.** `steps[{id, status, summary, current?, target?, diff?, depends_on?, official?}]` dans l'ordre d'application, `counts` par statut, `to_apply`, `unlisted` (présent sur le serveur, absent du manifeste, gardé), `next`. `official` : outil du MCP officiel qui fait une étape `manual` (voir ci-dessous). |
 | `apply_manifest` | ✎ | `server_id`, `manifest`, `steps?`, `snapshot?` | Plan recalculé puis étapes `change`/`add`/`remove` exécutées dans l'ordre. Snapshot préalable **attendue** par défaut (15 min au plus ; sans elle rien n'est modifié). Rapport : `steps[{id, status, outcome, summary, detail?}]` (`réussie`, `conforme`, `ignorée`, `échouée` + raison, `non sélectionnée`, `non exécutée` après annulation), totaux, `manual` (ce qui reste à faire), `official` (`[{step, official}]` : outil officiel de chaque étape manuelle qui en a un), `next`. Progression par étape, arrêt propre sur annulation. |
 | `clone_server` | ✎ | `source_server_id`, `mybox_id`, `name`, `cpu?`, `ram?`, `include_world?`, `exclude?[]`, `location_id?`, `required_fields?` | Crée un serveur du même jeu (validations de `mybox_create_server` ; CPU/RAM de la source si la MyBox a la place, sinon ce qui reste ; localisation de la source si en stock), attend la fin de l'installation (20 min au plus), l'arrête s'il a démarré, copie les fichiers de la source (`copy_between_servers`, écrasement des fichiers par défaut du serveur neuf ; mondes exclus — `level-name`, ses dimensions et tout dossier racine contenant un `level.dat` — sauf `include_world` ; `logs`, `crash-reports`, `debug` jamais ; `exclude` peut viser un sous-dossier ; ports et adresse du clone rétablis dans `server.properties` après la copie), puis applique le manifeste de la source sans snapshot. Sortie : `created_server_id`, ressources, durée d'installation, lots de copie, rapport du manifeste, `warnings`. En cas d'échec après la création, l'erreur cite `created_server_id=<id>`. |
+
+**Retrait de clés** (`set_config` avec `remove`, `link_proxy` avec `prune`) : une clé de section
+(jamais un élément de liste par son index : la liste se réécrit en entier) est retirée par
+l'éditeur de son format — lignes de la clé et de sa valeur en YAML (la dernière clé d'une section
+laisse `{}`, jamais une valeur nulle ; la première clé d'un élément de liste cède la ligne du tiret
+à la suivante), entrée de table en TOML (ses commentaires de tête passent à la valeur suivante),
+membre et sa virgule en JSON, toutes les lignes logiques de la clé en `.properties` (Java garde la
+dernière). Le fichier relu doit être l'ancien **privé des seules clés retirées**, sinon rien n'est
+écrit ; une clé absente est signalée (`absente`) sans erreur ; retirer et modifier une même clé (ou
+l'une dans l'autre) est refusé. Clés sous un secret : ancienne valeur masquée, diff masqué.
 
 Classement : `get_config`, `export_manifest`, `plan_manifest` sont des lectures (cache de 10 s,
 purgé par toute écriture) ; avec `set_config`, ils font partie des exclusifs gardés face au MCP
@@ -597,8 +607,10 @@ Minecraft Java seulement.
 
 | Outil | | Entrées | Renvoie |
 |---|---|---|---|
-| `network_topology` | | `server_id?` | **Lecture seule.** Proxys du compte, repérés par la plateforme de l'hébergeur (`GET /server/{id}/minecraft_version`), le nom du jar de démarrage, ou leurs fichiers (`velocity.toml`, `config.yml` de BungeeCord avec `listeners`). Pour chacun : type, config, `online_mode`, mode de transfert, secret **défini ou absent** (Velocity) ou BungeeGuard (BungeeCord), liste de repli `try`, et chaque entrée : nom, adresse, `in_try`, serveur du compte reconnu (`account_server` : id, nom, rapprochement) et ses réglages (`settings` : plateforme, version, `online_mode`, transfert Velocity, secret **identique / DIFFÉRENT / absent**, `spigot_bungeecord`, BungeeGuard, FabricProxy-Lite). `problems[]` triés (critique, important, info) avec la correction, `summary`, `not_read` (serveurs suspendus, proxys illisibles). `server_id` : seulement les réseaux qui contiennent ce serveur (proxy ou serveur de jeu) ; un serveur réglé pour un proxy que rien ne référence est signalé. Cache de 15 s. |
-| `link_proxy` | ✎ | `proxy_server_id`, `backend_server_ids[]`, `names?`, `try?`, `mode?`, `dry_run?` (défaut **true**), `snapshot?` (défaut true) | Plan puis, sans `dry_run`, application : entrées du proxy (`servers[{name, address, server_id, entry: ajoutée \| mise à jour \| inchangée}]`), liste de repli, `secret` (réutilisé ou généré, jamais affiché), `steps[{id, server_id, status: ok \| change \| manual \| refused, summary, changes?, diff?, outcome?}]`, `counts`, `manual`, `warnings`, `snapshots`, `status`, `next`. |
+| `network_topology` | | `server_id?`, `ping?` | **Lecture seule.** Proxys du compte, repérés par la plateforme de l'hébergeur (`GET /server/{id}/minecraft_version`), le nom du jar de démarrage, ou leurs fichiers (`velocity.toml`, `config.yml` de BungeeCord avec `listeners`). Pour chacun : type, config, `online_mode`, mode de transfert, secret **défini ou absent** (Velocity) ou BungeeGuard (BungeeCord), liste de repli `try`, et chaque entrée : nom, adresse, `in_try`, serveur du compte reconnu (`account_server` : id, nom, rapprochement) et ses réglages (`settings` : plateforme, version, `online_mode`, transfert Velocity, secret **identique / DIFFÉRENT / absent**, `spigot_bungeecord`, BungeeGuard, FabricProxy-Lite). `problems[]` triés (critique, important, info) avec la correction, `summary`, `not_read` (serveurs suspendus, proxys illisibles). `server_id` : seulement les réseaux qui contiennent ce serveur (proxy ou serveur de jeu) ; un serveur réglé pour un proxy que rien ne référence est signalé. Cache de 15 s. |
+| `link_proxy` | ✎ | `proxy_server_id`, `backend_server_ids[]`, `names?`, `try?`, `forced_hosts?`, `prune?`, `mode?`, `dry_run?` (défaut **true**), `snapshot?` (défaut true) | Plan puis, sans `dry_run`, application : entrées du proxy (`servers[{name, address, server_id, entry: ajoutée \| mise à jour \| inchangée}]`), liste de repli, `secret` (réutilisé ou généré, jamais affiché), `steps[{id, server_id, status: ok \| change \| manual \| refused, summary, changes?, diff?, outcome?}]`, `counts`, `manual`, `warnings`, `snapshots`, `status`, `next`. |
+| `network_preset` | ✎ | `preset` (`luckperms` \| `geyser`), `proxy_server_id`, `backend_server_ids[]`, `mybox_id?`, `database_id?` (luckperms), `bedrock_port?` (geyser), `dry_run?` (défaut **true**), `snapshot?` (défaut true) | Préréglage composite sur le proxy et chaque serveur de jeu : `servers[{server_id, name, role, type, entry}]`, `steps[{id, server_id, status: ok \| change \| manual \| refused, summary, changes?, diff?, outcome?}]`, `counts`, `manual`, `warnings`, `to_confirm` (effets qui ne se défont pas), `database` (luckperms, sans mot de passe) ou `bedrock_port` (geyser, ou l'appel `manage_ports` à faire), `snapshots`, `status`, `next`. |
+| `ping_server` | | `server_id`, `bedrock?`, `port?` | **Lecture.** Ping d'un serveur **du compte** à son adresse publique : Java (Server List Ping 1.7+, repli legacy `0xFE`) → `online`, `version`, `protocol`, `motd` (texte brut), `players{online, max}`, `latency_ms`, `method`, `modded?` ; `bedrock=true` → ping RakNet UDP (`edition`, `port_udp`, `sub_motd`, `gamemode`…). Erreur claire si fermé. |
 
 **Rapprochement des adresses.** Une entrée est associée à un serveur du compte par son IP et son
 port principal (`GET /server/{id}` : `server.ip`, `server.port` ; repli sur l'adresse de
@@ -656,9 +668,108 @@ serveur de jeu. Côté serveurs Paper : `proxies.velocity.enabled`, `online-mode
   relancer), serveur illisible ou suspendu, BungeeGuard à installer en legacy. Les serveurs restent
   déclarés sur le proxy. **Idempotent** : relancé sur un réseau relié, tout est `ok`.
 
+**Routage par domaine et nettoyage** (`link_proxy`).
+
+- **`forced_hosts`** : `{ "play.exemple.fr": "lobby" | ["lobby", 123] }` — domaine (sans port,
+  mis en minuscules ; validé) → noms d'entrées, ou IDs de serveurs de jeu de l'appel. Velocity :
+  `[forced-hosts]` (liste) ; BungeeCord : `listeners[0].forced_hosts` (**un seul** serveur par
+  domaine, refus sinon). Un domaine déjà présent (casse comprise) est remplacé ; les autres hôtes
+  restent. Sortie : `forced_hosts[{host, servers, status: ajouté | modifié | inchangé | retiré}]`.
+- **`prune`** (défaut false) : retire les entrées **qui ne mènent à aucun serveur de jeu** —
+  adresse locale (exemples `lobby`, `factions`, `minigames` de Velocity), adresse inconnue du
+  compte (tous les serveurs Minecraft Java du compte sont rapprochés, noms d'hôte résolus), ou le
+  proxy lui-même — sauf celles de l'appel ou que l'appel cite (`try`, `forced_hosts`). Une entrée
+  qui mène à un serveur du compte hors de l'appel reste. Les hôtes forcés sont privés des entrées
+  retirées ou non déclarées ; un hôte qui ne mène plus à rien, ou d'un **domaine d'exemple**
+  (`example.com/.net/.org`, `.test`, `.example`, `.invalid`, `localhost`), est retiré. BungeeCord :
+  une entrée citée par un hôte forcé d'un autre listener est gardée et signalée. La liste de repli
+  est recalculée sans les entrées retirées ; repli et hôtes forcés sont vérifiés déclarés avant
+  toute écriture. Sortie : `pruned[{name, address}]` ; diff du proxy en `dry_run`.
+- Le retrait passe par `set_config` avec `remove` (même vérification stricte) ; la garde des
+  agents sait **remettre une clé retirée** (et retirer une clé créée par l'action) clé par clé
+  quand le proxy a réécrit sa config depuis.
+
+**Plugins d'un proxy.** Relevé du 2026-11-19 (lectures) : le catalogue Modrinth de MineStrator
+(`/site/modrinth/{slug}/versions`, comme `get_content_files` de l'officiel) ne propose que les
+builds Bukkit/Paper (5 versions « (Bukkit) » pour LuckPerms, même avec `loader=velocity` ; 733
+versions `paper, spigot` pour Geyser) ; Floodgate n'a sur Modrinth que des builds Fabric/NeoForge.
+`install_mod` reconnaît donc la plateforme comme `network.rs` (source de l'hébergeur, jar, à défaut
+`velocity.toml`/`config.yml`) et refuse une build Paper sur un proxy (et l'inverse) en proposant les
+builds compatibles ; `list_mod_versions loader=velocity|bungeecord` les liste (API publique de
+Modrinth). Une build de proxy est d'abord confiée à l'hébergeur (`POST /server/{id}/modrinth`) ; s'il
+la refuse, le fichier principal est téléchargé depuis `cdn.modrinth.com` (sha512 vérifié, 64 Mio au
+plus) et déposé dans `/plugins` par SFTP — **non vérifié en écriture réelle** : à confirmer par
+l'intégrateur. Source `geysermc` : `download.geysermc.org` (`spigot`, `velocity`, `bungeecord` ou
+`bungee`, `fabric`, `neoforge` selon la plateforme), sha256 vérifié, dépôt dans `/plugins` (`/mods`
+pour Fabric/NeoForge) ; un fichier de même nom n'est jamais écrasé (identique : rien à faire). La
+garde liste `/mods` et `/plugins` avant et après : le jar ajouté est une étape annulable.
+
+**`network_preset`.** `dry_run` VRAI par défaut ; à l'application, confirmation de l'humain
+(`mcp_ctx::confirm`, **avant** toute écriture) quand `to_confirm` n'est pas vide, snapshots
+attendues, puis une étape annulable par sous-écriture (`install_mod`, `set_config`,
+`copy_between_servers` via `guarded_write` ; l'outil lui-même : `Plan::Skip`). Idempotent : un
+plugin présent n'est pas réinstallé, une config conforme pas réécrite, une clé identique pas
+recopiée.
+
+- **`luckperms`** : LuckPerms sur le proxy et chaque serveur de jeu (Paper/Spigot ; Fabric, Forge,
+  vanilla : `manual`). Absent : installé — build `velocity`/`bungeecord` la plus récente (stable
+  d'abord) sur Modrinth pour un proxy, version du catalogue compatible avec la plateforme et la
+  version du jeu ailleurs — puis `manual` : démarrer une fois (la config est générée), relancer.
+  Config (`plugins/luckperms/config.yml` sur Velocity, `plugins/LuckPerms/config.yml` ailleurs) :
+  `storage-method` (`mariadb`/`mysql`), `data.address`, `data.database`, `data.username`,
+  `data.password` (préréglage `luckperms` de `connect_database`, même base pour tous : MyBox du
+  proxy par défaut), `messaging-service: sql`, et `server:` = nom de l'entrée sur le proxy pour
+  chaque serveur de jeu (contexte des permissions ; le proxy garde le sien). Mot de passe : lu par
+  l'API, jamais affiché (clé secrète masquée dans les diffs, valeur effacée de toute sortie) ;
+  illisible : aucune config écrite, renvoi vers `connect_database` avec `rotate_password`. À
+  confirmer : bascule depuis un stockage local (`h2`, `sqlite`, `yaml`… : données non migrées,
+  `/lp export` puis `/lp import`) ou depuis une autre base.
+- **`geyser`** : sur le proxy, Geyser et Floodgate (GeyserMC, build de la plateforme) ; config de
+  Geyser (`plugins/geyser/config.yml` sur Velocity, `plugins/Geyser-BungeeCord/config.yml` sur
+  BungeeCord) : `java.auth-type` (format récent) ou `remote.auth-type` = `floodgate`,
+  `bedrock.port`, `bedrock.clone-remote-port: false` s'il était vrai ; Floodgate du proxy :
+  `send-floodgate-data: true` (des serveurs de jeu ont Floodgate). Sur chaque serveur Paper/Spigot :
+  Floodgate, puis la **clé** (`plugins/floodgate/key.pem`, ou `key-file-name`) **copiée du proxy**
+  par `copy_between_servers` — jamais lue par l'IA : seules les empreintes sha256 sont comparées en
+  interne (identique : rien ; absente : copiée ; différente : remplacée, à confirmer, l'ancienne
+  n'étant pas restaurable). Clé du proxy absente (Floodgate jamais démarré) : `manual`. Transfert
+  du proxy désactivé : `manual` (relier d'abord avec `link_proxy`, Floodgate en a besoin).
+- **Port Bedrock** : `bedrock_port` (un des ports du proxy ; le principal est accepté avec une
+  note : même numéro que Java en TCP, l'UDP doit y être ouvert), sinon le `bedrock.port` actuel de
+  Geyser s'il est un port secondaire du proxy, sinon un port secondaire décrit « Bedrock » ou
+  « Geyser ». À défaut : étape `manual` avec l'appel exact de l'outil officiel **`manage_ports`**
+  (`{"server_id": <proxy>, "action": "add", "type": "public", "description": "Geyser (Bedrock)"}`,
+  schéma relevé en lecture le 2026-11-19) : le numéro est attribué par la plateforme (40000-49999
+  sur une IP partagée ; IP MyShield : 19132 et 25565-25585 seulement), connu seulement dans la
+  réponse — non vérifiable sans écrire, donc jamais appelé par l'outil — puis relancer avec
+  `bedrock_port`. Vérification après redémarrage : `ping_server bedrock=true`.
+
+**`ping_server`.** Connexion à l'adresse **publique** d'un serveur **du compte** (`GET
+/server/{id}` : `server.ip`, `server.port`, `ports[]`) : jamais un hôte arbitraire, et `port` doit
+être l'un des ports du serveur — une injection dans le chat ne peut pas en faire un scanner. Java :
+handshake (protocole « inconnu » `-1`, nom DNS du serveur comme hôte s'il existe) puis requête de
+statut et ping/pong pour la latence ; réponse illisible : repli sur le ping legacy `0xFE 0x01`
+(format 1.6, et plus ancien) ; jamais de repli si la connexion échoue. MOTD : composant de chat
+aplati (`text`, `extra`, `translate`), codes `§x` retirés ; ni favicon ni pseudos de l'échantillon
+dans la sortie. Bedrock : ping RakNet hors connexion (`0x01` → `0x1c`, `MCPE;motd;…`) sur le port
+donné, sinon les ports secondaires décrits « Bedrock »/« Geyser », les autres, puis le principal
+(6 au plus, 1,5 s chacun). Délais : 3 s par connexion et par réponse. Réseau en Rust (tokio).
+Essayé en réel (2026-11-20) sur trois serveurs du compte (Paper, Canvas) : version, protocole, MOTD
+composé sur deux lignes, joueurs et latence (30 à 90 ms) relevés ; ping Bedrock d'un serveur sans
+Geyser : erreur claire après ses quatre ports ; port étranger au serveur et serveur hors du compte
+refusés avant toute connexion.
+`network_topology` avec `ping=true` pingue le proxy et chaque serveur du compte reconnu (8 en
+parallèle) : `ping{online, version, players, latency_ms, motd}` ou `{online: false, error}`.
+
 Classement : `network_topology` est une lecture (offerte au Copilote, bornée au serveur de sa
 session) ; `link_proxy` est dans `INFRA_TOOLS` (plusieurs serveurs, secret) : jamais donné au
-Copilote. En mode constructeur, `link_proxy` vise le proxy **et** chaque serveur de jeu. Le
+Copilote. En mode constructeur, `link_proxy` vise le proxy **et** chaque serveur de jeu.
+`network_preset` (groupe `build`) : modifiant, dans `INFRA_TOOLS` (plusieurs serveurs,
+installations depuis des sources externes, accès d'une base, clé de Floodgate) ; en mode
+constructeur, il vise le proxy **et** chaque serveur de jeu. `ping_server` (groupe `diagnostics`) :
+lecture exclusive (`LOCAL_KEEP_TOOLS`), **offerte au Copilote** : elle ne vise qu'un `server_id`
+du compte, donc la portée de sa session s'applique (`scope_violation` refuse un autre serveur ;
+sans `server_id`, `bound_local_args` y met celui de la session), sans aucun effet sur le serveur. Le
 prompt `setup_velocity_network` enchaîne `network_topology` puis `link_proxy`.
 
 #### Garde des agents
@@ -878,7 +989,7 @@ d'étape.
 | Outil | Ce qui est défait |
 |---|---|
 | `write_file`, `edit_file`, `upload_file` | contenu précédent remis, ou fichier retiré s'il n'existait pas ; dossiers parents créés par l'écriture retirés s'ils sont vides |
-| `set_config` | idem ; si le fichier a été **réécrit depuis** (Paper réécrit sa configuration à chaque démarrage), seules les clés de l'action sont remises à leur ancienne valeur, à condition qu'elles aient encore la valeur écrite (empreinte sha256 de chaque valeur, jamais la valeur) et qu'elles aient existé avant. Une simulation (`dry_run`) n'ajoute pas d'étape |
+| `set_config` | idem ; si le fichier a été **réécrit depuis** (Paper réécrit sa configuration à chaque démarrage), seules les clés de l'action sont remises, à condition qu'elles aient encore la valeur écrite (empreinte sha256 de chaque valeur, jamais la valeur) : une clé modifiée reprend son ancienne valeur, une clé **retirée** (`remove`) est recréée en fin de sa section, une clé **créée** par l'action est retirée (sa section, si l'action l'a créée aussi, reste vide). Les clés d'un `.properties` sont prises entières (`rcon.password`). Une simulation (`dry_run`) n'ajoute pas d'étape |
 | `delete_path` | fichier recréé avec son contenu ; dossier recréé en entier s'il compte **500 entrées au plus** |
 | `rename_path` | renommage inverse, et fichier écrasé à la destination remis |
 | `create_dir` | dossier retiré s'il est vide (conservé sinon, sauf `force`) |
