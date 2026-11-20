@@ -1286,6 +1286,10 @@ pub(crate) fn build_plan(
                 changes.push(("servers.try".into(), json!(try_order)));
             }
             host_changes(&mut changes, &mut remove);
+            // Écoute sur le port public attribué par l'hébergeur (sinon injoignable).
+            if let Some((_, port)) = p.bind_mismatch() {
+                changes.push(("bind".into(), json!(format!("0.0.0.0:{port}"))));
+            }
             let wanted = match mode {
                 Mode::Modern => Forwarding::Modern,
                 Mode::Legacy => Forwarding::Legacy,
@@ -1319,6 +1323,9 @@ pub(crate) fn build_plan(
             }
             if c.forwarding != Forwarding::Legacy {
                 changes.push(("ip_forward".into(), json!(true)));
+            }
+            if let (Some((_, port)), true) = (p.bind_mismatch(), c.listeners > 0) {
+                changes.push(("listeners[0].host".into(), json!(format!("0.0.0.0:{port}"))));
             }
             if (try_changed || hosts_written) && c.listeners == 0 {
                 steps.push(Step::new(
@@ -1518,9 +1525,10 @@ async fn read_inputs(core: &Core, a: &LinkArgs) -> Result<Inputs, String> {
         }
         chosen.push(s.clone());
     }
-    let (proxy, config_text) = read_proxy(core, p.id, &p.name, p.ty)
+    let (mut proxy, config_text) = read_proxy(core, p.id, &p.name, p.ty)
         .await?
         .ok_or_else(|| format!("{} n'est pas un proxy Velocity ou BungeeCord : ni velocity.toml ni config.yml de BungeeCord à sa racine", p.label()))?;
+    proxy.public_port = p.endpoint.as_ref().map(|e| e.port);
     let tasks: Vec<_> = chosen
         .into_iter()
         .map(|s| {

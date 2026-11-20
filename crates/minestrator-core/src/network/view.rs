@@ -1592,6 +1592,7 @@ mod tests {
             secret_note: "/forwarding.secret".into(),
             bungeeguard: false,
             bungeeguard_token: None,
+            public_port: None,
         }
     }
 

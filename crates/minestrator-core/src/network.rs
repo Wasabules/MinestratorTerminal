@@ -235,6 +235,8 @@ pub(crate) struct ProxyConf {
     pub inline_secret: Option<String>,
     /// BungeeCord : nombre de listeners.
     pub listeners: usize,
+    /// Adresse d'écoute : `bind` de Velocity, `listeners[0].host` de BungeeCord.
+    pub bind: Option<String>,
 }
 
 impl ProxyConf {
@@ -251,6 +253,7 @@ impl ProxyConf {
             secret_file: None,
             inline_secret: None,
             listeners: 0,
+            bind: None,
         }
     }
 
@@ -341,6 +344,7 @@ pub(crate) fn parse_velocity(text: &str) -> Result<ProxyConf, String> {
     c.online_mode = tree.get("online-mode").and_then(Value::as_bool);
     c.secret_file = text_of(tree.get("forwarding-secret-file"));
     c.inline_secret = text_of(tree.get("forwarding-secret"));
+    c.bind = text_of(tree.get("bind"));
     Ok(c)
 }
 
@@ -366,6 +370,7 @@ pub(crate) fn parse_bungee(text: &str) -> Result<ProxyConf, String> {
     }
     if let Some(first) = listeners.first() {
         c.try_order = yaml_lite::as_list(first.get("priorities"));
+        c.bind = text_of(first.get("host"));
     }
     for (i, l) in listeners.iter().enumerate() {
         if let Some(Value::Object(m)) = l.get("forced_hosts") {
@@ -829,9 +834,25 @@ pub(crate) struct ProxyState {
     /// BungeeCord : plugin BungeeGuard présent, et son jeton.
     pub bungeeguard: bool,
     pub bungeeguard_token: Option<String>,
+    /// Port public attribué par l'hébergeur (`GET /server/{id}`), quand il est connu.
+    pub public_port: Option<u16>,
+}
+
+/// Port d'une adresse d'écoute (`0.0.0.0:25577`, `[::]:25577`).
+pub(crate) fn bind_port(bind: &str) -> Option<u16> {
+    bind.trim().rsplit_once(':')?.1.trim().parse().ok()
 }
 
 impl ProxyState {
+    /// Le proxy écoute-t-il ailleurs que sur son port public ? `(port d'écoute, port public)`.
+    /// L'hébergeur n'expose que le port attribué : un Velocity neuf écoute sur 25565 (relevé réel
+    /// du 2026-11-20, serveur créé par apply_network) et reste injoignable.
+    pub(crate) fn bind_mismatch(&self) -> Option<(Option<u16>, u16)> {
+        let public = self.public_port?;
+        let current = self.conf.bind.as_deref().and_then(bind_port);
+        (current != Some(public)).then_some((current, public))
+    }
+
     fn secrets(&self) -> Vec<String> {
         let mut v: Vec<String> = self
             .secret
@@ -894,6 +915,16 @@ pub(crate) fn evaluate(p: &ProxyState, links: &[Link]) -> Vec<Problem> {
         .iter()
         .any(|l| l.matched.is_some_and(|m| m.server_id != p.server_id));
 
+    if let Some((current, public)) = p.bind_mismatch() {
+        let key = if velocity { "bind" } else { "listeners[0].host" };
+        let now = current.map_or_else(|| "un port illisible".to_string(), |c| format!("le port {c}"));
+        out.push(problem(
+            Critical,
+            None,
+            format!("Proxy « {pname} » à l'écoute sur {now} ({key}) alors que son port public est {public} : il est injoignable."),
+            format!("link_proxy règle {key} sur 0.0.0.0:{public} ; redémarre ensuite le proxy."),
+        ));
+    }
     if c.online_mode == Some(false) {
         out.push(problem(
             Critical,
@@ -1766,6 +1797,7 @@ pub(crate) async fn read_proxy(
         secret_note,
         bungeeguard,
         bungeeguard_token: raw.bungeeguard_token,
+        public_port: None,
     };
     Ok(Some((state, text)))
 }
@@ -2018,7 +2050,10 @@ pub(crate) async fn collect(
     let mut proxies: Vec<ProxyState> = Vec::new();
     for (s, r) in found {
         match r {
-            Ok(Some((p, _))) => proxies.push(p),
+            Ok(Some((mut p, _))) => {
+                p.public_port = s.endpoint.as_ref().map(|e| e.port);
+                proxies.push(p)
+            }
             Ok(None) => {}
             Err(e) => c
                 .not_read

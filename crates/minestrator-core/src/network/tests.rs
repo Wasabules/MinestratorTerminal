@@ -174,6 +174,7 @@ fn proxy_state(text: &str, secret: Option<&str>) -> ProxyState {
         secret_note: "/forwarding.secret".into(),
         bungeeguard: false,
         bungeeguard_token: None,
+        public_port: None,
     }
 }
 
@@ -1786,4 +1787,47 @@ fn bungeecord_forced_hosts_live_in_the_first_listener() {
     assert!(build_plan(&proxy, &more, &two, None, &no_redact)
         .unwrap_err()
         .contains("un seul serveur"));
+}
+
+/// Relevé réel (2026-11-20) : un Velocity créé par apply_network écoute sur 25565 alors que
+/// l'hébergeur lui a attribué le port 29019 ; injoignable. La topologie le signale, link_proxy
+/// remet `bind` sur le port public.
+#[test]
+fn a_proxy_listening_off_its_public_port_is_flagged_and_fixed() {
+    assert_eq!(bind_port("0.0.0.0:25565"), Some(25565));
+    assert_eq!(bind_port("[::]:29019"), Some(29019));
+    assert_eq!(bind_port("localhost"), None);
+    let mut p = proxy_state(VELOCITY_DEFAULT, None);
+    assert_eq!(p.conf.bind.as_deref(), Some("0.0.0.0:25565"));
+    // Port public inconnu : rien à dire.
+    assert_eq!(p.bind_mismatch(), None);
+    p.public_port = Some(29019);
+    assert_eq!(p.bind_mismatch(), Some((Some(25565), 29019)));
+    let problems = evaluate(&p, &[]);
+    assert!(
+        problems.iter().any(|x| x.severity == Severity::Critical && x.message.contains("29019") && x.message.contains("25565")),
+        "{problems:?}"
+    );
+    let backends = vec![paper_backend(
+        1,
+        "Lobby",
+        "203.0.113.10",
+        23628,
+        files(Some(paper_global(false, "")), Some(spigot(false))),
+        Some(true),
+    )];
+    let plan = build_plan(
+        &ProxyInput { state: &p, config_text: VELOCITY_DEFAULT, account: &AccountView::default() },
+        &backends,
+        &args(100, &[1]),
+        Some(SECRET_NEW),
+        &no_redact,
+    )
+    .unwrap();
+    let cfg = step(&plan, "proxy.config");
+    assert!(cfg.diff.as_deref().unwrap().contains("+bind = \"0.0.0.0:29019\""), "{:?}", cfg.diff);
+    // Déjà sur le bon port : pas de changement.
+    p.public_port = Some(25565);
+    assert_eq!(p.bind_mismatch(), None);
+    assert!(evaluate(&p, &[]).iter().all(|x| !x.message.contains("à l'écoute")));
 }

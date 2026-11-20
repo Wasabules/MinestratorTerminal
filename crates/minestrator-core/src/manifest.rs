@@ -804,7 +804,30 @@ fn content_matches(i: &Installed, w: &ContentItem, kind: ContentKind) -> bool {
         .unwrap_or_default();
     !wanted_name.is_empty()
         && (wanted_name == norm(&i.name)
-            || norm(i.file.trim_end_matches(".jar").trim_end_matches(".zip")) == wanted_name)
+            || norm(i.file.trim_end_matches(".jar").trim_end_matches(".zip")) == wanted_name
+            || file_base_name(&i.file) == wanted_name)
+}
+
+/// Nom de base d'un fichier de contenu, sans version ni plateforme : `EssentialsX-2.22.0.jar` →
+/// `essentialsx`, `LuckPerms-Bukkit-5.5.71.jar` → `luckperms`. Relevé réel (2026-11-20) : un
+/// plugin installé depuis Modrinth par le manifeste n'est pas identifié par l'hébergeur (source
+/// nulle) et son nom (« Essentials ») n'est pas le slug : sans ce rapprochement, chaque
+/// application le réinstallait.
+fn file_base_name(file: &str) -> String {
+    const PLATFORMS: &[&str] = &[
+        "bukkit", "spigot", "paper", "folia", "purpur", "velocity", "bungee", "bungeecord",
+        "waterfall", "fabric", "forge", "neoforge", "quilt", "mc", "plugin", "mod",
+    ];
+    let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
+    let parts: Vec<&str> = stem
+        .split(['-', '_', '+'])
+        .take_while(|p| {
+            let p = p.strip_prefix(['v', 'V']).unwrap_or(p);
+            !p.starts_with(|c: char| c.is_ascii_digit())
+        })
+        .filter(|p| !PLATFORMS.contains(&p.to_ascii_lowercase().as_str()))
+        .collect();
+    norm(&parts.concat())
 }
 
 /// Identifiant stable d'une étape de contenu.

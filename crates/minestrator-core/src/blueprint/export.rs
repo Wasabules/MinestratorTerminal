@@ -38,7 +38,8 @@ pub(crate) struct ExportInput {
 /// Plateforme, version et manifeste sans `server` (ni `players` : alias d'anonymisation
 /// inutilisables ailleurs) d'un manifeste exporté.
 fn split_manifest(m: &Value) -> (Option<String>, Option<String>, Option<Value>) {
-    let platform = m.pointer("/server/loader").and_then(Value::as_str).map(str::to_string).filter(|s| !s.is_empty());
+    // Nom normalisé : l'hébergeur dit `proxy_velocity` pour un Velocity (relevé réel du 2026-11-20).
+    let platform = m.pointer("/server/loader").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(crate::platform::normalize_platform);
     let version = m.pointer("/server/game_version").and_then(Value::as_str).map(str::to_string).filter(|s| !s.is_empty());
     let mut rest = m.as_object().cloned().unwrap_or_default();
     rest.remove("server");

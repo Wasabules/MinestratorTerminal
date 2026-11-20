@@ -623,7 +623,12 @@ pub(crate) async fn ping_server_tool(core: &Core, args: &Value) -> Result<String
         ),
     };
     let (name, ep, raw) = endpoint_of(core, id).await?;
-    let mut out = match ping_target(id, &name, &ep, &raw, bedrock, port).await? {
+    // Les erreurs citent l'adresse du serveur : anonymisées comme la réponse (relevé réel du
+    // 2026-11-20 : l'IP sortait en clair dans « ne répond pas au ping Java sur … »).
+    let pinged = ping_target(id, &name, &ep, &raw, bedrock, port)
+        .await
+        .map_err(|e| core.redact_ai(&e))?;
+    let mut out = match pinged {
         Pinged::Bedrock { port, status } => render_bedrock(&status, port),
         Pinged::Java { port, status } => {
             let mut v = render_java(&status);

@@ -628,3 +628,30 @@ fn the_plan_lists_the_steps_apply_official_would_apply() {
     );
     assert!(out.get("apply_official").is_none());
 }
+
+/// Plugin installé depuis Modrinth mais non identifié par l'hébergeur (source nulle), nom de
+/// plugin différent du slug : rapproché par le nom de base du fichier (relevé réel du 2026-11-20).
+#[test]
+fn content_is_matched_by_the_base_name_of_its_file() {
+    assert_eq!(file_base_name("EssentialsX-2.22.0.jar"), "essentialsx");
+    assert_eq!(file_base_name("LuckPerms-Bukkit-5.5.71.jar"), "luckperms");
+    assert_eq!(file_base_name("Chunky-Paper-1.5.66.jar"), "chunky");
+    assert_eq!(file_base_name("worldedit-bukkit-7.3.10.jar"), "worldedit");
+    assert_eq!(file_base_name("Geyser-Velocity.jar"), "geyser");
+    assert_eq!(file_base_name("CoreProtect-v23.1.jar"), "coreprotect");
+    let essentials = Installed {
+        kind: Some(ContentKind::Plugins),
+        name: "Essentials".into(),
+        file: "EssentialsX-2.22.0.jar".into(),
+        version: "2.22.0".into(),
+        enabled: true,
+        source: None,
+        project: None,
+        loader: String::new(),
+    };
+    let wanted = item(json!({ "kind": "plugin", "source": "modrinth", "project": "essentialsx" }));
+    assert!(content_matches(&essentials, &wanted, ContentKind::Plugins));
+    let other = item(json!({ "kind": "plugin", "source": "modrinth", "project": "essentialsxchat" }));
+    assert!(!content_matches(&essentials, &other, ContentKind::Plugins));
+}
+
