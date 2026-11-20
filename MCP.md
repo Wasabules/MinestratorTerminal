@@ -134,14 +134,14 @@ Ressource inconnue : erreur `-32002` (`-32602` en sans état).
    (elle n'ouvre pas la fenêtre). App centralisante. Réglable depuis Réglages → MCP.
 2. **Binaire autonome** — `minestrator-mcp` : léger, headless (idéal serveur/daemon).
 
-## 5. Capacités — catalogue d'outils (94)
+## 5. Capacités — catalogue d'outils (107)
 
 `✎` = action **modifiante** (soumise au réglage « autoriser les actions modifiantes » ; refusée en
 mode lecture seule). Les entrées suffixées `?` sont **optionnelles**.
 
 > **Source unique de vérité** : ce catalogue est dérivé de `mcp::tool_list()` (+ des constantes
-> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **52 outils de lecture**
-> + **42 modifiants** (dont 23 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage, manifeste appliqué, clone, annulation, prégénération, base de données, réseau proxy). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file`, `deploy_and_verify`, `sync_dir`, `upload_world`, `apply_to_servers` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Des tests vérifient que chaque
+> `READ_TOOLS` / `WRITE_TOOLS`) dans `crates/minestrator-core/src/mcp.rs`. **57 outils de lecture**
+> + **50 modifiants** (dont 30 jamais donnés au Copilote, `INFRA_TOOLS` : infrastructure MyBox, tâches planifiées, plusieurs serveurs, commande de démarrage, manifeste appliqué, clone, annulation, prégénération, bases de données, réseau proxy et préréglages, plateforme et version, monde envoyé, réseau entier, secret généré). Les outils qui touchent au disque de l'ordinateur (`download_file`, `upload_file`, `deploy_and_verify`, `sync_dir`, `upload_world`, `apply_to_servers`, `plan_network`, `apply_network` : `LOCAL_DISK_TOOLS`) ne sont jamais donnés au Copilote non plus, même en lecture. Des tests vérifient que chaque
 > outil listé est classé lecture **ou** écriture, que chaque outil classé a son schéma, appartient à
 > un seul groupe (`TOOL_GROUPS`, `mcp_catalog.rs`) et, s'il est modifiant, a une règle d'annulation
 > dans la garde des agents.
@@ -661,7 +661,9 @@ différentes (`id_daemon`). L'API ne publie pas d'adresse interne entre serveurs
 `internal` des ports, côté MCP officiel `manage_ports`, n'apparaît pas dans `ports[]`) :
 `link_proxy` écrit donc l'`ip:port` publique.
 
-**Problèmes signalés** : proxy en `online-mode=false` ; transfert désactivé alors que des serveurs
+**Problèmes signalés** : proxy à l'écoute ailleurs que sur son port public (`bind` de Velocity,
+`listeners[0].host` de BungeeCord ; critique : il est injoignable — un Velocity neuf écoute sur
+25565 alors que l'hébergeur lui attribue un autre port) ; proxy en `online-mode=false` ; transfert désactivé alors que des serveurs
 sont reliés ; transfert moderne sans secret (Velocity refuse de démarrer) ; serveur de repli ou hôte
 forcé non déclaré ; entrée locale, inconnue du compte, sans le bon port, ou qui vise le proxy
 lui-même ; serveur de jeu en `online-mode=true` derrière le proxy ; transfert Velocity désactivé
@@ -676,7 +678,8 @@ absent des `allowed-tokens`.
 vérifiée comme `set_config` : `servers.<nom>` (Velocity) ou `servers.<nom>.address` (BungeeCord,
 avec `motd` et `restricted` pour une entrée neuve), liste de repli (`servers.try`,
 `listeners[0].priorities`), `player-info-forwarding-mode` (casse de la valeur actuelle gardée) ou
-`ip_forward: true`. Nom d'une entrée : `names`, sinon celui d'une entrée qui vise déjà le serveur,
+`ip_forward: true`, et l'adresse d'écoute (`bind`, `listeners[0].host`) remise sur
+`0.0.0.0:<port public>` si elle diffère. Nom d'une entrée : `names`, sinon celui d'une entrée qui vise déjà le serveur,
 sinon tiré du nom du serveur (`Serveur Créatif` → `serveur-creatif`) ; une entrée locale du même
 nom (exemple `lobby` de la configuration par défaut) est reprise, les autres entrées locales sont
 gardées et signalées. Liste de repli : `try` (noms ou IDs des serveurs de l'appel), sinon
@@ -1288,7 +1291,7 @@ Réglages modifiables depuis le GUI (Réglages → MCP) et persistés (`mcp.json
 
 - **`enabled`** — si désactivé : `tools/list` renvoie une liste vide et tout appel est refusé
   (prompts et ressources aussi).
-- **`allow_writes`** — si désactivé (**mode lecture seule**) : les 42 outils marqués `✎`
+- **`allow_writes`** — si désactivé (**mode lecture seule**) : les 50 outils marqués `✎`
   (`WRITE_TOOLS` : commandes, alimentation, fichiers, réglages, contenu, snapshots, infrastructure
   MyBox, tâches planifiées, manifeste appliqué, clone, annulation…) sont refusés ; les outils de
   lecture/diagnostic restent disponibles (dont `plan_placement` et `plan_manifest`, qui ne
